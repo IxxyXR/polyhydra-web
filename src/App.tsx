@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
-  Settings, 
-  Layers, 
-  Grid2X2, 
-  Maximize, 
-  Info, 
+  Settings,
+  Layers,
+  Grid2X2,
+  Maximize,
+  Info,
   ChevronRight,
   Hexagon,
   Square,
@@ -22,7 +22,9 @@ import {
   GripVertical,
   Download,
   Plus,
-  Github
+  Github,
+  Link2,
+  Check
 } from 'lucide-react';
 import { TilingCanvas } from './components/TilingCanvas';
 import {
@@ -150,6 +152,7 @@ export default function App() {
   const [rawEditorOpen, setRawEditorOpen] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [hoveredGridAtom, setHoveredGridAtom] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Onboarding
   const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
@@ -157,9 +160,12 @@ export default function App() {
   );
   const [tilingEverOpened, setTilingEverOpened] = useState(false);
   const [presetOrRandomUsed, setPresetOrRandomUsed] = useState(false);
+  const [initialHadOperators] = useState(() =>
+    new URLSearchParams(window.location.search).has('ops')
+  );
 
   const step1Complete = tilingEverOpened;
-  const step2Complete = operators.length > 0;
+  const step2Complete = initialHadOperators || operators.length > 0;
   const step3Complete = presetOrRandomUsed;
   const allOnboardingComplete = step1Complete && step2Complete && step3Complete;
   const showOnboarding = !onboardingDismissed;
@@ -1304,6 +1310,22 @@ export default function App() {
                   OFF
                 </button>
               </div>
+              <button
+                onClick={async () => {
+                  const url = window.location.href;
+                  if (navigator.share) {
+                    await navigator.share({ url });
+                  } else {
+                    await navigator.clipboard.writeText(url);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }
+                }}
+                className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+              >
+                {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Link2 className="w-3 h-3" />}
+                {copied ? 'Link Copied!' : 'Share'}
+              </button>
             </section>
           </div>
         </div>
@@ -1370,8 +1392,8 @@ export default function App() {
               <div className="space-y-3">
                 {[
                   { step: 1, label: 'Pick a tiling', done: step1Complete },
-                  { step: 2, label: 'Add an operator', done: step2Complete },
-                  { step: 3, label: 'Choose a preset or click Random', done: step3Complete },
+                  ...(!initialHadOperators ? [{ step: 2, label: 'Add an operator', done: step2Complete }] : []),
+                  { step: initialHadOperators ? 2 : 3, label: 'Choose a preset or click Random', done: step3Complete },
                 ].map(({ step, label, done }) => (
                   <div key={step} className="flex items-start gap-3">
                     <div
