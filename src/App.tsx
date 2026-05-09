@@ -1237,7 +1237,7 @@ export default function App() {
                                                   return (
                                                     <div
                                                       key={`${rowClass}-${colClass}`}
-                                                      className="aspect-square rounded-md bg-red-950/30 border border-red-900/20"
+                                                      className="aspect-square rounded-md"
                                                     />
                                                   );
                                                 }
@@ -1247,8 +1247,8 @@ export default function App() {
                                                 const baseClass = isSelected
                                                   ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-900/30'
                                                   : isCompatible
-                                                    ? 'bg-emerald-900/30 border-emerald-800/40 hover:bg-emerald-800/40'
-                                                    : 'bg-red-950/30 border-red-900/20 opacity-60 cursor-not-allowed';
+                                                    ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
+                                                    : 'opacity-0 cursor-not-allowed pointer-events-none';
 
                                                 return (
                                                   <button
