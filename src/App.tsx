@@ -153,6 +153,8 @@ export default function App() {
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [hoveredGridAtom, setHoveredGridAtom] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [hoveredDotType, setHoveredDotType] = useState<string | null>(null);
+  const [dotPopup, setDotPopup] = useState<{ type: string; x: number; y: number } | null>(null);
 
   // Onboarding
   const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
@@ -364,6 +366,8 @@ export default function App() {
     setSelectedOperatorId(id);
     setRawEditorOpen(false);
     setPresetPickerOpen(false);
+    setDotPopup(null);
+    setHoveredDotType(null);
   };
 
   const toggleGridAtom = (atom: string) => {
@@ -1170,11 +1174,25 @@ export default function App() {
                                       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-2">
                                         {selectedOperatorDiagramSvg && (
                                           <div className="mb-2 rounded-lg border border-neutral-800 bg-neutral-950/60 p-3">
-                                            <div className="mb-2 text-[10px] text-neutral-500 uppercase tracking-widest font-semibold">
-                                              Symbol
+                                            <div className="mb-2 flex items-center justify-between">
+                                              <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold">Symbol</div>
+                                              <div className="text-[10px] font-mono font-bold text-blue-300 transition-opacity" style={{ opacity: hoveredDotType ? 1 : 0 }}>{hoveredDotType ?? '·'}</div>
                                             </div>
                                             <div
                                               className="mx-auto aspect-square w-28 text-white"
+                                              onMouseMove={(e) => {
+                                                const type = (e.target as Element).getAttribute('data-type');
+                                                setHoveredDotType(type || null);
+                                              }}
+                                              onMouseLeave={() => setHoveredDotType(null)}
+                                              onClick={(e) => {
+                                                const type = (e.target as Element).getAttribute('data-type');
+                                                if (type) {
+                                                  setDotPopup((prev) => prev?.type === type ? null : { type, x: e.clientX, y: e.clientY });
+                                                } else {
+                                                  setDotPopup(null);
+                                                }
+                                              }}
                                               dangerouslySetInnerHTML={{ __html: selectedOperatorDiagramSvg }}
                                             />
                                             <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
@@ -1244,11 +1262,14 @@ export default function App() {
 
                                                 const isSelected = uniqueSelectedAtoms.includes(atom);
                                                 const isCompatible = isSelected || isCompatibleSubset(uniqueSelectedAtoms.filter((selected) => selected !== atom), atom);
+                                                const isDotHighlighted = !isSelected && isCompatible && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
                                                 const baseClass = isSelected
                                                   ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-900/30'
-                                                  : isCompatible
-                                                    ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
-                                                    : 'opacity-0 cursor-not-allowed pointer-events-none';
+                                                  : isDotHighlighted
+                                                    ? 'bg-amber-500/70 border-amber-400/80 animate-pulse'
+                                                    : isCompatible
+                                                      ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
+                                                      : 'opacity-0 cursor-not-allowed pointer-events-none';
 
                                                 return (
                                                   <button
@@ -1273,6 +1294,53 @@ export default function App() {
                                           Unknown atoms: {unknownSelectedAtoms.join(', ')}
                                         </p>
                                       )}
+
+                                      <AnimatePresence>
+                                        {dotPopup && (
+                                          <>
+                                            <div className="fixed inset-0 z-40" onClick={() => setDotPopup(null)} />
+                                            <motion.div
+                                              key="dot-popup"
+                                              initial={{ opacity: 0, scale: 0.92, y: -4 }}
+                                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                                              exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                                              style={{ position: 'fixed', left: Math.min(dotPopup.x + 10, window.innerWidth - 180), top: dotPopup.y + 10 }}
+                                              className="z-50 w-40 rounded-xl border border-neutral-700 bg-neutral-900/95 p-3 shadow-2xl backdrop-blur-sm"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <div className="mb-2 flex items-center justify-between">
+                                                <span className="text-[10px] font-bold uppercase tracking-widest text-blue-300">{dotPopup.type}</span>
+                                                <button onClick={() => setDotPopup(null)} className="text-neutral-500 hover:text-white transition-colors"><X className="h-3 w-3" /></button>
+                                              </div>
+                                              <div className="space-y-1">
+                                                {OMNI_POINT_CLASSES.flatMap((otherClass) => {
+                                                  const atom = findOmniAtom(dotPopup.type as (typeof OMNI_POINT_CLASSES)[number], otherClass);
+                                                  if (!atom) return [];
+                                                  const alreadySelected = uniqueSelectedAtoms.includes(atom);
+                                                  const compatible = alreadySelected || isCompatibleSubset(uniqueSelectedAtoms.filter((a) => a !== atom), atom);
+                                                  return [(
+                                                    <button
+                                                      key={atom}
+                                                      onClick={() => { toggleGridAtom(atom); setDotPopup(null); }}
+                                                      disabled={!compatible}
+                                                      className={`w-full rounded-lg px-2 py-1.5 text-left text-[10px] font-mono transition-colors ${
+                                                        alreadySelected
+                                                          ? 'bg-blue-600/80 text-white'
+                                                          : compatible
+                                                            ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
+                                                            : 'cursor-not-allowed text-neutral-600 opacity-40'
+                                                      }`}
+                                                    >
+                                                      <span className="text-neutral-400">→ </span>{otherClass}
+                                                      {alreadySelected && <span className="ml-1 text-blue-200">✓</span>}
+                                                    </button>
+                                                  )];
+                                                })}
+                                              </div>
+                                            </motion.div>
+                                          </>
+                                        )}
+                                      </AnimatePresence>
                                     </>
                                   )}
                                 </div>

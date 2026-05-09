@@ -150,7 +150,7 @@ const createData = (notation: string, vfPts?: Point[], fePts?: Point[]) => {
     ...(fePts ? { fe: fePts } : {}),
   };
   const segments: Segment[] = [];
-  const points: Point[] = [];
+  const pointMap = new Map<string, { point: Point; type: string }>();
   const seenSegments = new Set<string>();
 
   for (const atom of notation.split(',').map((part) => part.trim()).filter(Boolean)) {
@@ -170,9 +170,15 @@ const createData = (notation: string, vfPts?: Point[], fePts?: Point[]) => {
       continue;
     }
 
-    points.push(...startPoints);
+    for (const p of startPoints) {
+      const k = pointKey(p);
+      if (!pointMap.has(k)) pointMap.set(k, { point: p, type: startGroup });
+    }
     if (!endGroup.endsWith('!')) {
-      points.push(...endPoints);
+      for (const p of endPoints) {
+        const k = pointKey(p);
+        if (!pointMap.has(k)) pointMap.set(k, { point: p, type: endGroup });
+      }
     }
 
     for (const [fromIndex, toIndices] of atomConnections) {
@@ -188,7 +194,7 @@ const createData = (notation: string, vfPts?: Point[], fePts?: Point[]) => {
     }
   }
 
-  return { segments, points };
+  return { segments, points: Array.from(pointMap.values()) };
 };
 
 const findValidPlacement = (notation: string) => {
@@ -244,7 +250,6 @@ export function createOmniOperatorDiagramSvg(notation: string): string | null {
     return null;
   }
 
-  const uniquePoints = Array.from(new Map(points.map((point) => [pointKey(point), point])).values());
   const viewBoxSize = 1 + 2 * PADDING;
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-${PADDING} -${PADDING} ${viewBoxSize} ${viewBoxSize}" fill="none">`;
   svg += `<rect x="0" y="0" width="1" height="1" fill="none" stroke="#374151" stroke-width="0.024" stroke-dasharray="0.03 0.025"/>`;
@@ -264,8 +269,8 @@ export function createOmniOperatorDiagramSvg(notation: string): string | null {
     }
   }
 
-  for (const [x, y] of uniquePoints) {
-    svg += `<circle cx="${x}" cy="${y}" r="${DOT_RADIUS}" fill="#ef4444" stroke="#f5f5f5" stroke-width="${DOT_OUTLINE_WIDTH}"/>`;
+  for (const { point: [x, y], type } of points) {
+    svg += `<circle cx="${x}" cy="${y}" r="${DOT_RADIUS}" fill="#ef4444" stroke="#f5f5f5" stroke-width="${DOT_OUTLINE_WIDTH}" data-type="${type}" style="cursor:pointer"/>`;
   }
 
   svg += '</svg>';
