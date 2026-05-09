@@ -1196,17 +1196,29 @@ export default function App() {
                                               dangerouslySetInnerHTML={{ __html: selectedOperatorDiagramSvg }}
                                             />
                                             <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                                              <span
-                                                className={`rounded-full px-2 py-1 font-semibold uppercase tracking-widest ${
-                                                  selectedOperatorIsComplete
-                                                    ? 'bg-emerald-900/30 text-emerald-300 border border-emerald-800/40'
-                                                    : selectedOperatorIsValid
-                                                      ? 'bg-amber-900/30 text-amber-300 border border-amber-800/40'
-                                                      : 'bg-red-900/30 text-red-300 border border-red-800/40'
-                                                }`}
-                                              >
-                                                {selectedOperatorIsComplete ? 'Complete' : selectedOperatorIsValid ? 'Incomplete' : 'Invalid'}
-                                              </span>
+                                              {selectedOperatorIsValid && !selectedOperatorIsComplete ? (
+                                                <motion.span
+                                                  animate={{
+                                                    backgroundColor: ['rgba(120,53,15,0.3)', 'rgba(180,83,9,0.55)', 'rgba(120,53,15,0.3)'],
+                                                    color: ['rgb(252,211,77)', 'rgb(255,255,255)', 'rgb(252,211,77)'],
+                                                    borderColor: ['rgba(180,83,9,0.4)', 'rgba(251,191,36,0.75)', 'rgba(180,83,9,0.4)'],
+                                                  }}
+                                                  transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+                                                  className="rounded-full border px-2 py-1 font-semibold uppercase tracking-widest"
+                                                >
+                                                  Incomplete
+                                                </motion.span>
+                                              ) : (
+                                                <span
+                                                  className={`rounded-full border px-2 py-1 font-semibold uppercase tracking-widest ${
+                                                    selectedOperatorIsComplete
+                                                      ? 'border-emerald-800/40 bg-emerald-900/30 text-emerald-300'
+                                                      : 'border-red-800/40 bg-red-900/30 text-red-300'
+                                                  }`}
+                                                >
+                                                  {selectedOperatorIsComplete ? 'Complete' : 'Invalid'}
+                                                </span>
+                                              )}
                                               {selectedMatchingPresetName && (
                                                 <span className="rounded-full border border-blue-800/40 bg-blue-900/20 px-2 py-1 font-semibold text-blue-300 uppercase tracking-widest">
                                                   {selectedMatchingPresetName}
