@@ -21,7 +21,8 @@ import {
   ArrowRight,
   GripVertical,
   Download,
-  Plus
+  Plus,
+  Github
 } from 'lucide-react';
 import { TilingCanvas } from './components/TilingCanvas';
 import {
@@ -65,6 +66,7 @@ const NO_PRESET_VALUE = '';
 const CUSTOM_PRESET_VALUE = '__custom__';
 const OPERATOR_ACTION_BUTTON_CLASS = 'rounded-md border border-neutral-700/70 bg-neutral-800/55 p-1 text-neutral-300 transition-colors hover:bg-neutral-700/85 hover:text-white';
 const OPERATOR_DELETE_BUTTON_CLASS = 'rounded-md border border-neutral-700/70 bg-neutral-800/55 p-1 text-neutral-300 transition-colors hover:border-red-800/60 hover:bg-red-950/35 hover:text-red-300';
+const POLYHYDRA_WEB_REPO_URL = 'https://github.com/IxxyXR/polyhydra-web';
 
 const REGULAR_TILING_KEYS = new Set([
   '3.3.3.3.3.3',
@@ -421,14 +423,26 @@ export default function App() {
         className="relative h-full bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col z-20"
       >
         <div className="p-6 overflow-y-auto flex-1">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="p-2 bg-blue-600 rounded-lg">
-              <Layers className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between gap-3 mb-8">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 bg-blue-600 rounded-lg">
+                <Layers className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="font-bold text-xl tracking-tight text-white">Polyhydra</h1>
+                <p className="text-xs text-neutral-400 font-mono uppercase tracking-widest">Three.js Powered</p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-bold text-xl tracking-tight text-white">Polyhydra</h1>
-              <p className="text-xs text-neutral-400 font-mono uppercase tracking-widest">Three.js Powered</p>
-            </div>
+            <a
+              href={POLYHYDRA_WEB_REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 rounded-lg border border-neutral-800 bg-neutral-800/30 p-2 text-neutral-400 transition-colors hover:bg-neutral-800/60 hover:text-white"
+              title="Polyhydra Web repository"
+              aria-label="Open Polyhydra Web repository"
+            >
+              <Github className="w-4 h-4" />
+            </a>
           </div>
 
           <div className="space-y-6">

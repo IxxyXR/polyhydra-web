@@ -2,6 +2,10 @@
 
 Web version of Polyhydra for 2D tilings, Omni operators, and export.
 
+Live site: https://ixxyxr.github.io/polyhydra-web/
+
+Repository: https://github.com/IxxyXR/polyhydra-web
+
 ## Development
 
 Prerequisites:
