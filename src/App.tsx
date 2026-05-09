@@ -151,6 +151,25 @@ export default function App() {
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [hoveredGridAtom, setHoveredGridAtom] = useState<string | null>(null);
 
+  // Onboarding
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
+    !!localStorage.getItem('polyhydra-onboarding-done')
+  );
+  const [tilingEverOpened, setTilingEverOpened] = useState(false);
+  const [presetOrRandomUsed, setPresetOrRandomUsed] = useState(false);
+
+  const step1Complete = tilingEverOpened;
+  const step2Complete = operators.length > 0;
+  const step3Complete = presetOrRandomUsed;
+  const allOnboardingComplete = step1Complete && step2Complete && step3Complete;
+  const showOnboarding = !onboardingDismissed;
+  const activeOnboardingStep = !step1Complete ? 1 : !step2Complete ? 2 : !step3Complete ? 3 : 4;
+
+  const dismissOnboarding = () => {
+    localStorage.setItem('polyhydra-onboarding-done', '1');
+    setOnboardingDismissed(true);
+  };
+
   // Sync state with URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -266,6 +285,13 @@ export default function App() {
     const newRelativePathQuery = window.location.pathname + '?' + params.toString();
     window.history.replaceState(null, '', newRelativePathQuery);
   }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings]);
+
+  useEffect(() => {
+    if (allOnboardingComplete && showOnboarding) {
+      const timer = setTimeout(dismissOnboarding, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [allOnboardingComplete, showOnboarding]);
 
   const addOperator = (notation: string, overrides: Partial<OperatorSpec> = {}) => {
     if (!notation.trim()) return;
@@ -449,7 +475,10 @@ export default function App() {
             <section>
               <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
                 <button
-                  onClick={() => setTilingMenuOpen(!tilingMenuOpen)}
+                  onClick={() => {
+                    if (!tilingMenuOpen) setTilingEverOpened(true);
+                    setTilingMenuOpen(!tilingMenuOpen);
+                  }}
                   className="w-full p-4 text-left transition-colors hover:bg-neutral-800/40"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -464,6 +493,23 @@ export default function App() {
                     </div>
                   </div>
                 </button>
+
+                <AnimatePresence>
+                  {showOnboarding && activeOnboardingStep === 1 && (
+                    <motion.div
+                      key="callout-1"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mx-3 mb-3 flex items-center gap-2.5 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-900/30">
+                        <ChevronRight className="w-3.5 h-3.5 shrink-0 -rotate-90" />
+                        <span>Click above to browse and pick a tiling pattern</span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 <AnimatePresence initial={false}>
                   {tilingMenuOpen && (
@@ -830,6 +876,23 @@ export default function App() {
                   </div>
                 </div>
 
+                <AnimatePresence>
+                  {showOnboarding && activeOnboardingStep === 2 && (
+                    <motion.div
+                      key="callout-2"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mb-3 flex items-center gap-2.5 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-900/30">
+                        <ChevronRight className="w-3.5 h-3.5 shrink-0 -rotate-90" />
+                        <span>Click <span className="underline underline-offset-2">Add Operator</span> above to transform the tiling</span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {operators.length > 0 && (
                   <Reorder.Group
                     axis="y"
@@ -899,6 +962,7 @@ export default function App() {
                                       ));
                                       setRawEditorOpen(false);
                                       setPresetPickerOpen(false);
+                                      setPresetOrRandomUsed(true);
                                     }}
                                     className={OPERATOR_ACTION_BUTTON_CLASS}
                                     title="Random operator"
@@ -926,6 +990,24 @@ export default function App() {
                                   </button>
                               </div>
                             </div>
+                            <AnimatePresence>
+                              {showOnboarding && activeOnboardingStep === 3 && (
+                                <motion.div
+                                  key="callout-3"
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="overflow-hidden"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <div className="mt-2 flex items-center gap-2.5 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-900/30">
+                                    <ChevronRight className="w-3.5 h-3.5 shrink-0 rotate-90" />
+                                    <span>Use <span className="underline underline-offset-2">Preset</span> or <span className="underline underline-offset-2">Random</span> above to apply an operator</span>
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                             {(() => {
                               const visibility = getOmniParamVisibility(op.notation);
                               const isSelectedOperator = selectedOperatorId === op.id;
@@ -1054,6 +1136,7 @@ export default function App() {
                                                     setOperators((current) => current.map((item) =>
                                                       item.id === selectedOperatorId ? { ...item, notation } : item
                                                     ));
+                                                    setPresetOrRandomUsed(true);
                                                   }
                                                 }}
                                                 className="w-full px-3 py-2 rounded-lg text-xs border bg-neutral-800/40 border-neutral-700/50 text-neutral-200 focus:outline-none focus:border-blue-500"
@@ -1268,6 +1351,57 @@ export default function App() {
             generationOptions={generationOptions}
           />
         </div>
+
+        <AnimatePresence>
+          {showOnboarding && (
+            <motion.div
+              key="onboarding"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="absolute bottom-20 right-6 z-20 w-60 rounded-2xl border border-neutral-700/60 bg-neutral-900/90 p-4 shadow-2xl backdrop-blur-md"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-300">Getting Started</span>
+                <button onClick={dismissOnboarding} className="text-neutral-500 transition-colors hover:text-white">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { step: 1, label: 'Pick a tiling', done: step1Complete },
+                  { step: 2, label: 'Add an operator', done: step2Complete },
+                  { step: 3, label: 'Choose a preset or click Random', done: step3Complete },
+                ].map(({ step, label, done }) => (
+                  <div key={step} className="flex items-start gap-3">
+                    <div
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
+                        done
+                          ? 'bg-emerald-600 text-white'
+                          : step === activeOnboardingStep
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-neutral-700 text-neutral-500'
+                      }`}
+                    >
+                      {done ? '✓' : step}
+                    </div>
+                    <span
+                      className={`text-xs leading-relaxed transition-colors ${
+                        done
+                          ? 'text-neutral-600 line-through'
+                          : step === activeOnboardingStep
+                            ? 'text-white'
+                            : 'text-neutral-500'
+                      }`}
+                    >
+                      {label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-4 py-2 bg-neutral-900/60 backdrop-blur-md border border-neutral-800 rounded-full flex items-center gap-6">
           <div className="flex items-center gap-2">
