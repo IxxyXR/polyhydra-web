@@ -204,12 +204,12 @@ const findValidPlacement = (notation: string) => {
       const fePts = fePositions(feT);
       const result = createData(notation, vfPts, fePts);
       if (!hasCrossingOrDuplicate(result.segments)) {
-        return result;
+        return { ...result, vfPts, fePts };
       }
     }
   }
 
-  return createData(notation);
+  return { ...createData(notation), vfPts: undefined as Point[] | undefined, fePts: undefined as Point[] | undefined };
 };
 
 const isOutsidePoint = ([x, y]: Point) => (
@@ -241,10 +241,38 @@ const taperingLinePath = (interior: Point, outside: Point, strokeWidth: number, 
 
 const EMPTY_DIAGRAM_TYPES = ['V', 'E', 'F', 've', 'vf', 'fe'] as const;
 
-export function createEmptyDiagramSvg(): string {
+const renderPreviewSegments = (previewAtom: string, vfPts?: Point[], fePts?: Point[], existingSegments: Segment[] = []): string => {
+  const previewData = createData(previewAtom, vfPts, fePts);
+  const existingKeys = new Set(existingSegments.map((s) => `${pointKey(s.a)}|${pointKey(s.b)}`));
+  let out = '';
+  for (const segment of previewData.segments) {
+    const key = `${pointKey(segment.a)}|${pointKey(segment.b)}`;
+    if (existingKeys.has(key)) continue;
+    const aOutside = isOutsidePoint(segment.a);
+    const bOutside = isOutsidePoint(segment.b);
+    if (aOutside || bOutside) {
+      const interior = aOutside ? segment.b : segment.a;
+      const outside = aOutside ? segment.a : segment.b;
+      const polygon = taperingLinePath(interior, outside, LINE_WIDTH);
+      if (polygon) {
+        out += `<polygon points="${polygon}" fill="#fbbf24" stroke="none" opacity="0.65"/>`;
+      }
+    } else {
+      out += `<line x1="${segment.a[0]}" y1="${segment.a[1]}" x2="${segment.b[0]}" y2="${segment.b[1]}" stroke="#fbbf24" stroke-width="${LINE_WIDTH}" stroke-dasharray="0.05 0.035" opacity="0.75"/>`;
+    }
+  }
+  return out;
+};
+
+export function createEmptyDiagramSvg(previewAtom: string | null = null): string {
+  const vfPts = vfPositions(T_VALUES[0]);
+  const fePts = fePositions(T_VALUES[0]);
   const viewBoxSize = 1 + 2 * PADDING;
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-${PADDING} -${PADDING} ${viewBoxSize} ${viewBoxSize}" fill="none">`;
   svg += `<rect x="0" y="0" width="1" height="1" fill="none" stroke="#374151" stroke-width="0.024" stroke-dasharray="0.03 0.025"/>`;
+  if (previewAtom) {
+    svg += renderPreviewSegments(previewAtom, vfPts, fePts);
+  }
   for (const type of EMPTY_DIAGRAM_TYPES) {
     for (const [x, y] of DOT_POSITIONS[type]) {
       svg += `<circle cx="${x}" cy="${y}" r="${DOT_RADIUS}" fill="#ef4444" stroke="#f5f5f5" stroke-width="${DOT_OUTLINE_WIDTH}" data-type="${type}" style="cursor:pointer"/>`;
@@ -254,13 +282,13 @@ export function createEmptyDiagramSvg(): string {
   return svg;
 }
 
-export function createOmniOperatorDiagramSvg(notation: string): string | null {
+export function createOmniOperatorDiagramSvg(notation: string, previewAtom: string | null = null): string | null {
   const cleaned = notation.split(',').map((part) => part.trim()).filter(Boolean).join(',');
   if (!cleaned) {
     return null;
   }
 
-  const { segments, points } = findValidPlacement(cleaned);
+  const { segments, points, vfPts, fePts } = findValidPlacement(cleaned);
   if (segments.length === 0 && points.length === 0) {
     return null;
   }
@@ -268,6 +296,10 @@ export function createOmniOperatorDiagramSvg(notation: string): string | null {
   const viewBoxSize = 1 + 2 * PADDING;
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-${PADDING} -${PADDING} ${viewBoxSize} ${viewBoxSize}" fill="none">`;
   svg += `<rect x="0" y="0" width="1" height="1" fill="none" stroke="#374151" stroke-width="0.024" stroke-dasharray="0.03 0.025"/>`;
+
+  if (previewAtom) {
+    svg += renderPreviewSegments(previewAtom, vfPts, fePts, segments);
+  }
 
   for (const segment of segments) {
     const aOutside = isOutsidePoint(segment.a);

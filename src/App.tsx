@@ -348,7 +348,7 @@ export default function App() {
   const selectedPresetValue = !selectedOperatorNotation.trim()
     ? NO_PRESET_VALUE
     : (selectedMatchingPresetName ?? CUSTOM_PRESET_VALUE);
-  const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation) ?? (selectedOperatorNotation.trim() === '' ? createEmptyDiagramSvg() : null);
+  const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation, hoveredGridAtom) ?? (selectedOperatorNotation.trim() === '' ? createEmptyDiagramSvg(hoveredGridAtom) : null);
   const activeOperators = operators.filter((op) => {
     if (!op.enabled) return false;
     const atoms = Array.from(new Set(parseAtomList(resolveOperatorNotation(op.notation))));
