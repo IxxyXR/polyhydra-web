@@ -239,6 +239,21 @@ const taperingLinePath = (interior: Point, outside: Point, strokeWidth: number, 
   return points.map(([x, y]) => `${x.toFixed(4)},${y.toFixed(4)}`).join(' ');
 };
 
+const EMPTY_DIAGRAM_TYPES = ['V', 'E', 'F', 've', 'vf', 'fe'] as const;
+
+export function createEmptyDiagramSvg(): string {
+  const viewBoxSize = 1 + 2 * PADDING;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-${PADDING} -${PADDING} ${viewBoxSize} ${viewBoxSize}" fill="none">`;
+  svg += `<rect x="0" y="0" width="1" height="1" fill="none" stroke="#374151" stroke-width="0.024" stroke-dasharray="0.03 0.025"/>`;
+  for (const type of EMPTY_DIAGRAM_TYPES) {
+    for (const [x, y] of DOT_POSITIONS[type]) {
+      svg += `<circle cx="${x}" cy="${y}" r="${DOT_RADIUS}" fill="#ef4444" stroke="#f5f5f5" stroke-width="${DOT_OUTLINE_WIDTH}" data-type="${type}" style="cursor:pointer"/>`;
+    }
+  }
+  svg += '</svg>';
+  return svg;
+}
+
 export function createOmniOperatorDiagramSvg(notation: string): string | null {
   const cleaned = notation.split(',').map((part) => part.trim()).filter(Boolean).join(',');
   if (!cleaned) {

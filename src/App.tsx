@@ -36,7 +36,7 @@ import {
 import { PALETTES, PaletteKey } from './lib/palettes';
 import { exportObj, exportOff, exportSvg } from './lib/export';
 import { ColorMode } from './lib/coloring';
-import { createOmniOperatorDiagramSvg } from './lib/omni-diagram';
+import { createOmniOperatorDiagramSvg, createEmptyDiagramSvg } from './lib/omni-diagram';
 import {
   createOperatorSpec,
   DEFAULT_OMNI_PARAMS,
@@ -348,7 +348,7 @@ export default function App() {
   const selectedPresetValue = !selectedOperatorNotation.trim()
     ? NO_PRESET_VALUE
     : (selectedMatchingPresetName ?? CUSTOM_PRESET_VALUE);
-  const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation);
+  const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation) ?? (selectedOperatorNotation.trim() === '' ? createEmptyDiagramSvg() : null);
   const activeOperators = operators.filter((op) => {
     if (!op.enabled) return false;
     const atoms = Array.from(new Set(parseAtomList(resolveOperatorNotation(op.notation))));
@@ -1043,8 +1043,8 @@ export default function App() {
                                       </div>
                                       <input
                                         type="range"
-                                        min="0"
-                                        max="1"
+                                        min="0.01"
+                                        max="0.99"
                                         step="0.01"
                                         value={op.tVe}
                                         onChange={(e) => updateOperatorParams(op.id, 'tVe', e.target.value)}
@@ -1064,8 +1064,8 @@ export default function App() {
                                       </div>
                                       <input
                                         type="range"
-                                        min="0"
-                                        max="1"
+                                        min="0.01"
+                                        max="0.99"
                                         step="0.01"
                                         value={op.tVf}
                                         onChange={(e) => updateOperatorParams(op.id, 'tVf', e.target.value)}
@@ -1085,8 +1085,8 @@ export default function App() {
                                       </div>
                                       <input
                                         type="range"
-                                        min="0"
-                                        max="1"
+                                        min="0.01"
+                                        max="0.99"
                                         step="0.01"
                                         value={op.tFe}
                                         onChange={(e) => updateOperatorParams(op.id, 'tFe', e.target.value)}
@@ -1205,6 +1205,7 @@ export default function App() {
                                                   }}
                                                   transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
                                                   className="rounded-full border px-2 py-1 font-semibold uppercase tracking-widest"
+                                                  title="Choose more atoms to complete this operator"
                                                 >
                                                   Incomplete
                                                 </motion.span>
