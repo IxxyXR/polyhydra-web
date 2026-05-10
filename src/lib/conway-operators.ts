@@ -444,6 +444,7 @@ export const OMNI_PRESETS: Record<string, string> = {
   Stake: 'F-fe,V-V,fe-V',
   'Opposite-Stake': 'F-fe,fe-V,fe-fe!',
   'Join-Kis-Kis': 'F-V,F-fe,fe-V',
+  'Join-Medial': 'F-ve',
   Medial: 'F-ve,V-ve,ve0-ve0',
   'Edge-Medial': 'F-V,F-ve,V-ve,ve0-ve0',
 };
