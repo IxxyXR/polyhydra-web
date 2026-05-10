@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Settings,
@@ -56,6 +56,8 @@ import {
   parseAtomList,
   resolveOperatorNotation,
   serializeOperatorSpec,
+  applyOperator,
+  hasMeshEdgeCrossings,
   OperatorSpec,
 } from './lib/conway-operators';
 
@@ -444,6 +446,25 @@ export default function App() {
 
   const selectedTiling = UNIFORM_TILINGS[tilingType];
   const selectedPalette = PALETTES[palette];
+
+  const selectedOperatorHasCrossings = useMemo(() => {
+    if (!selectedOperatorId) return false;
+    const tiling = UNIFORM_TILINGS[tilingType];
+    if (!tiling || tilingType === 'multigrid') return false;
+    const selectedIdx = operators.findIndex(op => op.id === selectedOperatorId);
+    if (selectedIdx === -1 || !operators[selectedIdx].enabled) return false;
+    try {
+      let { vertices, faces } = tiling.generate(2, 2);
+      for (let i = 0; i <= selectedIdx; i++) {
+        if (operators[i].enabled) {
+          ({ vertices, faces } = applyOperator({ vertices, faces }, operators[i]));
+        }
+      }
+      return hasMeshEdgeCrossings({ vertices, faces });
+    } catch {
+      return false;
+    }
+  }, [operators, tilingType, selectedOperatorId]);
   const isMultigrid = tilingType === 'multigrid';
   const generationOptions: TilingGenerationOptions = {
     multigrid: multigridSettings,
@@ -1431,6 +1452,23 @@ export default function App() {
                                           />
                                         </label>
                                       )}
+
+                                      <AnimatePresence>
+                                        {selectedOperatorHasCrossings && (visibility.showP1 || visibility.showP2 || visibility.showP3) && (
+                                          <motion.div
+                                            key="crossing-warning"
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            className="overflow-hidden"
+                                          >
+                                            <div className="mt-1 flex items-center gap-2 rounded-lg border border-red-800/50 bg-red-950/40 px-2.5 py-2 text-[10px] text-red-300">
+                                              <span className="shrink-0">⚠</span>
+                                              <span>Edges are crossing — adjust sliders to fix</span>
+                                            </div>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
 
                                       {unknownSelectedAtoms.length > 0 && (
                                         <p className="text-[10px] text-red-400 font-mono break-all">

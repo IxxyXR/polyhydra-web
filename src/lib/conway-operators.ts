@@ -1719,6 +1719,52 @@ export function join(mesh: Mesh): Mesh {
   return applyOmni(mesh, OMNI_PRESETS.Join);
 }
 
+export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
+  const { vertices, faces } = mesh;
+
+  const edgeSet = new Set<string>();
+  const edges: [number, number][] = [];
+  for (const face of faces) {
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i];
+      const b = face[(i + 1) % face.length];
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        edges.push([a, b]);
+      }
+    }
+  }
+
+  const cross2d = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
+
+  for (let i = 0; i < edges.length; i++) {
+    const [a1, b1] = edges[i];
+    const p1x = vertices[a1 * 3], p1y = vertices[a1 * 3 + 1];
+    const p2x = vertices[b1 * 3], p2y = vertices[b1 * 3 + 1];
+
+    for (let j = i + 1; j < edges.length; j++) {
+      const [a2, b2] = edges[j];
+      if (a1 === a2 || a1 === b2 || b1 === a2 || b1 === b2) continue;
+
+      const p3x = vertices[a2 * 3], p3y = vertices[a2 * 3 + 1];
+      const p4x = vertices[b2 * 3], p4y = vertices[b2 * 3 + 1];
+
+      const d1 = cross2d(p4x - p3x, p4y - p3y, p1x - p3x, p1y - p3y);
+      const d2 = cross2d(p4x - p3x, p4y - p3y, p2x - p3x, p2y - p3y);
+      const d3 = cross2d(p2x - p1x, p2y - p1y, p3x - p1x, p3y - p1y);
+      const d4 = cross2d(p2x - p1x, p2y - p1y, p4x - p1x, p4y - p1y);
+
+      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 export function ortho(mesh: Mesh): Mesh {
   return applyOmni(mesh, OMNI_PRESETS.Ortho);
 }
