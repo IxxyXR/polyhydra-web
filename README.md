@@ -6,6 +6,15 @@ Live site: https://ixxyxr.github.io/polyhydra-web/
 
 Repository: https://github.com/IxxyXR/polyhydra-web
 
+## Background
+
+This project is a web port of [polyhydra-core](https://github.com/IxxyXR/polyhydra-core), built with extensive LLM assistance.
+
+The same underlying geometry code is also used in:
+
+- **Open Brush** — [3D Shapes experimental build](https://docs.openbrush.app/alternate-and-experimental-builds/3d-shapes)
+- **Open Blocks** — [Open Blocks (Pull request, no builds currently)](https://github.com/icosa-foundation/open-blocks/pull/80)
+
 ## Development
 
 Prerequisites:
