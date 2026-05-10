@@ -165,6 +165,7 @@ export default function App() {
   );
   const [tilingEverOpened, setTilingEverOpened] = useState(false);
   const [presetOrRandomUsed, setPresetOrRandomUsed] = useState(false);
+  const [diagramOrGridClicked, setDiagramOrGridClicked] = useState(false);
   const [initialHadOperators] = useState(() =>
     new URLSearchParams(window.location.search).has('ops')
   );
@@ -172,9 +173,10 @@ export default function App() {
   const step1Complete = tilingEverOpened;
   const step2Complete = initialHadOperators || operators.length > 0;
   const step3Complete = presetOrRandomUsed;
-  const allOnboardingComplete = step1Complete && step2Complete && step3Complete;
+  const step4Complete = diagramOrGridClicked;
+  const allOnboardingComplete = step1Complete && step2Complete && step3Complete && step4Complete;
   const showOnboarding = !onboardingDismissed;
-  const activeOnboardingStep = !step1Complete ? 1 : !step2Complete ? 2 : !step3Complete ? 3 : 4;
+  const activeOnboardingStep = !step1Complete ? 1 : !step2Complete ? 2 : !step3Complete ? 3 : !step4Complete ? 4 : 5;
 
   const dismissOnboarding = () => {
     localStorage.setItem('polyhydra-onboarding-done', '1');
@@ -512,8 +514,8 @@ export default function App() {
                       exit={{ opacity: 0, height: 0 }}
                       className="overflow-hidden"
                     >
-                      <div className="mx-3 mt-3 flex items-center gap-2.5 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-900/30">
-                        <ChevronRight className="w-3.5 h-3.5 shrink-0 rotate-90" />
+                      <div className="callout-animate mx-3 mt-3 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
+                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">1</span>
                         <span>Click below to browse and pick a tiling pattern</span>
                       </div>
                     </motion.div>
@@ -863,12 +865,12 @@ export default function App() {
                               <input type="checkbox" checked={showVertices} onChange={(e) => setShowVertices(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
                             </label>
                             <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Wireframe</span>
-                              <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                              <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Wireframe</span>
+                              <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
                             </label>
                             <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Face Highlight</span>
-                              <input type="checkbox" checked={faceHighlight} onChange={(e) => setFaceHighlight(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                              <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Face Highlight</span>
+                              <input type="checkbox" checked={faceHighlight} onChange={(e) => setFaceHighlight(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
                             </label>
                           </div>
                         </div>
@@ -894,9 +896,9 @@ export default function App() {
                       exit={{ opacity: 0, height: 0 }}
                       className="overflow-hidden"
                     >
-                      <div className="mb-3 flex items-center gap-2.5 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-900/30">
-                        <ChevronRight className="w-3.5 h-3.5 shrink-0 rotate-90" />
-                        <span>Click <span className="underline underline-offset-2">Add Operator</span> below to transform the tiling</span>
+                      <div className="callout-animate mb-3 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
+                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">2</span>
+                        <span>Click <span className="font-black">Add Operator</span> below to transform the tiling</span>
                       </div>
                     </motion.div>
                   )}
@@ -956,9 +958,9 @@ export default function App() {
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => e.stopPropagation()}
                                 >
-                                  <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-900/30">
-                                    <ChevronRight className="w-3.5 h-3.5 shrink-0 rotate-90" />
-                                    <span>Use <span className="underline underline-offset-2">Preset</span> or <span className="underline underline-offset-2">Random</span> below to apply an operator</span>
+                                  <div className="callout-animate mb-2 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
+                                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">3</span>
+                                    <span>Use <span className="inline-flex items-center gap-1 font-black"><List className="w-3 h-3" />Preset</span> or <span className="inline-flex items-center gap-1 font-black"><Shuffle className="w-3 h-3" />Random</span> below to apply an operator</span>
                                   </div>
                                 </motion.div>
                               )}
@@ -1194,6 +1196,23 @@ export default function App() {
                                         )}
                                       </AnimatePresence>
 
+                                      <AnimatePresence>
+                                        {showOnboarding && activeOnboardingStep === 4 && (
+                                          <motion.div
+                                            key="callout-4"
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            className="overflow-hidden"
+                                          >
+                                            <div className="callout-animate mb-3 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
+                                              <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">4</span>
+                                              <span>Edit the operator by clicking the diagram or grid</span>
+                                            </div>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+
                                       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-2">
                                         {selectedOperatorDiagramSvg && (
                                           <div className="mb-2 rounded-lg border border-neutral-800 bg-neutral-950/60 p-3">
@@ -1209,6 +1228,7 @@ export default function App() {
                                               }}
                                               onMouseLeave={() => setHoveredDotType(null)}
                                               onClick={(e) => {
+                                                setDiagramOrGridClicked(true);
                                                 const type = (e.target as Element).getAttribute('data-type');
                                                 if (type) {
                                                   setDotPopup((prev) => prev?.type === type ? null : { type, x: e.clientX, y: e.clientY });
@@ -1313,7 +1333,7 @@ export default function App() {
                                                     type="button"
                                                     onMouseEnter={() => setHoveredGridAtom(atom)}
                                                     onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
-                                                    onClick={() => toggleGridAtom(atom)}
+                                                    onClick={() => { setDiagramOrGridClicked(true); toggleGridAtom(atom); }}
                                                     disabled={!isSelected && !isCompatible}
                                                     className={`aspect-square rounded-md border transition-colors ${baseClass}`}
                                                     title={atom}
@@ -1392,7 +1412,7 @@ export default function App() {
             <section>
               <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Download className="w-3 h-3" />
-                Export Mesh
+                Export/Share
               </h2>
               <div className="grid grid-cols-3 gap-2">
                 <button
@@ -1499,6 +1519,7 @@ export default function App() {
                   { step: 1, label: 'Pick a tiling', done: step1Complete },
                   ...(!initialHadOperators ? [{ step: 2, label: 'Add an operator', done: step2Complete }] : []),
                   { step: initialHadOperators ? 2 : 3, label: 'Choose a preset or click Random', done: step3Complete },
+                  { step: initialHadOperators ? 3 : 4, label: 'Edit the operator via diagram or grid', done: step4Complete },
                 ].map(({ step, label, done }) => (
                   <div key={step} className="flex items-start gap-3">
                     <div

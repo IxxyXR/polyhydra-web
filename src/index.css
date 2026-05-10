@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@keyframes callout-pulse {
+  0%, 100% { background-color: #facc15; } /* yellow-400 */
+  50%       { background-color: #fef08a; } /* yellow-200 */
+}
+
+.callout-animate {
+  animation: callout-pulse 2s ease-in-out infinite;
+}
