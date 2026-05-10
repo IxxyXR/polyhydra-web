@@ -135,6 +135,59 @@ function createOperator(notation: string, enabled = true, overrides: Partial<Ope
   };
 }
 
+function buildAppSearchParams(state: {
+  mode: '2d' | '3d';
+  finalization: MeshFinalizationMode;
+  radialType: RadialPolyType;
+  radialSides: number;
+  tilingType: string;
+  rows: number;
+  cols: number;
+  showEdges: boolean;
+  showVertices: boolean;
+  showFaces: boolean;
+  wireframe: boolean;
+  palette: PaletteKey;
+  colorMode: ColorMode;
+  edgeColor: string;
+  multigridSettings: MultiGridSettings;
+  operators: OperatorState[];
+}) {
+  const params = new URLSearchParams();
+  params.set('mode', state.mode);
+  params.set('finalization', state.finalization);
+  params.set('radialType', state.radialType);
+  params.set('radialSides', state.radialSides.toString());
+  params.set('tiling', state.tilingType);
+  params.set('rows', state.rows.toString());
+  params.set('cols', state.cols.toString());
+  params.set('edges', state.showEdges.toString());
+  params.set('vertices', state.showVertices.toString());
+  params.set('faces', state.showFaces.toString());
+  params.set('wireframe', state.wireframe.toString());
+  params.set('palette', state.palette);
+  params.set('colorMode', state.colorMode);
+  params.set('edgeColor', state.edgeColor);
+  params.set('mgDim', state.multigridSettings.dimensions.toString());
+  params.set('mgDiv', state.multigridSettings.divisions.toString());
+  params.set('mgOff', state.multigridSettings.offset.toString());
+  params.set('mgRand', state.multigridSettings.randomize.toString());
+  params.set('mgShared', state.multigridSettings.sharedVertices.toString());
+  params.set('mgMin', state.multigridSettings.minDistance.toString());
+  params.set('mgMax', state.multigridSettings.maxDistance.toString());
+  params.set('mgRatio', state.multigridSettings.colorRatio.toString());
+  params.set('mgIntersect', state.multigridSettings.colorIntersect.toString());
+  params.set('mgIndex', state.multigridSettings.colorIndex.toString());
+  params.set('mgSeed', state.multigridSettings.randomSeed.toString());
+  if (state.operators.length > 0) {
+    params.set('ops', state.operators.map((operator) => {
+      const serialized = serializeOperatorSpec(operator);
+      return encodeURIComponent((operator.enabled ? '' : '!') + serialized);
+    }).join(';'));
+  }
+  return params;
+}
+
 export default function App() {
   const [mode, setMode] = useState<'2d' | '3d'>('2d');
   const [radialType, setRadialType] = useState<RadialPolyType>('Prism');
@@ -310,38 +363,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    params.set('mode', mode);
-    params.set('finalization', finalization);
-    params.set('radialType', radialType);
-    params.set('radialSides', radialSides.toString());
-    params.set('tiling', tilingType);
-    params.set('rows', rows.toString());
-    params.set('cols', cols.toString());
-    params.set('edges', showEdges.toString());
-    params.set('vertices', showVertices.toString());
-    params.set('faces', showFaces.toString());
-    params.set('wireframe', wireframe.toString());
-    params.set('palette', palette);
-    params.set('colorMode', colorMode);
-    params.set('edgeColor', edgeColor);
-    params.set('mgDim', multigridSettings.dimensions.toString());
-    params.set('mgDiv', multigridSettings.divisions.toString());
-    params.set('mgOff', multigridSettings.offset.toString());
-    params.set('mgRand', multigridSettings.randomize.toString());
-    params.set('mgShared', multigridSettings.sharedVertices.toString());
-    params.set('mgMin', multigridSettings.minDistance.toString());
-    params.set('mgMax', multigridSettings.maxDistance.toString());
-    params.set('mgRatio', multigridSettings.colorRatio.toString());
-    params.set('mgIntersect', multigridSettings.colorIntersect.toString());
-    params.set('mgIndex', multigridSettings.colorIndex.toString());
-    params.set('mgSeed', multigridSettings.randomSeed.toString());
-    if (operators.length > 0) {
-      params.set('ops', operators.map((o) => {
-        const serialized = serializeOperatorSpec(o);
-        return encodeURIComponent((o.enabled ? '' : '!') + serialized);
-      }).join(';'));
-    }
+    const params = buildAppSearchParams({
+      mode,
+      finalization,
+      radialType,
+      radialSides,
+      tilingType,
+      rows,
+      cols,
+      showEdges,
+      showVertices,
+      showFaces,
+      wireframe,
+      palette,
+      colorMode,
+      edgeColor,
+      multigridSettings,
+      operators,
+    });
 
     if (!isReady) return;
     if (isPopStateRef.current) {
@@ -1756,7 +1795,25 @@ export default function App() {
               </div>
               <button
                 onClick={async () => {
-                  const url = window.location.href;
+                  const params = buildAppSearchParams({
+                    mode,
+                    finalization,
+                    radialType,
+                    radialSides,
+                    tilingType,
+                    rows,
+                    cols,
+                    showEdges,
+                    showVertices,
+                    showFaces,
+                    wireframe,
+                    palette,
+                    colorMode,
+                    edgeColor,
+                    multigridSettings,
+                    operators,
+                  });
+                  const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
                   if (navigator.share) {
                     await navigator.share({ url });
                   } else {
