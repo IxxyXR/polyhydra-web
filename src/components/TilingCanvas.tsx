@@ -126,11 +126,15 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
 
     if (operators.length > 0) {
       let mesh: Mesh = { vertices, faces };
-      for (const op of operators) {
-        mesh = applyOperator(mesh, op);
+      try {
+        for (const op of operators) {
+          mesh = applyOperator(mesh, op);
+        }
+        vertices = mesh.vertices;
+        faces = mesh.faces;
+      } catch (e) {
+        console.warn('Operator failed:', (e as Error).message);
       }
-      vertices = mesh.vertices;
-      faces = mesh.faces;
     }
 
     const computedFaceColors = computeFaceColors({ vertices, faces }, palette, colorMode);
