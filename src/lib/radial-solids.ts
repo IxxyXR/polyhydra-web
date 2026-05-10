@@ -1,4 +1,14 @@
+import { applyOperator, Mesh } from './conway-operators';
+
 export type RadialPolyType =
+  | 'Tetrahedron' | 'Cube' | 'Octahedron' | 'Dodecahedron' | 'Icosahedron'
+  | 'TruncatedTetrahedron'
+  | 'Cuboctahedron' | 'TruncatedCube' | 'TruncatedOctahedron' | 'Rhombicuboctahedron' | 'TruncatedCuboctahedron' | 'SnubCube'
+  | 'Icosidodecahedron' | 'TruncatedDodecahedron' | 'TruncatedIcosahedron' | 'Rhombicosidodecahedron' | 'TruncatedIcosidodecahedron' | 'SnubDodecahedron'
+  | 'TriakisTetrahedron' | 'RhombicDodecahedron' | 'TriakisOctahedron' | 'TetrakisHexahedron'
+  | 'DeltoidalIcositetrahedron' | 'DisdyakisDodecahedron' | 'PentagonalIcositetrahedron'
+  | 'RhombicTriacontahedron' | 'TriakisIcosahedron' | 'PentakisDodecahedron'
+  | 'DeltoidalHexecontahedron' | 'DisdyakisTriacontahedron' | 'PentagonalHexecontahedron'
   | 'Prism' | 'Antiprism' | 'Trapezohedron'
   | 'Pyramid' | 'Dipyramid'
   | 'ElongatedPyramid' | 'ElongatedDipyramid'
@@ -9,6 +19,37 @@ export type RadialPolyType =
   | 'GyroelongatedBicupola';
 
 export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
+  Tetrahedron: 'Tetrahedron',
+  Cube: 'Cube',
+  Octahedron: 'Octahedron',
+  Dodecahedron: 'Dodecahedron',
+  Icosahedron: 'Icosahedron',
+  TruncatedTetrahedron: 'Truncated Tetrahedron',
+  Cuboctahedron: 'Cuboctahedron',
+  TruncatedCube: 'Truncated Cube',
+  TruncatedOctahedron: 'Truncated Octahedron',
+  Rhombicuboctahedron: 'Rhombicuboctahedron',
+  TruncatedCuboctahedron: 'Truncated Cuboctahedron',
+  SnubCube: 'Snub Cube',
+  Icosidodecahedron: 'Icosidodecahedron',
+  TruncatedDodecahedron: 'Truncated Dodecahedron',
+  TruncatedIcosahedron: 'Truncated Icosahedron',
+  Rhombicosidodecahedron: 'Rhombicosidodecahedron',
+  TruncatedIcosidodecahedron: 'Truncated Icosidodecahedron',
+  SnubDodecahedron: 'Snub Dodecahedron',
+  TriakisTetrahedron: 'Triakis Tetrahedron',
+  RhombicDodecahedron: 'Rhombic Dodecahedron',
+  TriakisOctahedron: 'Triakis Octahedron',
+  TetrakisHexahedron: 'Tetrakis Hexahedron',
+  DeltoidalIcositetrahedron: 'Deltoidal Icositetrahedron',
+  DisdyakisDodecahedron: 'Disdyakis Dodecahedron',
+  PentagonalIcositetrahedron: 'Pentagonal Icositetrahedron',
+  RhombicTriacontahedron: 'Rhombic Triacontahedron',
+  TriakisIcosahedron: 'Triakis Icosahedron',
+  PentakisDodecahedron: 'Pentakis Dodecahedron',
+  DeltoidalHexecontahedron: 'Deltoidal Hexecontahedron',
+  DisdyakisTriacontahedron: 'Disdyakis Triacontahedron',
+  PentagonalHexecontahedron: 'Pentagonal Hexecontahedron',
   Prism: 'Prism',
   Antiprism: 'Antiprism',
   Trapezohedron: 'Trapezohedron',
@@ -29,10 +70,61 @@ export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
 };
 
 export const RADIAL_SHAPE_GROUPS: { name: string; types: RadialPolyType[] }[] = [
+  { name: 'Platonic Solids', types: ['Tetrahedron', 'Cube', 'Octahedron', 'Dodecahedron', 'Icosahedron'] },
+  { name: 'Archimedean Solids', types: [
+    'TruncatedTetrahedron',
+    'Cuboctahedron',
+    'TruncatedCube',
+    'TruncatedOctahedron',
+    'Rhombicuboctahedron',
+    'TruncatedCuboctahedron',
+    'SnubCube',
+    'Icosidodecahedron',
+    'TruncatedDodecahedron',
+    'TruncatedIcosahedron',
+    'Rhombicosidodecahedron',
+    'TruncatedIcosidodecahedron',
+    'SnubDodecahedron',
+  ] },
+  { name: 'Catalan Solids', types: [
+    'TriakisTetrahedron',
+    'RhombicDodecahedron',
+    'TriakisOctahedron',
+    'TetrakisHexahedron',
+    'DeltoidalIcositetrahedron',
+    'DisdyakisDodecahedron',
+    'PentagonalIcositetrahedron',
+    'RhombicTriacontahedron',
+    'TriakisIcosahedron',
+    'PentakisDodecahedron',
+    'DeltoidalHexecontahedron',
+    'DisdyakisTriacontahedron',
+    'PentagonalHexecontahedron',
+  ] },
   { name: 'Prisms', types: ['Prism', 'Antiprism', 'Trapezohedron'] },
   { name: 'Pyramids', types: ['Pyramid', 'Dipyramid', 'ElongatedPyramid', 'ElongatedDipyramid', 'GyroelongatedPyramid', 'GyroelongatedDipyramid'] },
   { name: 'Cupolae', types: ['Cupola', 'ElongatedCupola', 'GyroelongatedCupola', 'OrthoBicupola', 'GyroBicupola', 'ElongatedOrthoBicupola', 'ElongatedGyroBicupola', 'GyroelongatedBicupola'] },
 ];
+
+export const RADIAL_TYPES_WITH_SIDES = new Set<RadialPolyType>([
+  'Prism',
+  'Antiprism',
+  'Trapezohedron',
+  'Pyramid',
+  'Dipyramid',
+  'ElongatedPyramid',
+  'ElongatedDipyramid',
+  'GyroelongatedPyramid',
+  'GyroelongatedDipyramid',
+  'Cupola',
+  'ElongatedCupola',
+  'GyroelongatedCupola',
+  'OrthoBicupola',
+  'GyroBicupola',
+  'ElongatedOrthoBicupola',
+  'ElongatedGyroBicupola',
+  'GyroelongatedBicupola',
+]);
 
 // --- vector helpers ---
 type V3 = [number, number, number];
@@ -61,6 +153,164 @@ function fixNormals(vertices: number[], faces: number[][]): number[][] {
     fc[0] /= face.length; fc[1] /= face.length; fc[2] /= face.length;
     return dot(n0, sub(fc, mc)) >= 0 ? face : [...face].reverse();
   });
+}
+
+function centerAndNormalize(mesh: Mesh, targetRadius = 1.5): Mesh {
+  const centered = [...mesh.vertices];
+  const vertexCount = centered.length / 3;
+  if (vertexCount === 0) {
+    return { vertices: centered, faces: mesh.faces.map((face) => [...face]) };
+  }
+
+  let cx = 0;
+  let cy = 0;
+  let cz = 0;
+  for (let i = 0; i < centered.length; i += 3) {
+    cx += centered[i];
+    cy += centered[i + 1];
+    cz += centered[i + 2];
+  }
+  cx /= vertexCount;
+  cy /= vertexCount;
+  cz /= vertexCount;
+
+  let maxRadius = 0;
+  for (let i = 0; i < centered.length; i += 3) {
+    centered[i] -= cx;
+    centered[i + 1] -= cy;
+    centered[i + 2] -= cz;
+    maxRadius = Math.max(maxRadius, Math.hypot(centered[i], centered[i + 1], centered[i + 2]));
+  }
+
+  if (maxRadius > 1e-9) {
+    const scaleFactor = targetRadius / maxRadius;
+    for (let i = 0; i < centered.length; i += 1) {
+      centered[i] *= scaleFactor;
+    }
+  }
+
+  return {
+    vertices: centered,
+    faces: mesh.faces.map((face) => [...face]),
+    faceValues: mesh.faceValues ? [...mesh.faceValues] : undefined,
+  };
+}
+
+function computeFaceCentroid(mesh: Mesh, face: number[]): Vec3 {
+  const centroid: Vec3 = [0, 0, 0];
+  for (const vertexIndex of face) {
+    const vertex = v3(mesh.vertices, vertexIndex);
+    centroid[0] += vertex[0];
+    centroid[1] += vertex[1];
+    centroid[2] += vertex[2];
+  }
+  const scaleFactor = 1 / face.length;
+  return [centroid[0] * scaleFactor, centroid[1] * scaleFactor, centroid[2] * scaleFactor];
+}
+
+function computeFaceNormalRaw(mesh: Mesh, face: number[]): Vec3 {
+  const centroid = computeFaceCentroid(mesh, face);
+  let normal: Vec3 = [0, 0, 0];
+  for (let i = 0; i < face.length; i += 1) {
+    const a = sub(v3(mesh.vertices, face[i]), centroid);
+    const b = sub(v3(mesh.vertices, face[(i + 1) % face.length]), centroid);
+    normal = add(normal, cross(a, b));
+  }
+  return normal;
+}
+
+function computeVertexNormal(mesh: Mesh, incidentFaces: number[][]): Vec3 {
+  let normal: Vec3 = [0, 0, 0];
+  for (const face of incidentFaces) {
+    normal = add(normal, computeFaceNormalRaw(mesh, face));
+  }
+  return norm(normal);
+}
+
+function buildAlternatedSolid(base: Mesh, operators: string[], keepColor = 0): Mesh {
+  const source = buildDerivedSolid(base, operators);
+  const adjacency = Array.from({ length: source.vertices.length / 3 }, () => new Set<number>());
+  const incidentFaces = Array.from({ length: source.vertices.length / 3 }, () => [] as number[][]);
+
+  for (const face of source.faces) {
+    for (let i = 0; i < face.length; i += 1) {
+      const a = face[i];
+      const b = face[(i + 1) % face.length];
+      adjacency[a].add(b);
+      adjacency[b].add(a);
+      incidentFaces[a].push(face);
+    }
+  }
+
+  const colors = new Array(adjacency.length).fill(-1);
+  for (let start = 0; start < colors.length; start += 1) {
+    if (colors[start] !== -1) {
+      continue;
+    }
+    colors[start] = 0;
+    const queue = [start];
+    for (let index = 0; index < queue.length; index += 1) {
+      const current = queue[index];
+      for (const neighbor of adjacency[current]) {
+        if (colors[neighbor] === -1) {
+          colors[neighbor] = 1 - colors[current];
+          queue.push(neighbor);
+        } else if (colors[neighbor] === colors[current]) {
+          throw new Error('Alternation requires a bipartite vertex graph.');
+        }
+      }
+    }
+  }
+
+  const keptVertices: number[] = [];
+  const indexMap = new Map<number, number>();
+  for (let vertexIndex = 0; vertexIndex < colors.length; vertexIndex += 1) {
+    if (colors[vertexIndex] !== keepColor) {
+      continue;
+    }
+    indexMap.set(vertexIndex, keptVertices.length / 3);
+    const vertex = v3(source.vertices, vertexIndex);
+    keptVertices.push(vertex[0], vertex[1], vertex[2]);
+  }
+
+  const faces: number[][] = [];
+
+  for (const face of source.faces) {
+    const filtered = face.filter((vertexIndex) => colors[vertexIndex] === keepColor);
+    if (filtered.length < 3) {
+      continue;
+    }
+    faces.push(filtered.map((vertexIndex) => indexMap.get(vertexIndex) as number));
+  }
+
+  for (let vertexIndex = 0; vertexIndex < colors.length; vertexIndex += 1) {
+    if (colors[vertexIndex] === keepColor) {
+      continue;
+    }
+
+    const neighbors = [...adjacency[vertexIndex]].filter((neighbor) => colors[neighbor] === keepColor);
+    if (neighbors.length < 3) {
+      continue;
+    }
+
+    const center = v3(source.vertices, vertexIndex);
+    const normal = computeVertexNormal(source, incidentFaces[vertexIndex]);
+    const fallbackAxis: Vec3 = Math.abs(normal[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const tangent = norm(cross(fallbackAxis, normal));
+    const bitangent = norm(cross(normal, tangent));
+
+    neighbors.sort((a, b) => {
+      const da = sub(v3(source.vertices, a), center);
+      const db = sub(v3(source.vertices, b), center);
+      const angleA = Math.atan2(dot(da, bitangent), dot(da, tangent));
+      const angleB = Math.atan2(dot(db, bitangent), dot(db, tangent));
+      return angleA - angleB;
+    });
+
+    faces.push(neighbors.map((neighbor) => indexMap.get(neighbor) as number));
+  }
+
+  return centerAndNormalize({ vertices: keptVertices, faces });
 }
 
 // --- geometry helpers ---
@@ -430,12 +680,109 @@ function makeGyroelongatedBicupola(n: number, h?: number, capH?: number, capGyro
   return { vertices, faces };
 }
 
+function makeTetrahedron(): Mesh {
+  return centerAndNormalize(makePyramid(3));
+}
+
+function makeCube(): Mesh {
+  return centerAndNormalize(makePrism(4));
+}
+
+function makeOctahedron(): Mesh {
+  return centerAndNormalize(makeDipyramid(3));
+}
+
+function makeIcosahedron(): Mesh {
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const vertices = [
+    -1, phi, 0,
+    1, phi, 0,
+    -1, -phi, 0,
+    1, -phi, 0,
+    0, -1, phi,
+    0, 1, phi,
+    0, -1, -phi,
+    0, 1, -phi,
+    phi, 0, -1,
+    phi, 0, 1,
+    -phi, 0, -1,
+    -phi, 0, 1,
+  ];
+  const faces = [
+    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+    [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+    [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+  ];
+  return centerAndNormalize({ vertices, faces });
+}
+
+function makeDodecahedron(): Mesh {
+  const icosa = makeIcosahedron();
+  return centerAndNormalize(computeDual(icosa.vertices, icosa.faces));
+}
+
+function buildDerivedSolid(base: Mesh, operators: string[]): Mesh {
+  let mesh = centerAndNormalize(base);
+  for (const operator of operators) {
+    mesh = applyOperator(mesh, operator);
+  }
+  return centerAndNormalize(mesh);
+}
+
+function buildDualSolid(mesh: Mesh): Mesh {
+  return centerAndNormalize(computeDual(mesh.vertices, mesh.faces));
+}
+
+function buildCatalanSolid(base: Mesh, operators: string[]): Mesh {
+  return buildDualSolid(buildDerivedSolid(base, operators));
+}
+
 // --- public API ---
 
 export function buildRadialSolid(type: RadialPolyType, sides: number): { vertices: number[]; faces: number[][] } {
   const n = Math.max(3, Math.min(16, sides));
   let result: { vertices: number[]; faces: number[][] };
   switch (type) {
+    case 'Tetrahedron':            result = makeTetrahedron(); break;
+    case 'Cube':                   result = makeCube(); break;
+    case 'Octahedron':             result = makeOctahedron(); break;
+    case 'Dodecahedron':           result = makeDodecahedron(); break;
+    case 'Icosahedron':            result = makeIcosahedron(); break;
+    case 'TruncatedTetrahedron':   result = buildDerivedSolid(makeTetrahedron(), ['Truncate']); break;
+    case 'Cuboctahedron':          result = buildDerivedSolid(makeCube(), ['Ambo']); break;
+    case 'TruncatedCube':          result = buildDerivedSolid(makeCube(), ['Truncate']); break;
+    case 'TruncatedOctahedron':    result = buildDerivedSolid(makeOctahedron(), ['Truncate']); break;
+    case 'Rhombicuboctahedron':    result = buildDerivedSolid(makeCube(), ['Expand']); break;
+    case 'TruncatedCuboctahedron': result = buildDerivedSolid(makeCube(), ['Ambo', 'Truncate']); break;
+    case 'SnubCube':               result = buildAlternatedSolid(makeCube(), ['Ambo', 'Truncate']); break;
+    case 'Icosidodecahedron':      result = buildDerivedSolid(makeDodecahedron(), ['Ambo']); break;
+    case 'TruncatedDodecahedron':  result = buildDerivedSolid(makeDodecahedron(), ['Truncate']); break;
+    case 'TruncatedIcosahedron':   result = buildDerivedSolid(makeIcosahedron(), ['Truncate']); break;
+    case 'Rhombicosidodecahedron': result = buildDerivedSolid(makeDodecahedron(), ['Expand']); break;
+    case 'TruncatedIcosidodecahedron':
+      result = buildDerivedSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
+      break;
+    case 'SnubDodecahedron':
+      result = buildAlternatedSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
+      break;
+    case 'TriakisTetrahedron':          result = buildCatalanSolid(makeTetrahedron(), ['Truncate']); break;
+    case 'RhombicDodecahedron':         result = buildCatalanSolid(makeCube(), ['Ambo']); break;
+    case 'TriakisOctahedron':           result = buildCatalanSolid(makeCube(), ['Truncate']); break;
+    case 'TetrakisHexahedron':          result = buildCatalanSolid(makeOctahedron(), ['Truncate']); break;
+    case 'DeltoidalIcositetrahedron':   result = buildCatalanSolid(makeCube(), ['Expand']); break;
+    case 'DisdyakisDodecahedron':       result = buildCatalanSolid(makeCube(), ['Ambo', 'Truncate']); break;
+    case 'PentagonalIcositetrahedron':  result = buildDualSolid(buildAlternatedSolid(makeCube(), ['Ambo', 'Truncate'])); break;
+    case 'RhombicTriacontahedron':      result = buildCatalanSolid(makeDodecahedron(), ['Ambo']); break;
+    case 'TriakisIcosahedron':          result = buildCatalanSolid(makeDodecahedron(), ['Truncate']); break;
+    case 'PentakisDodecahedron':        result = buildCatalanSolid(makeIcosahedron(), ['Truncate']); break;
+    case 'DeltoidalHexecontahedron':    result = buildCatalanSolid(makeDodecahedron(), ['Expand']); break;
+    case 'DisdyakisTriacontahedron':
+      result = buildCatalanSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
+      break;
+    case 'PentagonalHexecontahedron':
+      result = buildDualSolid(buildAlternatedSolid(makeDodecahedron(), ['Ambo', 'Truncate']));
+      break;
     case 'Prism':                  result = makePrism(n); break;
     case 'Antiprism':              result = makeAntiprism(n); break;
     case 'Trapezohedron':          result = makeTrapezohedron(n); break;

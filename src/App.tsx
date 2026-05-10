@@ -33,7 +33,7 @@ import {
   TilingGenerationOptions,
   UNIFORM_TILINGS,
 } from './lib/tiling-geometries';
-import { RadialPolyType, RADIAL_SHAPE_GROUPS, RADIAL_SOLID_NAMES } from './lib/radial-solids';
+import { RadialPolyType, RADIAL_SHAPE_GROUPS, RADIAL_SOLID_NAMES, RADIAL_TYPES_WITH_SIDES } from './lib/radial-solids';
 import { PALETTES, PaletteKey } from './lib/palettes';
 import { exportObj, exportOff, exportSvg } from './lib/export';
 import { ColorMode } from './lib/coloring';
@@ -475,6 +475,7 @@ export default function App() {
 
   const selectedTiling = UNIFORM_TILINGS[tilingType];
   const selectedPalette = PALETTES[palette];
+  const radialTypeUsesSides = RADIAL_TYPES_WITH_SIDES.has(radialType);
 
   const selectedOperatorHasCrossings = useMemo(() => {
     if (!selectedOperatorId) return false;
@@ -722,18 +723,26 @@ export default function App() {
               <div className="space-y-4 bg-neutral-800/20 p-4 rounded-2xl border border-neutral-800">
                 {mode === '3d' ? (
                   <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-neutral-400">Sides</span>
-                      <span className="text-blue-400 font-mono">{radialSides}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="3"
-                      max="16"
-                      value={radialSides}
-                      onChange={e => setRadialSides(parseInt(e.target.value, 10))}
-                      className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                    />
+                    {radialTypeUsesSides ? (
+                      <>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-neutral-400">Sides</span>
+                          <span className="text-blue-400 font-mono">{radialSides}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="3"
+                          max="16"
+                          value={radialSides}
+                          onChange={e => setRadialSides(parseInt(e.target.value, 10))}
+                          className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </>
+                    ) : (
+                      <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                        Fixed Solid
+                      </div>
+                    )}
                   </div>
                 ) : isMultigrid ? (
                   <>
