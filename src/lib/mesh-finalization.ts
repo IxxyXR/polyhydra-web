@@ -1,6 +1,9 @@
 import { Mesh } from './conway-operators';
 
 export type MeshFinalizationMode = 'none' | 'planarize' | 'canonicalize';
+export interface MeshFinalizationOptions {
+  canonicalizeMaxIterations?: number;
+}
 
 type Edge = [number, number];
 type Vec3 = [number, number, number];
@@ -13,7 +16,11 @@ const CANONICAL_TOLERANCE = 1e-7;
 const EDGE_STEP = 0.2;
 const PLANE_STEP = 1;
 
-export function finalizeMesh(mesh: Mesh, mode: MeshFinalizationMode): Mesh {
+export function finalizeMesh(
+  mesh: Mesh,
+  mode: MeshFinalizationMode,
+  options: MeshFinalizationOptions = {},
+): Mesh {
   if (mode === 'none') {
     return cloneMesh(mesh);
   }
@@ -22,7 +29,7 @@ export function finalizeMesh(mesh: Mesh, mode: MeshFinalizationMode): Mesh {
     return planarizeMesh(mesh);
   }
 
-  return canonicalizeMesh(mesh);
+  return canonicalizeMesh(mesh, options);
 }
 
 function cloneMesh(mesh: Mesh): Mesh {
@@ -52,12 +59,13 @@ function planarizeMesh(mesh: Mesh): Mesh {
   return result;
 }
 
-function canonicalizeMesh(mesh: Mesh): Mesh {
+function canonicalizeMesh(mesh: Mesh, options: MeshFinalizationOptions = {}): Mesh {
   const result = cloneMesh(mesh);
   const edges = collectUniqueEdges(result.faces);
   let vertices = normalizeForCanonicalization(result.vertices, edges);
+  const maxIterations = options.canonicalizeMaxIterations ?? CANONICALIZE_MAX_ITERATIONS;
 
-  for (let iteration = 0; iteration < CANONICALIZE_MAX_ITERATIONS; iteration += 1) {
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     const nextVertices = [...vertices];
     const accum = new Array(vertices.length).fill(0);
     const counts = new Array(vertices.length / 3).fill(0);

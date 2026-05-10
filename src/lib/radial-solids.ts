@@ -1,4 +1,5 @@
 import { applyOperator, Mesh } from './conway-operators';
+import { finalizeMesh } from './mesh-finalization';
 
 export type RadialPolyType =
   | 'Tetrahedron' | 'Cube' | 'Octahedron' | 'Dodecahedron' | 'Icosahedron'
@@ -125,6 +126,8 @@ export const RADIAL_TYPES_WITH_SIDES = new Set<RadialPolyType>([
   'ElongatedGyroBicupola',
   'GyroelongatedBicupola',
 ]);
+
+const CATALAN_SOURCE_CANONICALIZE_MAX_ITERATIONS = 250;
 
 // --- vector helpers ---
 type V3 = [number, number, number];
@@ -734,8 +737,14 @@ function buildDualSolid(mesh: Mesh): Mesh {
   return centerAndNormalize(computeDual(mesh.vertices, mesh.faces));
 }
 
+function canonicalizeCatalanSource(mesh: Mesh): Mesh {
+  return finalizeMesh(mesh, 'canonicalize', {
+    canonicalizeMaxIterations: CATALAN_SOURCE_CANONICALIZE_MAX_ITERATIONS,
+  });
+}
+
 function buildCatalanSolid(base: Mesh, operators: string[]): Mesh {
-  return buildDualSolid(buildDerivedSolid(base, operators));
+  return buildDualSolid(canonicalizeCatalanSource(buildDerivedSolid(base, operators)));
 }
 
 // --- public API ---
@@ -772,7 +781,9 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
     case 'TetrakisHexahedron':          result = buildCatalanSolid(makeOctahedron(), ['Truncate']); break;
     case 'DeltoidalIcositetrahedron':   result = buildCatalanSolid(makeCube(), ['Expand']); break;
     case 'DisdyakisDodecahedron':       result = buildCatalanSolid(makeCube(), ['Ambo', 'Truncate']); break;
-    case 'PentagonalIcositetrahedron':  result = buildDualSolid(buildAlternatedSolid(makeCube(), ['Ambo', 'Truncate'])); break;
+    case 'PentagonalIcositetrahedron':
+      result = buildDualSolid(canonicalizeCatalanSource(buildAlternatedSolid(makeCube(), ['Ambo', 'Truncate'])));
+      break;
     case 'RhombicTriacontahedron':      result = buildCatalanSolid(makeDodecahedron(), ['Ambo']); break;
     case 'TriakisIcosahedron':          result = buildCatalanSolid(makeDodecahedron(), ['Truncate']); break;
     case 'PentakisDodecahedron':        result = buildCatalanSolid(makeIcosahedron(), ['Truncate']); break;
@@ -781,7 +792,7 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
       result = buildCatalanSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
       break;
     case 'PentagonalHexecontahedron':
-      result = buildDualSolid(buildAlternatedSolid(makeDodecahedron(), ['Ambo', 'Truncate']));
+      result = buildDualSolid(canonicalizeCatalanSource(buildAlternatedSolid(makeDodecahedron(), ['Ambo', 'Truncate'])));
       break;
     case 'Prism':                  result = makePrism(n); break;
     case 'Antiprism':              result = makeAntiprism(n); break;
