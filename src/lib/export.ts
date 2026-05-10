@@ -1,48 +1,16 @@
-import { TilingGenerationOptions, UNIFORM_TILINGS } from './tiling-geometries';
-import { applyOperator, Mesh, OperatorSpec } from './conway-operators';
+import { TilingGenerationOptions } from './tiling-geometries';
+import { Mesh, OperatorSpec } from './conway-operators';
+import { MeshFinalizationMode } from './mesh-finalization';
 import { PaletteKey } from './palettes';
 import { ColorMode, computeFaceColors } from './coloring';
-import { buildRadialSolid, RadialPolyType } from './radial-solids';
+import { RadialPolyType } from './radial-solids';
+import { generateFinalMesh } from './mesh-pipeline';
 
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 const ZIP_VERSION = 20;
 const CRC32_TABLE = createCrc32Table();
-
-function generateFinalMesh(
-  mode: '2d' | '3d',
-  tilingType: string,
-  rows: number,
-  cols: number,
-  operators: OperatorSpec[],
-  radialType: RadialPolyType,
-  radialSides: number,
-  generationOptions?: TilingGenerationOptions,
-): Mesh | null {
-  let vertices: number[];
-  let faces: number[][];
-
-  if (mode === '3d') {
-    const solid = buildRadialSolid(radialType, radialSides);
-    vertices = solid.vertices;
-    faces = solid.faces;
-  } else {
-    const tiling = UNIFORM_TILINGS[tilingType];
-    if (!tiling) return null;
-    ({ vertices, faces } = tiling.generate(rows, cols, generationOptions));
-  }
-
-  let mesh: Mesh = { vertices, faces };
-  
-  if (operators.length > 0) {
-    for (const op of operators) {
-      mesh = applyOperator(mesh, op);
-    }
-  }
-
-  return mesh;
-}
 
 export function exportObj(
   mode: '2d' | '3d',
@@ -55,8 +23,19 @@ export function exportObj(
   radialType: RadialPolyType,
   radialSides: number,
   generationOptions?: TilingGenerationOptions,
+  finalization: MeshFinalizationMode = 'planarize',
 ) {
-  const mesh = generateFinalMesh(mode, tilingType, rows, cols, operators, radialType, radialSides, generationOptions);
+  const mesh = generateFinalMesh({
+    mode,
+    tilingType,
+    rows,
+    cols,
+    operators,
+    radialType,
+    radialSides,
+    generationOptions,
+    finalization,
+  });
   if (!mesh) return;
 
   const faceColors = computeFaceColors(mesh, paletteKey, colorMode);
@@ -79,8 +58,19 @@ export function exportOff(
   radialType: RadialPolyType,
   radialSides: number,
   generationOptions?: TilingGenerationOptions,
+  finalization: MeshFinalizationMode = 'planarize',
 ) {
-  const mesh = generateFinalMesh(mode, tilingType, rows, cols, operators, radialType, radialSides, generationOptions);
+  const mesh = generateFinalMesh({
+    mode,
+    tilingType,
+    rows,
+    cols,
+    operators,
+    radialType,
+    radialSides,
+    generationOptions,
+    finalization,
+  });
   if (!mesh) return;
 
   const faceColors = computeFaceColors(mesh, paletteKey, colorMode);
@@ -270,8 +260,19 @@ export function exportSvg(
   radialType: RadialPolyType,
   radialSides: number,
   generationOptions?: TilingGenerationOptions,
+  finalization: MeshFinalizationMode = 'planarize',
 ) {
-  const mesh = generateFinalMesh(mode, tilingType, rows, cols, operators, radialType, radialSides, generationOptions);
+  const mesh = generateFinalMesh({
+    mode,
+    tilingType,
+    rows,
+    cols,
+    operators,
+    radialType,
+    radialSides,
+    generationOptions,
+    finalization,
+  });
   if (!mesh) return;
 
   const faceColors = computeFaceColors(mesh, paletteKey, colorMode);

@@ -37,6 +37,7 @@ import { RadialPolyType, RADIAL_SHAPE_GROUPS, RADIAL_SOLID_NAMES } from './lib/r
 import { PALETTES, PaletteKey } from './lib/palettes';
 import { exportObj, exportOff, exportSvg } from './lib/export';
 import { ColorMode } from './lib/coloring';
+import { MeshFinalizationMode } from './lib/mesh-finalization';
 import { createOmniOperatorDiagramSvg, createEmptyDiagramSvg } from './lib/omni-diagram';
 import {
   createOperatorSpec,
@@ -147,6 +148,7 @@ export default function App() {
   const [showFaces, setShowFaces] = useState(true);
   const [wireframe, setWireframe] = useState(false);
   const [faceHighlight, setFaceHighlight] = useState(false);
+  const [finalization, setFinalization] = useState<MeshFinalizationMode>('planarize');
   const [isReady, setIsReady] = useState(false);
   const isPopStateRef = useRef(false);
   const [operators, setOperators] = useState<OperatorState[]>([]);
@@ -209,6 +211,11 @@ export default function App() {
 
       const urlMode = params.get('mode');
       if (urlMode === '2d' || urlMode === '3d') setMode(urlMode);
+
+      const urlFinalization = params.get('finalization');
+      if (urlFinalization === 'none' || urlFinalization === 'planarize' || urlFinalization === 'canonicalize') {
+        setFinalization(urlFinalization);
+      }
 
       const urlRadialType = params.get('radialType');
       if (urlRadialType && RADIAL_SOLID_NAMES[urlRadialType as RadialPolyType]) {
@@ -305,6 +312,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams();
     params.set('mode', mode);
+    params.set('finalization', finalization);
     params.set('radialType', radialType);
     params.set('radialSides', radialSides.toString());
     params.set('tiling', tilingType);
@@ -343,7 +351,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
+  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
 
 
   const addOperator = (notation: string, overrides: Partial<OperatorSpec> = {}) => {
@@ -1655,6 +1663,45 @@ export default function App() {
                   </div>
             </section>
 
+            {mode === '3d' && (
+              <section>
+                <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Maximize className="w-3 h-3" />
+                  Final Step
+                </h2>
+                <div className="space-y-3 bg-neutral-800/20 p-4 rounded-2xl border border-neutral-800">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Mesh Finalization</span>
+                    <span className="text-[10px] font-mono text-blue-400">
+                      {finalization === 'none' ? 'off' : finalization}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      ['none', 'Off'],
+                      ['planarize', 'Planarize'],
+                      ['canonicalize', 'Canonical'],
+                    ] as Array<[MeshFinalizationMode, string]>).map(([value, label]) => (
+                      <button
+                        key={value}
+                        onClick={() => setFinalization(value)}
+                        className={`rounded-lg border px-2 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                          finalization === value
+                            ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
+                            : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] leading-4 text-neutral-500">
+                    Applied after the operator stack. Planarize only flattens faces. Canonical also drives edges toward unit-sphere tangency.
+                  </p>
+                </div>
+              </section>
+            )}
+
             <section>
               <AnimatePresence>
                 {showOnboarding && allOnboardingComplete && (
@@ -1679,20 +1726,20 @@ export default function App() {
               <div className={`grid gap-2 ${mode === '3d' ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 {mode === '2d' && (
                 <button
-                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, colorMode, edgeColor, radialType, radialSides, generationOptions)}
+                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, colorMode, edgeColor, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   SVG
                 </button>
                 )}
                 <button
-                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions)}
+                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OBJ+MTL
                 </button>
                 <button
-                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions)}
+                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OFF
@@ -1764,6 +1811,7 @@ export default function App() {
             mode={mode}
             radialType={radialType}
             radialSides={radialSides}
+            finalization={finalization}
           />
         </div>
 
