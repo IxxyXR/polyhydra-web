@@ -188,6 +188,43 @@ function buildAppSearchParams(state: {
   return params;
 }
 
+function parseOperatorsFromUrlParam(urlOps: string): OperatorState[] {
+  const entries = urlOps.includes(';')
+    ? urlOps.split(';').filter(Boolean)
+    : (() => {
+        const fragments = urlOps.split(',').filter(Boolean);
+        if (fragments.length <= 1) {
+          return fragments;
+        }
+
+        const grouped: string[] = [];
+        let current = '';
+
+        for (const fragment of fragments) {
+          current = current ? `${current},${fragment}` : fragment;
+          const decodedCurrent = decodeURIComponent(current);
+          if (decodedCurrent.split('~').length >= 4) {
+            grouped.push(current);
+            current = '';
+          }
+        }
+
+        if (current) {
+          grouped.push(current);
+        }
+
+        return grouped;
+      })();
+
+  return entries.map((entry) => {
+    const decoded = decodeURIComponent(entry);
+    const isEnabled = !decoded.startsWith('!');
+    const serialized = isEnabled ? decoded : decoded.substring(1);
+    const spec = parseOperatorSpec(serialized);
+    return createOperator(spec.notation, isEnabled, spec);
+  });
+}
+
 export default function App() {
   const [mode, setMode] = useState<'2d' | '3d'>('2d');
   const [radialType, setRadialType] = useState<RadialPolyType>('Prism');
@@ -332,16 +369,7 @@ export default function App() {
 
       const urlOps = params.get('ops');
       if (urlOps) {
-        const entries = urlOps.includes(';')
-          ? urlOps.split(';').filter(Boolean)
-          : urlOps.split(',').filter(Boolean);
-        const loadedOperators = entries.map((op) => {
-          const decoded = decodeURIComponent(op);
-          const isEnabled = !decoded.startsWith('!');
-          const serialized = isEnabled ? decoded : decoded.substring(1);
-          const spec = parseOperatorSpec(serialized);
-          return createOperator(spec.notation, isEnabled, spec);
-        });
+        const loadedOperators = parseOperatorsFromUrlParam(urlOps);
         setOperators(loadedOperators);
         setSelectedOperatorId(loadedOperators[0]?.id ?? null);
       } else {
