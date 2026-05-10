@@ -139,6 +139,7 @@ export default function App() {
   const [showVertices, setShowVertices] = useState(false);
   const [showFaces, setShowFaces] = useState(true);
   const [wireframe, setWireframe] = useState(false);
+  const [faceHighlight, setFaceHighlight] = useState(false);
   const [operators, setOperators] = useState<OperatorState[]>([]);
   const [palette, setPalette] = useState<PaletteKey>('vibrant');
   const [colorMode, setColorMode] = useState<ColorMode>('role');
@@ -349,11 +350,7 @@ export default function App() {
     ? NO_PRESET_VALUE
     : (selectedMatchingPresetName ?? CUSTOM_PRESET_VALUE);
   const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation, hoveredGridAtom) ?? (selectedOperatorNotation.trim() === '' ? createEmptyDiagramSvg(hoveredGridAtom) : null);
-  const activeOperators = operators.filter((op) => {
-    if (!op.enabled) return false;
-    const atoms = Array.from(new Set(parseAtomList(resolveOperatorNotation(op.notation))));
-    return isCompleteOperator(atoms);
-  });
+  const activeOperators = operators.filter((op) => op.enabled);
 
   const updateSelectedOperatorNotation = (notation: string) => {
     if (!selectedOperatorId) return;
@@ -846,6 +843,10 @@ export default function App() {
                             <label className="flex items-center justify-between cursor-pointer group">
                               <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Wireframe</span>
                               <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                            </label>
+                            <label className="flex items-center justify-between cursor-pointer group">
+                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Face Highlight</span>
+                              <input type="checkbox" checked={faceHighlight} onChange={(e) => setFaceHighlight(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
                             </label>
                           </div>
                         </div>
@@ -1447,6 +1448,7 @@ export default function App() {
             showVertices={showVertices}
             showFaces={showFaces}
             wireframe={wireframe}
+            faceHighlight={faceHighlight}
             operators={activeOperators}
             palette={palette}
             colorMode={colorMode}

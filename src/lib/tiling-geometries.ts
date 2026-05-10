@@ -573,14 +573,105 @@ const buildRepeatedTile = (
   return builder.build();
 };
 
-const triangulateFaces = (faces: number[][]): number[] => {
-  const indices: number[] = [];
+export const triangulateFaces = (faces: number[][], vertices: number[]): number[] => {
+  const result: number[] = [];
+
   for (const face of faces) {
-    for (let i = 1; i < face.length - 1; i++) {
-      indices.push(face[0], face[i], face[i + 1]);
+    const n = face.length;
+    if (n < 3) continue;
+    if (n === 3) {
+      result.push(face[0], face[1], face[2]);
+      continue;
+    }
+
+    const getXYZ = (i: number): [number, number, number] => {
+      const vi = face[i] * 3;
+      return [vertices[vi], vertices[vi + 1], vertices[vi + 2]];
+    };
+
+    // Compute face normal via Newell's method
+    let nx = 0, ny = 0, nz = 0;
+    for (let i = 0; i < n; i++) {
+      const [x1, y1, z1] = getXYZ(i);
+      const [x2, y2, z2] = getXYZ((i + 1) % n);
+      nx += (y1 - y2) * (z1 + z2);
+      ny += (z1 - z2) * (x1 + x2);
+      nz += (x1 - x2) * (y1 + y2);
+    }
+    const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (nLen < 1e-10) {
+      for (let i = 1; i < n - 1; i++) result.push(face[0], face[i], face[i + 1]);
+      continue;
+    }
+    nx /= nLen; ny /= nLen; nz /= nLen;
+
+    // Orthonormal basis for the face plane
+    const aX = Math.abs(nx) < 0.9 ? 1 : 0;
+    const aY = Math.abs(nx) < 0.9 ? 0 : 1;
+    let ux = ny * 0 - nz * aY;
+    let uy = nz * aX - nx * 0;
+    let uz = nx * aY - ny * aX;
+    const uLen = Math.sqrt(ux * ux + uy * uy + uz * uz);
+    ux /= uLen; uy /= uLen; uz /= uLen;
+    const vx = ny * uz - nz * uy;
+    const vy = nz * ux - nx * uz;
+    const vz = nx * uy - ny * ux;
+
+    // Project to 2D
+    const px: number[] = [];
+    const py: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const [x, y, z] = getXYZ(i);
+      px.push(x * ux + y * uy + z * uz);
+      py.push(x * vx + y * vy + z * vz);
+    }
+
+    // Determine winding via signed area (shoelace)
+    let area2 = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      area2 += px[i] * py[j] - px[j] * py[i];
+    }
+    const ws = area2 >= 0 ? 1 : -1;
+
+    // cross2(a, b, c) = signed area of triangle using local polygon indices
+    const cross2 = (a: number, b: number, c: number): number =>
+      (px[b] - px[a]) * (py[c] - py[a]) - (py[b] - py[a]) * (px[c] - px[a]);
+
+    const isEar = (prev: number, curr: number, next: number, active: number[]): boolean => {
+      if (cross2(prev, curr, next) * ws <= 0) return false;
+      for (const idx of active) {
+        if (idx === prev || idx === curr || idx === next) continue;
+        const d1 = cross2(prev, curr, idx) * ws;
+        const d2 = cross2(curr, next, idx) * ws;
+        const d3 = cross2(next, prev, idx) * ws;
+        if (d1 > 0 && d2 > 0 && d3 > 0) return false;
+      }
+      return true;
+    };
+
+    const active: number[] = Array.from({ length: n }, (_, i) => i);
+    let i = 0;
+    let limit = n * n + n;
+    while (active.length > 3 && limit-- > 0) {
+      const len = active.length;
+      const prevI = active[(i - 1 + len) % len];
+      const currI = active[i];
+      const nextI = active[(i + 1) % len];
+      if (isEar(prevI, currI, nextI, active)) {
+        result.push(face[prevI], face[currI], face[nextI]);
+        active.splice(i, 1);
+        i = ((i - 1) % active.length + active.length) % active.length;
+      } else {
+        i = (i + 1) % active.length;
+      }
+    }
+    if (active.length === 3) {
+      result.push(face[active[0]], face[active[1]], face[active[2]]);
     }
   }
-  return indices;
+
+  return result;
 };
 
 const seededRandom = (seed: number) => {
@@ -843,7 +934,7 @@ const createDerivedTiling = (
     return {
       vertices: derived.vertices,
       faces: derived.faces,
-      indices: triangulateFaces(derived.faces),
+      indices: triangulateFaces(derived.faces, derived.vertices),
     };
   },
 });
