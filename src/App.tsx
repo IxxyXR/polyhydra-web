@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Settings,
@@ -140,6 +140,8 @@ export default function App() {
   const [showFaces, setShowFaces] = useState(true);
   const [wireframe, setWireframe] = useState(false);
   const [faceHighlight, setFaceHighlight] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  const isPopStateRef = useRef(false);
   const [operators, setOperators] = useState<OperatorState[]>([]);
   const [palette, setPalette] = useState<PaletteKey>('vibrant');
   const [colorMode, setColorMode] = useState<ColorMode>('role');
@@ -181,84 +183,98 @@ export default function App() {
 
   // Sync state with URL
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    
-    const urlTiling = params.get('tiling');
-    if (urlTiling && UNIFORM_TILINGS[urlTiling]) setTilingType(urlTiling);
+    const applyParamsFromUrl = (search: string) => {
+      const params = new URLSearchParams(search);
 
-    const urlRows = params.get('rows');
-    const urlCols = params.get('cols');
-    if (urlRows && urlCols) {
-      setRows(parseInt(urlRows, 10));
-      setCols(parseInt(urlCols, 10));
-    } else if (urlRows) {
-      const size = parseInt(urlRows, 10);
-      setRows(size);
-      setCols(size);
-    } else if (urlCols) {
-      const size = parseInt(urlCols, 10);
-      setRows(size);
-      setCols(size);
-    }
+      const parseIntParam = (value: string | null, fallback: number) => {
+        const parsed = Number.parseInt(value ?? '', 10);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      };
+      const parseFloatParam = (value: string | null, fallback: number) => {
+        const parsed = Number.parseFloat(value ?? '');
+        return Number.isFinite(parsed) ? parsed : fallback;
+      };
 
-    if (params.get('edges') === 'false') setShowEdges(false);
-    if (params.get('vertices') === 'true') setShowVertices(true);
-    if (params.get('faces') === 'false') setShowFaces(false);
-    if (params.get('wireframe') === 'true') setWireframe(true);
+      const urlTiling = params.get('tiling');
+      if (urlTiling && UNIFORM_TILINGS[urlTiling]) setTilingType(urlTiling);
 
-    const urlPalette = params.get('palette');
-    if (urlPalette && PALETTES[urlPalette as PaletteKey]) setPalette(urlPalette as PaletteKey);
+      const urlRows = params.get('rows');
+      const urlCols = params.get('cols');
+      if (urlRows && urlCols) {
+        setRows(parseInt(urlRows, 10));
+        setCols(parseInt(urlCols, 10));
+      } else if (urlRows) {
+        const size = parseInt(urlRows, 10);
+        setRows(size);
+        setCols(size);
+      } else if (urlCols) {
+        const size = parseInt(urlCols, 10);
+        setRows(size);
+        setCols(size);
+      }
 
-    const urlColorMode = params.get('colorMode');
-    if (urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value') {
-      setColorMode(urlColorMode);
-    }
-    const urlEdgeColor = params.get('edgeColor');
-    if (urlEdgeColor) {
-      setEdgeColor(urlEdgeColor);
-    }
+      setShowEdges(params.get('edges') !== 'false');
+      setShowVertices(params.get('vertices') === 'true');
+      setShowFaces(params.get('faces') !== 'false');
+      setWireframe(params.get('wireframe') === 'true');
 
-    const parseIntParam = (value: string | null, fallback: number) => {
-      const parsed = Number.parseInt(value ?? '', 10);
-      return Number.isFinite(parsed) ? parsed : fallback;
-    };
-    const parseFloatParam = (value: string | null, fallback: number) => {
-      const parsed = Number.parseFloat(value ?? '');
-      return Number.isFinite(parsed) ? parsed : fallback;
-    };
+      const urlPalette = params.get('palette');
+      if (urlPalette && PALETTES[urlPalette as PaletteKey]) setPalette(urlPalette as PaletteKey);
 
-    setMultigridSettings({
-      dimensions: parseIntParam(params.get('mgDim'), MULTIGRID_DEFAULTS.dimensions),
-      divisions: parseIntParam(params.get('mgDiv'), MULTIGRID_DEFAULTS.divisions),
-      offset: parseFloatParam(params.get('mgOff'), MULTIGRID_DEFAULTS.offset),
-      randomize: params.get('mgRand') === 'true',
-      sharedVertices: params.get('mgShared') === null
-        ? MULTIGRID_DEFAULTS.sharedVertices
-        : params.get('mgShared') === 'true',
-      minDistance: parseFloatParam(params.get('mgMin'), MULTIGRID_DEFAULTS.minDistance),
-      maxDistance: parseFloatParam(params.get('mgMax'), MULTIGRID_DEFAULTS.maxDistance),
-      colorRatio: parseFloatParam(params.get('mgRatio'), MULTIGRID_DEFAULTS.colorRatio),
-      colorIntersect: parseFloatParam(params.get('mgIntersect'), MULTIGRID_DEFAULTS.colorIntersect),
-      colorIndex: parseFloatParam(params.get('mgIndex'), MULTIGRID_DEFAULTS.colorIndex),
-      randomSeed: parseIntParam(params.get('mgSeed'), MULTIGRID_DEFAULTS.randomSeed),
-    });
+      const urlColorMode = params.get('colorMode');
+      if (urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value') {
+        setColorMode(urlColorMode);
+      }
 
-    const urlOps = params.get('ops');
-    if (urlOps) {
-      const entries = urlOps.includes(';')
-        ? urlOps.split(';').filter(Boolean)
-        : urlOps.split(',').filter(Boolean);
+      const urlEdgeColor = params.get('edgeColor');
+      if (urlEdgeColor) setEdgeColor(urlEdgeColor);
 
-      const loadedOperators = entries.map((op) => {
-        const decoded = decodeURIComponent(op);
-        const isEnabled = !decoded.startsWith('!');
-        const serialized = isEnabled ? decoded : decoded.substring(1);
-        const spec = parseOperatorSpec(serialized);
-        return createOperator(spec.notation, isEnabled, spec);
+      setMultigridSettings({
+        dimensions: parseIntParam(params.get('mgDim'), MULTIGRID_DEFAULTS.dimensions),
+        divisions: parseIntParam(params.get('mgDiv'), MULTIGRID_DEFAULTS.divisions),
+        offset: parseFloatParam(params.get('mgOff'), MULTIGRID_DEFAULTS.offset),
+        randomize: params.get('mgRand') === 'true',
+        sharedVertices: params.get('mgShared') === null
+          ? MULTIGRID_DEFAULTS.sharedVertices
+          : params.get('mgShared') === 'true',
+        minDistance: parseFloatParam(params.get('mgMin'), MULTIGRID_DEFAULTS.minDistance),
+        maxDistance: parseFloatParam(params.get('mgMax'), MULTIGRID_DEFAULTS.maxDistance),
+        colorRatio: parseFloatParam(params.get('mgRatio'), MULTIGRID_DEFAULTS.colorRatio),
+        colorIntersect: parseFloatParam(params.get('mgIntersect'), MULTIGRID_DEFAULTS.colorIntersect),
+        colorIndex: parseFloatParam(params.get('mgIndex'), MULTIGRID_DEFAULTS.colorIndex),
+        randomSeed: parseIntParam(params.get('mgSeed'), MULTIGRID_DEFAULTS.randomSeed),
       });
-      setOperators(loadedOperators);
-      setSelectedOperatorId(loadedOperators[0]?.id ?? null);
-    }
+
+      const urlOps = params.get('ops');
+      if (urlOps) {
+        const entries = urlOps.includes(';')
+          ? urlOps.split(';').filter(Boolean)
+          : urlOps.split(',').filter(Boolean);
+        const loadedOperators = entries.map((op) => {
+          const decoded = decodeURIComponent(op);
+          const isEnabled = !decoded.startsWith('!');
+          const serialized = isEnabled ? decoded : decoded.substring(1);
+          const spec = parseOperatorSpec(serialized);
+          return createOperator(spec.notation, isEnabled, spec);
+        });
+        setOperators(loadedOperators);
+        setSelectedOperatorId(loadedOperators[0]?.id ?? null);
+      } else {
+        setOperators([]);
+        setSelectedOperatorId(null);
+      }
+    };
+
+    applyParamsFromUrl(window.location.search);
+    setIsReady(true);
+
+    const handlePopState = () => {
+      isPopStateRef.current = true;
+      applyParamsFromUrl(window.location.search);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {
@@ -291,9 +307,15 @@ export default function App() {
       }).join(';'));
     }
 
-    const newRelativePathQuery = window.location.pathname + '?' + params.toString();
-    window.history.replaceState(null, '', newRelativePathQuery);
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings]);
+    if (!isReady) return;
+    if (isPopStateRef.current) {
+      isPopStateRef.current = false;
+      return;
+    }
+    const newSearch = '?' + params.toString();
+    if (newSearch === window.location.search) return;
+    window.history.pushState(null, '', window.location.pathname + newSearch);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
 
   useEffect(() => {
     if (allOnboardingComplete && showOnboarding) {
