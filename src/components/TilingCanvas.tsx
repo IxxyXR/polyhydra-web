@@ -18,6 +18,7 @@ interface TilingCanvasProps {
   faceHighlight: boolean;
   operators: OperatorSpec[];
   palette: PaletteKey;
+  paletteColors?: string[];
   colorMode: ColorMode;
   edgeColor: string;
   generationOptions?: TilingGenerationOptions;
@@ -34,6 +35,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   faceHighlight,
   operators,
   palette,
+  paletteColors,
   colorMode,
   edgeColor,
   generationOptions,
@@ -137,7 +139,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       }
     }
 
-    const computedFaceColors = computeFaceColors({ vertices, faces }, palette, colorMode);
+    const computedFaceColors = computeFaceColors({ vertices, faces }, paletteColors ?? palette, colorMode);
     const uniqueColorsUsed = new Set(computedFaceColors);
     const uniqueEdges = new Set<string>();
     faces.forEach((face) => {
@@ -355,7 +357,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       containerRef.current?.removeEventListener('click', onClick);
       containerRef.current?.removeEventListener('mousemove', onMouseMove);
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, colorMode, edgeColor, generationOptions]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, generationOptions]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 };

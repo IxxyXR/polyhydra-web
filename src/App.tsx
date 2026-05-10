@@ -144,6 +144,7 @@ export default function App() {
   const isPopStateRef = useRef(false);
   const [operators, setOperators] = useState<OperatorState[]>([]);
   const [palette, setPalette] = useState<PaletteKey>('vibrant');
+  const [shuffledColors, setShuffledColors] = useState<string[] | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>('role');
   const [edgeColor, setEdgeColor] = useState('#3b82f6');
   const [multigridSettings, setMultigridSettings] = useState<MultiGridSettings>(MULTIGRID_DEFAULTS);
@@ -762,14 +763,31 @@ export default function App() {
                                     Face Palette
                                   </div>
                                   <div className="text-xs font-semibold text-white truncate">{selectedPalette.name}</div>
-                                  <div className="flex -space-x-1 mt-2">
-                                    {selectedPalette.colors.slice(0, 5).map((c, i) => (
-                                      <div
-                                        key={i}
-                                        className="w-3 h-3 rounded-full border border-neutral-900"
-                                        style={{ backgroundColor: c }}
-                                      />
-                                    ))}
+                                  <div className="flex items-center gap-2 mt-2">
+                                    <div className="flex -space-x-1">
+                                      {(shuffledColors ?? selectedPalette.colors).slice(0, 5).map((c, i) => (
+                                        <div
+                                          key={i}
+                                          className="w-3 h-3 rounded-full border border-neutral-900"
+                                          style={{ backgroundColor: c }}
+                                        />
+                                      ))}
+                                    </div>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const colors = [...selectedPalette.colors];
+                                        for (let i = colors.length - 1; i > 0; i--) {
+                                          const j = Math.floor(Math.random() * (i + 1));
+                                          [colors[i], colors[j]] = [colors[j], colors[i]];
+                                        }
+                                        setShuffledColors(colors);
+                                      }}
+                                      className="p-0.5 text-neutral-500 hover:text-white transition-colors"
+                                      title="Shuffle palette order"
+                                    >
+                                      <Shuffle className="w-3 h-3" />
+                                    </button>
                                   </div>
                                 </div>
                                 <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
@@ -792,6 +810,7 @@ export default function App() {
                                         key={key}
                                         onClick={() => {
                                           setPalette(key as PaletteKey);
+                                          setShuffledColors(null);
                                           setPaletteMenuOpen(false);
                                         }}
                                         className={`flex items-center gap-2 p-2 rounded-lg text-[10px] font-medium transition-all border ${
@@ -1591,6 +1610,7 @@ export default function App() {
             faceHighlight={faceHighlight}
             operators={activeOperators}
             palette={palette}
+            paletteColors={shuffledColors ?? undefined}
             colorMode={colorMode}
             edgeColor={edgeColor}
             generationOptions={generationOptions}

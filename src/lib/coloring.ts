@@ -3,8 +3,8 @@ import { PALETTES, PaletteKey } from './palettes';
 
 export type ColorMode = 'role' | 'sides' | 'value';
 
-export function computeFaceColors(mesh: Mesh, palette: PaletteKey, colorMode: ColorMode = 'role'): string[] {
-  const paletteColors = PALETTES[palette].colors;
+export function computeFaceColors(mesh: Mesh, palette: PaletteKey | string[], colorMode: ColorMode = 'role'): string[] {
+  const paletteColors = Array.isArray(palette) ? palette : PALETTES[palette].colors;
 
   if (colorMode === 'sides') {
     return mesh.faces.map((face) => {
