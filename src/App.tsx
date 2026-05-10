@@ -1437,31 +1437,43 @@ export default function App() {
                                                 <button onClick={() => setDotPopup(null)} className="text-neutral-500 hover:text-white transition-colors"><X className="h-3 w-3" /></button>
                                               </div>
                                               <div className="space-y-1">
-                                                {OMNI_POINT_CLASSES.flatMap((otherClass) => {
-                                                  const atom = findOmniAtom(dotPopup.type as (typeof OMNI_POINT_CLASSES)[number], otherClass);
-                                                  if (!atom) return [];
-                                                  const alreadySelected = uniqueSelectedAtoms.includes(atom);
-                                                  const compatible = alreadySelected || isCompatibleSubset(uniqueSelectedAtoms.filter((a) => a !== atom), atom);
-                                                  return [(
-                                                    <button
-                                                      key={atom}
-                                                      onMouseEnter={() => setHoveredGridAtom(atom)}
-                                                      onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
-                                                      onClick={() => { toggleGridAtom(atom); setDotPopup(null); setHoveredGridAtom(null); }}
-                                                      disabled={!compatible}
-                                                      className={`w-full rounded-lg px-2 py-1.5 text-left text-[10px] font-mono transition-colors ${
-                                                        alreadySelected
-                                                          ? 'bg-blue-600/80 text-white'
-                                                          : compatible
-                                                            ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
-                                                            : 'cursor-not-allowed text-neutral-600 opacity-40'
-                                                      }`}
-                                                    >
-                                                      <span className="text-neutral-400">→ </span>{otherClass}
-                                                      {alreadySelected && <span className="ml-1 text-blue-200">✓</span>}
-                                                    </button>
-                                                  )];
-                                                })}
+                                                {(() => {
+                                                  const TYPE_FAMILIES: Record<string, string[]> = {
+                                                    've': ['ve', 've0', 've1'],
+                                                    've0': ['ve', 've0', 've1'],
+                                                    've1': ['ve', 've0', 've1'],
+                                                  };
+                                                  const queryTypes = TYPE_FAMILIES[dotPopup.type] ?? [dotPopup.type];
+                                                  const seen = new Set<string>();
+                                                  return queryTypes.flatMap((rowType) =>
+                                                    OMNI_POINT_CLASSES.flatMap((otherClass) => {
+                                                      const atom = findOmniAtom(rowType as (typeof OMNI_POINT_CLASSES)[number], otherClass);
+                                                      if (!atom || seen.has(atom)) return [];
+                                                      seen.add(atom);
+                                                      const alreadySelected = uniqueSelectedAtoms.includes(atom);
+                                                      const compatible = alreadySelected || isCompatibleSubset(uniqueSelectedAtoms.filter((a) => a !== atom), atom);
+                                                      return [(
+                                                        <button
+                                                          key={atom}
+                                                          onMouseEnter={() => setHoveredGridAtom(atom)}
+                                                          onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
+                                                          onClick={() => { toggleGridAtom(atom); setDotPopup(null); setHoveredGridAtom(null); }}
+                                                          disabled={!compatible}
+                                                          className={`w-full rounded-lg px-2 py-1.5 text-left text-[10px] font-mono transition-colors ${
+                                                            alreadySelected
+                                                              ? 'bg-blue-600/80 text-white'
+                                                              : compatible
+                                                                ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
+                                                                : 'cursor-not-allowed text-neutral-600 opacity-40'
+                                                          }`}
+                                                        >
+                                                          <span className="font-mono text-neutral-500 text-[9px]">{atom}</span>
+                                                          {alreadySelected && <span className="ml-1 text-blue-200">✓</span>}
+                                                        </button>
+                                                      )];
+                                                    })
+                                                  );
+                                                })()}
                                               </div>
                                             </motion.div>
                                           </>
