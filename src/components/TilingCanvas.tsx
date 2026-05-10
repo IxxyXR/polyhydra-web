@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TilingGenerationOptions, UNIFORM_TILINGS, triangulateFaces } from '../lib/tiling-geometries';
 import { PaletteKey } from '../lib/palettes';
+import { buildRadialSolid, RadialPolyType } from '../lib/radial-solids';
 
 import { applyOperator, Mesh, OperatorSpec } from '../lib/conway-operators';
 import { ColorMode, computeFaceColors } from '../lib/coloring';
@@ -22,6 +23,9 @@ interface TilingCanvasProps {
   colorMode: ColorMode;
   edgeColor: string;
   generationOptions?: TilingGenerationOptions;
+  mode?: '2d' | '3d';
+  radialType?: RadialPolyType;
+  radialSides?: number;
 }
 
 export const TilingCanvas: React.FC<TilingCanvasProps> = ({
@@ -39,6 +43,9 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   colorMode,
   edgeColor,
   generationOptions,
+  mode = '2d' as '2d' | '3d',
+  radialType = 'Prism' as RadialPolyType,
+  radialSides = 5,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<{
@@ -121,10 +128,18 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       meshGroup.remove(child);
     }
 
-    const tiling = UNIFORM_TILINGS[tilingType];
-    if (!tiling) return;
+    let vertices: number[];
+    let faces: number[][];
 
-    let { vertices, faces } = tiling.generate(rows, cols, generationOptions);
+    if (mode === '3d') {
+      const solid = buildRadialSolid(radialType, radialSides);
+      vertices = solid.vertices;
+      faces = solid.faces;
+    } else {
+      const tiling = UNIFORM_TILINGS[tilingType];
+      if (!tiling) return;
+      ({ vertices, faces } = tiling.generate(rows, cols, generationOptions));
+    }
 
     if (operators.length > 0) {
       let mesh: Mesh = { vertices, faces };
@@ -357,7 +372,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       containerRef.current?.removeEventListener('click', onClick);
       containerRef.current?.removeEventListener('mousemove', onMouseMove);
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, generationOptions]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, generationOptions, mode, radialType, radialSides]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 };

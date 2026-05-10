@@ -33,6 +33,7 @@ import {
   TilingGenerationOptions,
   UNIFORM_TILINGS,
 } from './lib/tiling-geometries';
+import { RadialPolyType, RADIAL_SHAPE_GROUPS, RADIAL_SOLID_NAMES } from './lib/radial-solids';
 import { PALETTES, PaletteKey } from './lib/palettes';
 import { exportObj, exportOff, exportSvg } from './lib/export';
 import { ColorMode } from './lib/coloring';
@@ -134,6 +135,10 @@ function createOperator(notation: string, enabled = true, overrides: Partial<Ope
 }
 
 export default function App() {
+  const [mode, setMode] = useState<'2d' | '3d'>('2d');
+  const [radialType, setRadialType] = useState<RadialPolyType>('Prism');
+  const [radialSides, setRadialSides] = useState(5);
+  const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
   const [tilingType, setTilingType] = useState('4.4.4.4');
   const [rows, setRows] = useState(5);
   const [cols, setCols] = useState(5);
@@ -201,6 +206,19 @@ export default function App() {
         const parsed = Number.parseFloat(value ?? '');
         return Number.isFinite(parsed) ? parsed : fallback;
       };
+
+      const urlMode = params.get('mode');
+      if (urlMode === '2d' || urlMode === '3d') setMode(urlMode);
+
+      const urlRadialType = params.get('radialType');
+      if (urlRadialType && RADIAL_SOLID_NAMES[urlRadialType as RadialPolyType]) {
+        setRadialType(urlRadialType as RadialPolyType);
+      }
+      const urlRadialSides = params.get('radialSides');
+      if (urlRadialSides) {
+        const parsed = parseInt(urlRadialSides, 10);
+        if (parsed >= 3 && parsed <= 16) setRadialSides(parsed);
+      }
 
       const urlTiling = params.get('tiling');
       if (urlTiling && UNIFORM_TILINGS[urlTiling]) setTilingType(urlTiling);
@@ -286,6 +304,9 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams();
+    params.set('mode', mode);
+    params.set('radialType', radialType);
+    params.set('radialSides', radialSides.toString());
     params.set('tiling', tilingType);
     params.set('rows', rows.toString());
     params.set('cols', cols.toString());
@@ -322,7 +343,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
+  }, [mode, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
 
 
   const addOperator = (notation: string, overrides: Partial<OperatorSpec> = {}) => {
@@ -521,7 +542,78 @@ export default function App() {
           </div>
 
           <div className="space-y-6">
+            {/* Mode toggle */}
             <section>
+              <div className="flex gap-1 p-1 bg-neutral-800/40 rounded-xl border border-neutral-800">
+                <button
+                  onClick={() => setMode('2d')}
+                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${mode === '2d' ? 'bg-blue-600 text-white shadow' : 'text-neutral-400 hover:text-white'}`}
+                >
+                  2D Tilings
+                </button>
+                <button
+                  onClick={() => setMode('3d')}
+                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${mode === '3d' ? 'bg-blue-600 text-white shadow' : 'text-neutral-400 hover:text-white'}`}
+                >
+                  3D Shapes
+                </button>
+              </div>
+            </section>
+
+            {/* 3D shape picker */}
+            {mode === '3d' && (
+              <section>
+                <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
+                  <button
+                    onClick={() => setShapeMenuOpen(!shapeMenuOpen)}
+                    className="w-full p-4 text-left transition-colors hover:bg-neutral-800/40"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-2">Active Shape</div>
+                        <div className="text-sm font-semibold text-white truncate">{RADIAL_SOLID_NAMES[radialType]}</div>
+                      </div>
+                      <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                        <ChevronRight className={`w-4 h-4 transition-transform ${shapeMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                      </div>
+                    </div>
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {shapeMenuOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="border-t border-neutral-800"
+                      >
+                        <div className="max-h-72 overflow-y-auto p-2 space-y-3">
+                          {RADIAL_SHAPE_GROUPS.map(group => (
+                            <div key={group.name} className="space-y-1">
+                              <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{group.name}</div>
+                              {group.types.map(type => (
+                                <button
+                                  key={type}
+                                  onClick={() => { setRadialType(type); setShapeMenuOpen(false); }}
+                                  className={`w-full rounded-xl p-3 text-left transition-all ${radialType === type ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-neutral-900/40 text-neutral-300 hover:bg-neutral-800'}`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="font-medium text-sm truncate">{RADIAL_SOLID_NAMES[type]}</div>
+                                    {radialType === type && <ChevronRight className="w-4 h-4 shrink-0" />}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </section>
+            )}
+
+            {/* 2D tiling picker */}
+            {mode === '2d' && <section>
               <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
                 <AnimatePresence>
                   {showOnboarding && activeOnboardingStep === 1 && (
@@ -612,7 +704,7 @@ export default function App() {
                   )}
                 </AnimatePresence>
               </div>
-            </section>
+            </section>}
 
             <section>
               <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -620,7 +712,22 @@ export default function App() {
                 Settings
               </h2>
               <div className="space-y-4 bg-neutral-800/20 p-4 rounded-2xl border border-neutral-800">
-                {isMultigrid ? (
+                {mode === '3d' ? (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-neutral-400">Sides</span>
+                      <span className="text-blue-400 font-mono">{radialSides}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="3"
+                      max="16"
+                      value={radialSides}
+                      onChange={e => setRadialSides(parseInt(e.target.value, 10))}
+                      className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                ) : isMultigrid ? (
                   <>
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
@@ -1652,6 +1759,9 @@ export default function App() {
             colorMode={colorMode}
             edgeColor={edgeColor}
             generationOptions={generationOptions}
+            mode={mode}
+            radialType={radialType}
+            radialSides={radialSides}
           />
         </div>
 
