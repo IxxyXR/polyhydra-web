@@ -1676,21 +1676,23 @@ export default function App() {
                 <Download className="w-3 h-3" />
                 Export/Share
               </h2>
-              <div className="grid grid-cols-3 gap-2">
+              <div className={`grid gap-2 ${mode === '3d' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                {mode === '2d' && (
                 <button
-                  onClick={() => exportSvg(tilingType, rows, cols, activeOperators, palette, colorMode, edgeColor, generationOptions)}
+                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, colorMode, edgeColor, radialType, radialSides, generationOptions)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   SVG
                 </button>
+                )}
                 <button
-                  onClick={() => exportObj(tilingType, rows, cols, activeOperators, generationOptions)}
+                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
-                  OBJ
+                  OBJ+MTL
                 </button>
                 <button
-                  onClick={() => exportOff(tilingType, rows, cols, activeOperators, palette, colorMode, generationOptions)}
+                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OFF
