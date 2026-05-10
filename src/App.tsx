@@ -165,6 +165,7 @@ export default function App() {
   );
   const [tilingEverOpened, setTilingEverOpened] = useState(false);
   const [presetOrRandomUsed, setPresetOrRandomUsed] = useState(false);
+  const [sliderMoved, setSliderMoved] = useState(false);
   const [diagramOrGridClicked, setDiagramOrGridClicked] = useState(false);
   const [initialHadOperators] = useState(() =>
     new URLSearchParams(window.location.search).has('ops')
@@ -174,9 +175,10 @@ export default function App() {
   const step2Complete = initialHadOperators || operators.length > 0;
   const step3Complete = presetOrRandomUsed;
   const step4Complete = diagramOrGridClicked;
-  const allOnboardingComplete = step1Complete && step2Complete && step3Complete && step4Complete;
+  const step5Complete = sliderMoved;
+  const allOnboardingComplete = step1Complete && step2Complete && step3Complete && step4Complete && step5Complete;
   const showOnboarding = !onboardingDismissed;
-  const activeOnboardingStep = !step1Complete ? 1 : !step2Complete ? 2 : !step3Complete ? 3 : !step4Complete ? 4 : 5;
+  const activeOnboardingStep = !step1Complete ? 1 : !step2Complete ? 2 : !step3Complete ? 3 : !step4Complete ? 4 : !step5Complete ? 5 : 6;
 
   const dismissOnboarding = () => {
     localStorage.setItem('polyhydra-onboarding-done', '1');
@@ -319,12 +321,6 @@ export default function App() {
     window.history.pushState(null, '', window.location.pathname + newSearch);
   }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
 
-  useEffect(() => {
-    if (allOnboardingComplete && showOnboarding) {
-      const timer = setTimeout(dismissOnboarding, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [allOnboardingComplete, showOnboarding]);
 
   const addOperator = (notation: string, overrides: Partial<OperatorSpec> = {}) => {
     if (!notation.trim()) return;
@@ -1056,7 +1052,7 @@ export default function App() {
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => e.stopPropagation()}
                                 >
-                                  {visibility.showP1 && (
+                                  {!isSelectedOperator && visibility.showP1 && (
                                     <label className="grid gap-1">
                                       <div className="flex items-center justify-between gap-2">
                                         <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
@@ -1077,7 +1073,7 @@ export default function App() {
                                       />
                                     </label>
                                   )}
-                                  {visibility.showP2 && (
+                                  {!isSelectedOperator && visibility.showP2 && (
                                     <label className="grid gap-1">
                                       <div className="flex items-center justify-between gap-2">
                                         <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
@@ -1098,7 +1094,7 @@ export default function App() {
                                       />
                                     </label>
                                   )}
-                                  {visibility.showP3 && (
+                                  {!isSelectedOperator && visibility.showP3 && (
                                     <label className="grid gap-1">
                                       <div className="flex items-center justify-between gap-2">
                                         <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
@@ -1345,6 +1341,78 @@ export default function App() {
                                         </div>
                                       </div>
 
+                                      <AnimatePresence>
+                                        {showOnboarding && activeOnboardingStep === 5 && (
+                                          <motion.div
+                                            key="callout-5"
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            className="overflow-hidden"
+                                          >
+                                            <div className="callout-animate mb-2 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
+                                              <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">5</span>
+                                              {(visibility.showP1 || visibility.showP2 || visibility.showP3)
+                                                ? <span>Adjust the vertices by moving the sliders</span>
+                                                : <span>Some configurations will have sliders here that you can adjust. Try adjusting the operator until you see a slider</span>
+                                              }
+                                            </div>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+
+                                      {visibility.showP1 && (
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">ve</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.tVe.toFixed(2)}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="0.01"
+                                            max="0.99"
+                                            step="0.01"
+                                            value={op.tVe}
+                                            onChange={(e) => { setSliderMoved(true); updateOperatorParams(op.id, 'tVe', e.target.value); }}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
+                                      )}
+                                      {visibility.showP2 && (
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">vf</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.tVf.toFixed(2)}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="0.01"
+                                            max="0.99"
+                                            step="0.01"
+                                            value={op.tVf}
+                                            onChange={(e) => { setSliderMoved(true); updateOperatorParams(op.id, 'tVf', e.target.value); }}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
+                                      )}
+                                      {visibility.showP3 && (
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">fe</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.tFe.toFixed(2)}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="0.01"
+                                            max="0.99"
+                                            step="0.01"
+                                            value={op.tFe}
+                                            onChange={(e) => { setSliderMoved(true); updateOperatorParams(op.id, 'tFe', e.target.value); }}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
+                                      )}
+
                                       {unknownSelectedAtoms.length > 0 && (
                                         <p className="text-[10px] text-red-400 font-mono break-all">
                                           Unknown atoms: {unknownSelectedAtoms.join(', ')}
@@ -1410,6 +1478,22 @@ export default function App() {
             </section>
 
             <section>
+              <AnimatePresence>
+                {showOnboarding && allOnboardingComplete && (
+                  <motion.div
+                    key="callout-finish"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="callout-animate mb-4 flex items-start gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
+                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0 mt-0.5">✓</span>
+                      <span>When you're happy you can export or share the tiling pattern. You can also return to the top at any time and choose a different base tiling to apply the operators to.</span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Download className="w-3 h-3" />
                 Export/Share
@@ -1520,6 +1604,7 @@ export default function App() {
                   ...(!initialHadOperators ? [{ step: 2, label: 'Add an operator', done: step2Complete }] : []),
                   { step: initialHadOperators ? 2 : 3, label: 'Choose a preset or click Random', done: step3Complete },
                   { step: initialHadOperators ? 3 : 4, label: 'Edit the operator via diagram or grid', done: step4Complete },
+                  { step: initialHadOperators ? 4 : 5, label: 'Adjust the sliders', done: step5Complete },
                 ].map(({ step, label, done }) => (
                   <div key={step} className="flex items-start gap-3">
                     <div
@@ -1547,6 +1632,26 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              <AnimatePresence>
+                {allOnboardingComplete && (
+                  <motion.div
+                    key="completion"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-4">
+                      <button
+                        onClick={dismissOnboarding}
+                        className="w-full rounded-lg bg-yellow-400 px-3 py-1.5 text-xs font-bold text-yellow-900 transition-colors hover:bg-yellow-300"
+                      >
+                        Finish
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
