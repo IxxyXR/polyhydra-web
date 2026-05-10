@@ -1445,6 +1445,8 @@ export default function App() {
                                                   return [(
                                                     <button
                                                       key={atom}
+                                                      onMouseEnter={() => setHoveredGridAtom(atom)}
+                                                      onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
                                                       onClick={() => { toggleGridAtom(atom); setDotPopup(null); }}
                                                       disabled={!compatible}
                                                       className={`w-full rounded-lg px-2 py-1.5 text-left text-[10px] font-mono transition-colors ${
