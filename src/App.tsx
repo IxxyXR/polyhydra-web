@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useDebounce } from './hooks/useDebounce';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Settings,
@@ -447,28 +448,50 @@ export default function App() {
   const selectedTiling = UNIFORM_TILINGS[tilingType];
   const selectedPalette = PALETTES[palette];
 
-  const selectedOperatorHasCrossings = useMemo(() => {
-    if (!selectedOperatorId) return false;
-    const tiling = UNIFORM_TILINGS[tilingType];
-    if (!tiling || tilingType === 'multigrid') return false;
-    const selectedIdx = operators.findIndex(op => op.id === selectedOperatorId);
-    if (selectedIdx === -1 || !operators[selectedIdx].enabled) return false;
-    try {
-      let { vertices, faces } = tiling.generate(2, 2);
-      for (let i = 0; i <= selectedIdx; i++) {
-        if (operators[i].enabled) {
-          ({ vertices, faces } = applyOperator({ vertices, faces }, operators[i]));
+  const [selectedOperatorHasCrossings, setSelectedOperatorHasCrossings] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (!selectedOperatorId) { setSelectedOperatorHasCrossings(false); return; }
+      const tiling = UNIFORM_TILINGS[tilingType];
+      if (!tiling || tilingType === 'multigrid') { setSelectedOperatorHasCrossings(false); return; }
+      const selectedIdx = operators.findIndex(op => op.id === selectedOperatorId);
+      if (selectedIdx === -1 || !operators[selectedIdx].enabled) { setSelectedOperatorHasCrossings(false); return; }
+      try {
+        let { vertices, faces } = tiling.generate(2, 2);
+        for (let i = 0; i <= selectedIdx; i++) {
+          if (operators[i].enabled) {
+            ({ vertices, faces } = applyOperator({ vertices, faces }, operators[i]));
+          }
         }
+        setSelectedOperatorHasCrossings(hasMeshEdgeCrossings({ vertices, faces }));
+      } catch {
+        setSelectedOperatorHasCrossings(false);
       }
-      return hasMeshEdgeCrossings({ vertices, faces });
-    } catch {
-      return false;
-    }
+    }, 200);
+    return () => clearTimeout(id);
   }, [operators, tilingType, selectedOperatorId]);
   const isMultigrid = tilingType === 'multigrid';
   const generationOptions: TilingGenerationOptions = {
     multigrid: multigridSettings,
   };
+
+  const liveCanvasProps = {
+    tilingType,
+    rows,
+    cols,
+    showEdges,
+    showVertices,
+    showFaces,
+    wireframe,
+    faceHighlight,
+    operators: activeOperators,
+    palette,
+    paletteColors: shuffledColors ?? undefined as string[] | undefined,
+    colorMode,
+    edgeColor,
+    generationOptions,
+  };
+  const canvasProps = useDebounce(liveCanvasProps, 33);
   const tilingGroups = Object.entries(UNIFORM_TILINGS).reduce<Record<string, Array<[string, typeof selectedTiling]>>>((groups, [key, tiling]) => {
     let group = 'Other';
     if (REGULAR_TILING_KEYS.has(key)) {
@@ -1637,22 +1660,7 @@ export default function App() {
         </div>
 
         <div className="w-full h-full">
-          <TilingCanvas
-            tilingType={tilingType}
-            rows={rows}
-            cols={cols}
-            showEdges={showEdges}
-            showVertices={showVertices}
-            showFaces={showFaces}
-            wireframe={wireframe}
-            faceHighlight={faceHighlight}
-            operators={activeOperators}
-            palette={palette}
-            paletteColors={shuffledColors ?? undefined}
-            colorMode={colorMode}
-            edgeColor={edgeColor}
-            generationOptions={generationOptions}
-          />
+          <TilingCanvas {...canvasProps} />
         </div>
 
         <AnimatePresence>
