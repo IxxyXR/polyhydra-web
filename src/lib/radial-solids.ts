@@ -44,6 +44,25 @@ function dot(a: V3, b: V3): number { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
 function cross(a: V3, b: V3): V3 { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
 function norm(a: V3): V3 { const l = Math.sqrt(dot(a,a)); return l > 1e-10 ? scale(a, 1/l) : [0,1,0]; }
 
+// --- normal correction ---
+function fixNormals(vertices: number[], faces: number[][]): number[][] {
+  const nv = vertices.length / 3;
+  const mc: V3 = [0, 0, 0];
+  for (let i = 0; i < nv; i++) {
+    mc[0] += vertices[i*3]; mc[1] += vertices[i*3+1]; mc[2] += vertices[i*3+2];
+  }
+  mc[0] /= nv; mc[1] /= nv; mc[2] /= nv;
+
+  return faces.map(face => {
+    if (face.length < 3) return face;
+    const n0 = cross(sub(v3(vertices, face[1]), v3(vertices, face[0])), sub(v3(vertices, face[2]), v3(vertices, face[0])));
+    const fc: V3 = [0, 0, 0];
+    for (const vi of face) { const p = v3(vertices, vi); fc[0]+=p[0]; fc[1]+=p[1]; fc[2]+=p[2]; }
+    fc[0] /= face.length; fc[1] /= face.length; fc[2] /= face.length;
+    return dot(n0, sub(fc, mc)) >= 0 ? face : [...face].reverse();
+  });
+}
+
 // --- geometry helpers ---
 function ring(n: number, radius: number, y: number, angleOffset = 0): V3[] {
   return Array.from({length: n}, (_, k) => {
@@ -415,23 +434,25 @@ function makeGyroelongatedBicupola(n: number, h?: number, capH?: number, capGyro
 
 export function buildRadialSolid(type: RadialPolyType, sides: number): { vertices: number[]; faces: number[][] } {
   const n = Math.max(3, Math.min(16, sides));
+  let result: { vertices: number[]; faces: number[][] };
   switch (type) {
-    case 'Prism':                  return makePrism(n);
-    case 'Antiprism':              return makeAntiprism(n);
-    case 'Trapezohedron':          return makeTrapezohedron(n);
-    case 'Pyramid':                return makePyramid(n);
-    case 'Dipyramid':              return makeDipyramid(n);
-    case 'ElongatedPyramid':       return makeElongatedPyramid(n);
-    case 'ElongatedDipyramid':     return makeElongatedDipyramid(n);
-    case 'GyroelongatedPyramid':   return makeGyroelongatedPyramid(n);
-    case 'GyroelongatedDipyramid': return makeGyroelongatedDipyramid(n);
-    case 'Cupola':                 return makeCupola(n);
-    case 'ElongatedCupola':        return makeElongatedCupola(n);
-    case 'GyroelongatedCupola':    return makeGyroelongatedCupola(n);
-    case 'OrthoBicupola':          return makeBicupola(n, cupolaH(n), false);
-    case 'GyroBicupola':           return makeBicupola(n, cupolaH(n), true);
-    case 'ElongatedOrthoBicupola': return makeElongatedBicupola(n, sideLen(2*n), cupolaH(n), false);
-    case 'ElongatedGyroBicupola':  return makeElongatedBicupola(n, sideLen(2*n), cupolaH(n), true);
-    case 'GyroelongatedBicupola':  return makeGyroelongatedBicupola(n);
+    case 'Prism':                  result = makePrism(n); break;
+    case 'Antiprism':              result = makeAntiprism(n); break;
+    case 'Trapezohedron':          result = makeTrapezohedron(n); break;
+    case 'Pyramid':                result = makePyramid(n); break;
+    case 'Dipyramid':              result = makeDipyramid(n); break;
+    case 'ElongatedPyramid':       result = makeElongatedPyramid(n); break;
+    case 'ElongatedDipyramid':     result = makeElongatedDipyramid(n); break;
+    case 'GyroelongatedPyramid':   result = makeGyroelongatedPyramid(n); break;
+    case 'GyroelongatedDipyramid': result = makeGyroelongatedDipyramid(n); break;
+    case 'Cupola':                 result = makeCupola(n); break;
+    case 'ElongatedCupola':        result = makeElongatedCupola(n); break;
+    case 'GyroelongatedCupola':    result = makeGyroelongatedCupola(n); break;
+    case 'OrthoBicupola':          result = makeBicupola(n, cupolaH(n), false); break;
+    case 'GyroBicupola':           result = makeBicupola(n, cupolaH(n), true); break;
+    case 'ElongatedOrthoBicupola': result = makeElongatedBicupola(n, sideLen(2*n), cupolaH(n), false); break;
+    case 'ElongatedGyroBicupola':  result = makeElongatedBicupola(n, sideLen(2*n), cupolaH(n), true); break;
+    case 'GyroelongatedBicupola':  result = makeGyroelongatedBicupola(n); break;
   }
+  return { vertices: result.vertices, faces: fixNormals(result.vertices, result.faces) };
 }
