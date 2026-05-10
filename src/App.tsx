@@ -258,11 +258,14 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [hoveredDotType, setHoveredDotType] = useState<string | null>(null);
   const [dotPopup, setDotPopup] = useState<{ type: string; x: number; y: number } | null>(null);
+  const selectedShapeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const selectedTilingButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Onboarding
   const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
     !!localStorage.getItem('polyhydra-onboarding-done')
   );
+  const [shapeEverOpened, setShapeEverOpened] = useState(false);
   const [tilingEverOpened, setTilingEverOpened] = useState(false);
   const [presetOrRandomUsed, setPresetOrRandomUsed] = useState(false);
   const [sliderMoved, setSliderMoved] = useState(false);
@@ -271,7 +274,7 @@ export default function App() {
     new URLSearchParams(window.location.search).has('ops')
   );
 
-  const step1Complete = tilingEverOpened;
+  const step1Complete = mode === '3d' ? shapeEverOpened : tilingEverOpened;
   const step2Complete = initialHadOperators || operators.length > 0;
   const step3Complete = presetOrRandomUsed;
   const step4Complete = diagramOrGridClicked;
@@ -279,6 +282,7 @@ export default function App() {
   const allOnboardingComplete = step1Complete && step2Complete && step3Complete && step4Complete && step5Complete;
   const showOnboarding = !onboardingDismissed;
   const activeOnboardingStep = !step1Complete ? 1 : !step2Complete ? 2 : !step3Complete ? 3 : !step4Complete ? 4 : !step5Complete ? 5 : 6;
+  const onboardingStep1Label = mode === '3d' ? 'Pick a shape' : 'Pick a tiling';
 
   const dismissOnboarding = () => {
     localStorage.setItem('polyhydra-onboarding-done', '1');
@@ -586,6 +590,28 @@ export default function App() {
     return groups;
   }, {});
 
+  useEffect(() => {
+    if (!shapeMenuOpen) return;
+    const rafId = window.requestAnimationFrame(() => {
+      selectedShapeButtonRef.current?.scrollIntoView({
+        block: 'center',
+        inline: 'nearest',
+      });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [shapeMenuOpen, radialType]);
+
+  useEffect(() => {
+    if (!tilingMenuOpen) return;
+    const rafId = window.requestAnimationFrame(() => {
+      selectedTilingButtonRef.current?.scrollIntoView({
+        block: 'center',
+        inline: 'nearest',
+      });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [tilingMenuOpen, tilingType]);
+
   return (
     <div id="app-root" className="flex h-screen bg-neutral-950 text-neutral-100 font-sans overflow-hidden">
       {/* Sidebar */}
@@ -640,8 +666,27 @@ export default function App() {
             {mode === '3d' && (
               <section>
                 <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
+                  <AnimatePresence>
+                    {showOnboarding && activeOnboardingStep === 1 && (
+                      <motion.div
+                        key="callout-shape-1"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="callout-animate mx-3 mt-3 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
+                          <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">1</span>
+                          <span>Click below to browse and pick a 3D shape</span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                   <button
-                    onClick={() => setShapeMenuOpen(!shapeMenuOpen)}
+                    onClick={() => {
+                      if (!shapeMenuOpen) setShapeEverOpened(true);
+                      setShapeMenuOpen(!shapeMenuOpen);
+                    }}
                     className="w-full p-4 text-left transition-colors hover:bg-neutral-800/40"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -669,6 +714,7 @@ export default function App() {
                               {group.types.map(type => (
                                 <button
                                   key={type}
+                                  ref={radialType === type ? selectedShapeButtonRef : null}
                                   onClick={() => { setRadialType(type); setShapeMenuOpen(false); }}
                                   className={`w-full rounded-xl p-3 text-left transition-all ${radialType === type ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-neutral-900/40 text-neutral-300 hover:bg-neutral-800'}`}
                                 >
@@ -751,6 +797,7 @@ export default function App() {
                               {entries.map(([key, tiling]) => (
                                 <button
                                   key={key}
+                                  ref={tilingType === key ? selectedTilingButtonRef : null}
                                   onClick={() => {
                                     setTilingType(key);
                                     if (key === 'multigrid') {
@@ -1790,7 +1837,7 @@ export default function App() {
                   >
                     <div className="callout-animate mb-4 flex items-start gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
                       <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0 mt-0.5">✓</span>
-                      <span>When you're happy you can export or share the tiling pattern. You can also return to the top at any time and choose a different base tiling to apply the operators to.</span>
+                      <span>When you're happy you can export or share the current {mode === '3d' ? 'shape' : 'tiling pattern'}. You can also return to the top at any time and choose a different base {mode === '3d' ? 'shape' : 'tiling'} to apply the operators to.</span>
                     </div>
                   </motion.div>
                 )}
@@ -1926,7 +1973,7 @@ export default function App() {
               </div>
               <div className="space-y-3">
                 {[
-                  { step: 1, label: 'Pick a tiling', done: step1Complete },
+                  { step: 1, label: onboardingStep1Label, done: step1Complete },
                   ...(!initialHadOperators ? [{ step: 2, label: 'Add an operator', done: step2Complete }] : []),
                   { step: initialHadOperators ? 2 : 3, label: 'Choose a preset or click Random', done: step3Complete },
                   { step: initialHadOperators ? 3 : 4, label: 'Edit the operator via diagram or grid', done: step4Complete },

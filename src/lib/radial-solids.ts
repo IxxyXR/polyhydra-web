@@ -127,7 +127,7 @@ export const RADIAL_TYPES_WITH_SIDES = new Set<RadialPolyType>([
   'GyroelongatedBicupola',
 ]);
 
-const CATALAN_SOURCE_CANONICALIZE_MAX_ITERATIONS = 250;
+const NAMED_UNIFORM_CANONICALIZE_MAX_ITERATIONS = 300;
 
 // --- vector helpers ---
 type V3 = [number, number, number];
@@ -737,14 +737,28 @@ function buildDualSolid(mesh: Mesh): Mesh {
   return centerAndNormalize(computeDual(mesh.vertices, mesh.faces));
 }
 
-function canonicalizeCatalanSource(mesh: Mesh): Mesh {
+function canonicalizeNamedUniformSolid(mesh: Mesh): Mesh {
   return finalizeMesh(mesh, 'canonicalize', {
-    canonicalizeMaxIterations: CATALAN_SOURCE_CANONICALIZE_MAX_ITERATIONS,
+    canonicalizeMaxIterations: NAMED_UNIFORM_CANONICALIZE_MAX_ITERATIONS,
   });
 }
 
+function buildCanonicalDerivedSolid(base: Mesh, operators: string[]): Mesh {
+  return canonicalizeNamedUniformSolid(buildDerivedSolid(base, operators));
+}
+
+function buildCanonicalAlternatedSolid(base: Mesh, operators: string[]): Mesh {
+  return canonicalizeNamedUniformSolid(buildAlternatedSolid(base, operators));
+}
+
 function buildCatalanSolid(base: Mesh, operators: string[]): Mesh {
-  return buildDualSolid(canonicalizeCatalanSource(buildDerivedSolid(base, operators)));
+  const dual = buildDualSolid(buildCanonicalDerivedSolid(base, operators));
+  return canonicalizeNamedUniformSolid(dual);
+}
+
+function buildAlternatedCatalanSolid(base: Mesh, operators: string[]): Mesh {
+  const dual = buildDualSolid(buildCanonicalAlternatedSolid(base, operators));
+  return canonicalizeNamedUniformSolid(dual);
 }
 
 // --- public API ---
@@ -758,22 +772,22 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
     case 'Octahedron':             result = makeOctahedron(); break;
     case 'Dodecahedron':           result = makeDodecahedron(); break;
     case 'Icosahedron':            result = makeIcosahedron(); break;
-    case 'TruncatedTetrahedron':   result = buildDerivedSolid(makeTetrahedron(), ['Truncate']); break;
-    case 'Cuboctahedron':          result = buildDerivedSolid(makeCube(), ['Ambo']); break;
-    case 'TruncatedCube':          result = buildDerivedSolid(makeCube(), ['Truncate']); break;
-    case 'TruncatedOctahedron':    result = buildDerivedSolid(makeOctahedron(), ['Truncate']); break;
-    case 'Rhombicuboctahedron':    result = buildDerivedSolid(makeCube(), ['Expand']); break;
-    case 'TruncatedCuboctahedron': result = buildDerivedSolid(makeCube(), ['Ambo', 'Truncate']); break;
-    case 'SnubCube':               result = buildAlternatedSolid(makeCube(), ['Ambo', 'Truncate']); break;
-    case 'Icosidodecahedron':      result = buildDerivedSolid(makeDodecahedron(), ['Ambo']); break;
-    case 'TruncatedDodecahedron':  result = buildDerivedSolid(makeDodecahedron(), ['Truncate']); break;
-    case 'TruncatedIcosahedron':   result = buildDerivedSolid(makeIcosahedron(), ['Truncate']); break;
-    case 'Rhombicosidodecahedron': result = buildDerivedSolid(makeDodecahedron(), ['Expand']); break;
+    case 'TruncatedTetrahedron':   result = buildCanonicalDerivedSolid(makeTetrahedron(), ['Truncate']); break;
+    case 'Cuboctahedron':          result = buildCanonicalDerivedSolid(makeCube(), ['Ambo']); break;
+    case 'TruncatedCube':          result = buildCanonicalDerivedSolid(makeCube(), ['Truncate']); break;
+    case 'TruncatedOctahedron':    result = buildCanonicalDerivedSolid(makeOctahedron(), ['Truncate']); break;
+    case 'Rhombicuboctahedron':    result = buildCanonicalDerivedSolid(makeCube(), ['Expand']); break;
+    case 'TruncatedCuboctahedron': result = buildCanonicalDerivedSolid(makeCube(), ['Ambo', 'Truncate']); break;
+    case 'SnubCube':               result = buildCanonicalAlternatedSolid(makeCube(), ['Ambo', 'Truncate']); break;
+    case 'Icosidodecahedron':      result = buildCanonicalDerivedSolid(makeDodecahedron(), ['Ambo']); break;
+    case 'TruncatedDodecahedron':  result = buildCanonicalDerivedSolid(makeDodecahedron(), ['Truncate']); break;
+    case 'TruncatedIcosahedron':   result = buildCanonicalDerivedSolid(makeIcosahedron(), ['Truncate']); break;
+    case 'Rhombicosidodecahedron': result = buildCanonicalDerivedSolid(makeDodecahedron(), ['Expand']); break;
     case 'TruncatedIcosidodecahedron':
-      result = buildDerivedSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
+      result = buildCanonicalDerivedSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
       break;
     case 'SnubDodecahedron':
-      result = buildAlternatedSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
+      result = buildCanonicalAlternatedSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
       break;
     case 'TriakisTetrahedron':          result = buildCatalanSolid(makeTetrahedron(), ['Truncate']); break;
     case 'RhombicDodecahedron':         result = buildCatalanSolid(makeCube(), ['Ambo']); break;
@@ -782,7 +796,7 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
     case 'DeltoidalIcositetrahedron':   result = buildCatalanSolid(makeCube(), ['Expand']); break;
     case 'DisdyakisDodecahedron':       result = buildCatalanSolid(makeCube(), ['Ambo', 'Truncate']); break;
     case 'PentagonalIcositetrahedron':
-      result = buildDualSolid(canonicalizeCatalanSource(buildAlternatedSolid(makeCube(), ['Ambo', 'Truncate'])));
+      result = buildAlternatedCatalanSolid(makeCube(), ['Ambo', 'Truncate']);
       break;
     case 'RhombicTriacontahedron':      result = buildCatalanSolid(makeDodecahedron(), ['Ambo']); break;
     case 'TriakisIcosahedron':          result = buildCatalanSolid(makeDodecahedron(), ['Truncate']); break;
@@ -792,7 +806,7 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
       result = buildCatalanSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
       break;
     case 'PentagonalHexecontahedron':
-      result = buildDualSolid(canonicalizeCatalanSource(buildAlternatedSolid(makeDodecahedron(), ['Ambo', 'Truncate'])));
+      result = buildAlternatedCatalanSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
       break;
     case 'Prism':                  result = makePrism(n); break;
     case 'Antiprism':              result = makeAntiprism(n); break;
