@@ -473,7 +473,7 @@ export default function App() {
       <motion.aside
         initial={false}
         animate={{ width: sidebarOpen ? 360 : 0, opacity: sidebarOpen ? 1 : 0 }}
-        className="relative h-full bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col z-20"
+        className="relative h-full bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col z-20 overflow-hidden"
       >
         <div className="p-6 overflow-y-auto flex-1">
           <div className="flex items-center justify-between gap-3 mb-8">
