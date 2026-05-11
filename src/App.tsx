@@ -35,7 +35,7 @@ import {
 } from './lib/tiling-geometries';
 import { RadialPolyType, RADIAL_SHAPE_GROUPS, RADIAL_SOLID_NAMES, RADIAL_TYPES_WITH_SIDES } from './lib/radial-solids';
 import { PALETTES, PaletteKey } from './lib/palettes';
-import { exportObj, exportOff, exportSvg } from './lib/export';
+import { exportObj, exportOff, exportSvg, sendToBlender } from './lib/export';
 import { ColorMode } from './lib/coloring';
 import { MeshFinalizationMode } from './lib/mesh-finalization';
 import { createOmniOperatorDiagramSvg, createEmptyDiagramSvg } from './lib/omni-diagram';
@@ -256,6 +256,9 @@ export default function App() {
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [hoveredGridAtom, setHoveredGridAtom] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [blenderStatus, setBlenderStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
+  const [blenderError, setBlenderError] = useState<string | null>(null);
+  const [blenderAvailable, setBlenderAvailable] = useState(false);
   const [hoveredDotType, setHoveredDotType] = useState<string | null>(null);
   const [dotPopup, setDotPopup] = useState<{ type: string; x: number; y: number } | null>(null);
   const selectedShapeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -288,6 +291,25 @@ export default function App() {
     localStorage.setItem('polyhydra-onboarding-done', '1');
     setOnboardingDismissed(true);
   };
+
+  // Poll for Blender availability
+  useEffect(() => {
+    const check = async () => {
+      try {
+        await fetch('http://localhost:8765/polyhydra', {
+          method: 'GET',
+          mode: 'no-cors',
+          signal: AbortSignal.timeout(2000),
+        });
+        setBlenderAvailable(true);
+      } catch {
+        setBlenderAvailable(false);
+      }
+    };
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
+  }, []);
 
   // Sync state with URL
   useEffect(() => {
@@ -1868,6 +1890,42 @@ export default function App() {
                   OFF
                 </button>
               </div>
+              {blenderAvailable ? (
+                <>
+                  <button
+                    onClick={async () => {
+                      setBlenderStatus('sending');
+                      setBlenderError(null);
+                      const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization);
+                      setBlenderStatus(result.ok ? 'ok' : 'error');
+                      if (!result.ok) setBlenderError(result.error ?? null);
+                      setTimeout(() => setBlenderStatus('idle'), 3000);
+                    }}
+                    disabled={blenderStatus === 'sending'}
+                    className={`mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                      blenderStatus === 'ok'
+                        ? 'bg-green-800/60 border-green-600/50 text-green-300'
+                        : blenderStatus === 'error'
+                        ? 'bg-red-800/60 border-red-600/50 text-red-300'
+                        : 'bg-orange-900/30 border-orange-700/50 text-orange-400 hover:bg-orange-900/60 hover:text-orange-200'
+                    }`}
+                  >
+                    {blenderStatus === 'sending' ? 'Sending...' : blenderStatus === 'ok' ? 'Sent to Blender!' : blenderStatus === 'error' ? 'Error' : 'Send to Blender'}
+                  </button>
+                  {blenderStatus === 'error' && blenderError && (
+                    <p className="mt-1 text-[9px] text-red-400">{blenderError}</p>
+                  )}
+                </>
+              ) : (
+                <a
+                  href="https://github.com/IxxyXR/polyhydra-web/releases/latest"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 text-center block"
+                >
+                  Get Blender Add-on
+                </a>
+              )}
               <button
                 onClick={async () => {
                   const params = buildAppSearchParams({

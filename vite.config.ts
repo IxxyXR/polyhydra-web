@@ -12,7 +12,7 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
-    server: {
+server: {
       hmr: process.env.DISABLE_HMR !== 'true',
     },
   };

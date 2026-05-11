@@ -12,6 +12,42 @@ const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 const ZIP_VERSION = 20;
 const CRC32_TABLE = createCrc32Table();
 
+export async function sendToBlender(
+  mode: '2d' | '3d',
+  tilingType: string,
+  rows: number,
+  cols: number,
+  operators: OperatorSpec[],
+  paletteKey: PaletteKey,
+  colorMode: ColorMode,
+  radialType: RadialPolyType,
+  radialSides: number,
+  generationOptions?: TilingGenerationOptions,
+  finalization: MeshFinalizationMode = 'planarize',
+): Promise<{ ok: boolean; error?: string }> {
+  const mesh = generateFinalMesh({ mode, tilingType, rows, cols, operators, radialType, radialSides, generationOptions, finalization });
+  if (!mesh) return { ok: false, error: 'No mesh generated' };
+
+  const faceColors = computeFaceColors(mesh, paletteKey, colorMode);
+  const payload = {
+    vertices: Array.from(mesh.vertices),
+    faces: mesh.faces,
+    colors: faceColors,
+  };
+
+  try {
+    const res = await fetch('http://localhost:8765/polyhydra', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return { ok: false, error: `Blender server responded with ${res.status}` };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Could not connect — is the Blender addon running?' };
+  }
+}
+
 export function exportObj(
   mode: '2d' | '3d',
   tilingType: string,

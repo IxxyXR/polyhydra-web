@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "build:blender": "vite build --outDir _blender_tmp/web --emptyOutDir && node scripts/zip-blender-addon.mjs",
     "preview": "vite preview",
     "clean": "rimraf dist",
     "lint": "tsc --noEmit"

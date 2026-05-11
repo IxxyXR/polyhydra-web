@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+blender_addon/web/
+_blender_tmp/
+polyhydra-blender-addon.zip
