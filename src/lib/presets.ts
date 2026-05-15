@@ -25,7 +25,8 @@ export const EXAMPLE_PRESETS: AppPreset[] = [
   { name: 'Isfahan', params: 'rt=15&t=p&p=desert&cm=s&o=3ifs' },
   { name: 'Pointy Grid', params: 'o=47wg.1b0y21'},
   { name: 'Maltese Floor', params: 'o=4ni8'},
-  { name: 'Frutti', params: 't=15&cm=s&o=4zthc.1q1p24'}
+  { name: 'Frutti', params: 't=15&cm=s&o=4zthc.1q1p24'},
+  { name: 'name', params: 't=y&p=alhambra&rf=0.6666666666666667&o=kd8g.1e0j0w'},
 ];
 
 export function getUserPresets(): AppPreset[] {
