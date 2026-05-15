@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Settings,
@@ -39,6 +39,7 @@ import { exportObj, exportOff, exportSvg, sendToBlender } from './lib/export';
 import { ColorMode } from './lib/coloring';
 import { MeshFinalizationMode } from './lib/mesh-finalization';
 import { createOmniOperatorDiagramSvg, createEmptyDiagramSvg } from './lib/omni-diagram';
+import { AppPreset, EXAMPLE_PRESETS, getUserPresets, saveUserPreset, deleteUserPreset } from './lib/presets';
 import {
   createOperatorSpec,
   DEFAULT_OMNI_PARAMS,
@@ -261,6 +262,10 @@ export default function App() {
   const [blenderAvailable, setBlenderAvailable] = useState(false);
   const [hoveredDotType, setHoveredDotType] = useState<string | null>(null);
   const [dotPopup, setDotPopup] = useState<{ type: string; x: number; y: number } | null>(null);
+  const [presetsMenuOpen, setPresetsMenuOpen] = useState(false);
+  const [userPresets, setUserPresets] = useState<AppPreset[]>(() => getUserPresets());
+  const [newPresetName, setNewPresetName] = useState('');
+  const [savePresetInputVisible, setSavePresetInputVisible] = useState(false);
   const selectedShapeButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedTilingButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -311,99 +316,100 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Sync state with URL
-  useEffect(() => {
-    const applyParamsFromUrl = (search: string) => {
-      const params = new URLSearchParams(search);
+  const applyParamsFromUrl = useCallback((search: string) => {
+    const params = new URLSearchParams(search);
 
-      const parseIntParam = (value: string | null, fallback: number) => {
-        const parsed = Number.parseInt(value ?? '', 10);
-        return Number.isFinite(parsed) ? parsed : fallback;
-      };
-      const parseFloatParam = (value: string | null, fallback: number) => {
-        const parsed = Number.parseFloat(value ?? '');
-        return Number.isFinite(parsed) ? parsed : fallback;
-      };
-
-      const urlMode = params.get('mode');
-      if (urlMode === '2d' || urlMode === '3d') setMode(urlMode);
-
-      const urlFinalization = params.get('finalization');
-      if (urlFinalization === 'none' || urlFinalization === 'planarize' || urlFinalization === 'canonicalize') {
-        setFinalization(urlFinalization);
-      }
-
-      const urlRadialType = params.get('radialType');
-      if (urlRadialType && RADIAL_SOLID_NAMES[urlRadialType as RadialPolyType]) {
-        setRadialType(urlRadialType as RadialPolyType);
-      }
-      const urlRadialSides = params.get('radialSides');
-      if (urlRadialSides) {
-        const parsed = parseInt(urlRadialSides, 10);
-        if (parsed >= 3 && parsed <= 16) setRadialSides(parsed);
-      }
-
-      const urlTiling = params.get('tiling');
-      if (urlTiling && UNIFORM_TILINGS[urlTiling]) setTilingType(urlTiling);
-
-      const urlRows = params.get('rows');
-      const urlCols = params.get('cols');
-      if (urlRows && urlCols) {
-        setRows(parseInt(urlRows, 10));
-        setCols(parseInt(urlCols, 10));
-      } else if (urlRows) {
-        const size = parseInt(urlRows, 10);
-        setRows(size);
-        setCols(size);
-      } else if (urlCols) {
-        const size = parseInt(urlCols, 10);
-        setRows(size);
-        setCols(size);
-      }
-
-      setShowEdges(params.get('edges') !== 'false');
-      setShowVertices(params.get('vertices') === 'true');
-      setShowFaces(params.get('faces') !== 'false');
-      setWireframe(params.get('wireframe') === 'true');
-
-      const urlPalette = params.get('palette');
-      if (urlPalette && PALETTES[urlPalette as PaletteKey]) setPalette(urlPalette as PaletteKey);
-
-      const urlColorMode = params.get('colorMode');
-      if (urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value') {
-        setColorMode(urlColorMode);
-      }
-
-      const urlEdgeColor = params.get('edgeColor');
-      if (urlEdgeColor) setEdgeColor(urlEdgeColor);
-
-      setMultigridSettings({
-        dimensions: parseIntParam(params.get('mgDim'), MULTIGRID_DEFAULTS.dimensions),
-        divisions: parseIntParam(params.get('mgDiv'), MULTIGRID_DEFAULTS.divisions),
-        offset: parseFloatParam(params.get('mgOff'), MULTIGRID_DEFAULTS.offset),
-        randomize: params.get('mgRand') === 'true',
-        sharedVertices: params.get('mgShared') === null
-          ? MULTIGRID_DEFAULTS.sharedVertices
-          : params.get('mgShared') === 'true',
-        minDistance: parseFloatParam(params.get('mgMin'), MULTIGRID_DEFAULTS.minDistance),
-        maxDistance: parseFloatParam(params.get('mgMax'), MULTIGRID_DEFAULTS.maxDistance),
-        colorRatio: parseFloatParam(params.get('mgRatio'), MULTIGRID_DEFAULTS.colorRatio),
-        colorIntersect: parseFloatParam(params.get('mgIntersect'), MULTIGRID_DEFAULTS.colorIntersect),
-        colorIndex: parseFloatParam(params.get('mgIndex'), MULTIGRID_DEFAULTS.colorIndex),
-        randomSeed: parseIntParam(params.get('mgSeed'), MULTIGRID_DEFAULTS.randomSeed),
-      });
-
-      const urlOps = params.get('ops');
-      if (urlOps) {
-        const loadedOperators = parseOperatorsFromUrlParam(urlOps);
-        setOperators(loadedOperators);
-        setSelectedOperatorId(loadedOperators[0]?.id ?? null);
-      } else {
-        setOperators([]);
-        setSelectedOperatorId(null);
-      }
+    const parseIntParam = (value: string | null, fallback: number) => {
+      const parsed = Number.parseInt(value ?? '', 10);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const parseFloatParam = (value: string | null, fallback: number) => {
+      const parsed = Number.parseFloat(value ?? '');
+      return Number.isFinite(parsed) ? parsed : fallback;
     };
 
+    const urlMode = params.get('mode');
+    if (urlMode === '2d' || urlMode === '3d') setMode(urlMode);
+
+    const urlFinalization = params.get('finalization');
+    if (urlFinalization === 'none' || urlFinalization === 'planarize' || urlFinalization === 'canonicalize') {
+      setFinalization(urlFinalization);
+    }
+
+    const urlRadialType = params.get('radialType');
+    if (urlRadialType && RADIAL_SOLID_NAMES[urlRadialType as RadialPolyType]) {
+      setRadialType(urlRadialType as RadialPolyType);
+    }
+    const urlRadialSides = params.get('radialSides');
+    if (urlRadialSides) {
+      const parsed = parseInt(urlRadialSides, 10);
+      if (parsed >= 3 && parsed <= 16) setRadialSides(parsed);
+    }
+
+    const urlTiling = params.get('tiling');
+    if (urlTiling && UNIFORM_TILINGS[urlTiling]) setTilingType(urlTiling);
+
+    const urlRows = params.get('rows');
+    const urlCols = params.get('cols');
+    if (urlRows && urlCols) {
+      setRows(parseInt(urlRows, 10));
+      setCols(parseInt(urlCols, 10));
+    } else if (urlRows) {
+      const size = parseInt(urlRows, 10);
+      setRows(size);
+      setCols(size);
+    } else if (urlCols) {
+      const size = parseInt(urlCols, 10);
+      setRows(size);
+      setCols(size);
+    }
+
+    setShowEdges(params.get('edges') !== 'false');
+    setShowVertices(params.get('vertices') === 'true');
+    setShowFaces(params.get('faces') !== 'false');
+    setWireframe(params.get('wireframe') === 'true');
+
+    const urlPalette = params.get('palette');
+    if (urlPalette && PALETTES[urlPalette as PaletteKey]) setPalette(urlPalette as PaletteKey);
+
+    const urlColorMode = params.get('colorMode');
+    if (urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value') {
+      setColorMode(urlColorMode);
+    }
+
+    const urlEdgeColor = params.get('edgeColor');
+    if (urlEdgeColor) setEdgeColor(urlEdgeColor);
+
+    setMultigridSettings({
+      dimensions: parseIntParam(params.get('mgDim'), MULTIGRID_DEFAULTS.dimensions),
+      divisions: parseIntParam(params.get('mgDiv'), MULTIGRID_DEFAULTS.divisions),
+      offset: parseFloatParam(params.get('mgOff'), MULTIGRID_DEFAULTS.offset),
+      randomize: params.get('mgRand') === 'true',
+      sharedVertices: params.get('mgShared') === null
+        ? MULTIGRID_DEFAULTS.sharedVertices
+        : params.get('mgShared') === 'true',
+      minDistance: parseFloatParam(params.get('mgMin'), MULTIGRID_DEFAULTS.minDistance),
+      maxDistance: parseFloatParam(params.get('mgMax'), MULTIGRID_DEFAULTS.maxDistance),
+      colorRatio: parseFloatParam(params.get('mgRatio'), MULTIGRID_DEFAULTS.colorRatio),
+      colorIntersect: parseFloatParam(params.get('mgIntersect'), MULTIGRID_DEFAULTS.colorIntersect),
+      colorIndex: parseFloatParam(params.get('mgIndex'), MULTIGRID_DEFAULTS.colorIndex),
+      randomSeed: parseIntParam(params.get('mgSeed'), MULTIGRID_DEFAULTS.randomSeed),
+    });
+
+    const urlOps = params.get('ops');
+    if (urlOps) {
+      const loadedOperators = parseOperatorsFromUrlParam(urlOps);
+      setOperators(loadedOperators);
+      setSelectedOperatorId(loadedOperators[0]?.id ?? null);
+    } else {
+      setOperators([]);
+      setSelectedOperatorId(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync state with URL
+  useEffect(() => {
     applyParamsFromUrl(window.location.search);
     setIsReady(true);
 
@@ -414,7 +420,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [applyParamsFromUrl]);
 
   useEffect(() => {
     const params = buildAppSearchParams({
@@ -446,6 +452,28 @@ export default function App() {
     window.history.pushState(null, '', window.location.pathname + newSearch);
   }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
 
+
+  const applyPreset = (preset: AppPreset) => {
+    applyParamsFromUrl('?' + preset.params);
+    setPresetsMenuOpen(false);
+    setSavePresetInputVisible(false);
+    setNewPresetName('');
+  };
+
+  const saveCurrentPreset = () => {
+    if (!newPresetName.trim()) return;
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, multigridSettings, operators });
+    saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
+    setUserPresets(getUserPresets());
+    setNewPresetName('');
+    setSavePresetInputVisible(false);
+  };
+
+  const copyCurrentAsExamplePreset = async () => {
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, multigridSettings, operators });
+    const entry = `  {\n    name: '',\n    description: '',\n    params: '${params.toString()}',\n  },`;
+    await navigator.clipboard.writeText(entry);
+  };
 
   const addOperator = (notation: string, overrides: Partial<OperatorSpec> = {}) => {
     if (!notation.trim()) return;
@@ -666,6 +694,116 @@ export default function App() {
           </div>
 
           <div className="space-y-6">
+            {/* Presets */}
+            <section>
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
+                <button
+                  onClick={() => setPresetsMenuOpen(!presetsMenuOpen)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-neutral-800/40"
+                >
+                  <span className="text-xs font-semibold text-neutral-300">Presets</span>
+                  <ChevronRight className={`w-3.5 h-3.5 text-neutral-500 transition-transform ${presetsMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                </button>
+                <AnimatePresence initial={false}>
+                  {presetsMenuOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-neutral-800"
+                    >
+                      <div className="p-3 space-y-4">
+                        <div>
+                          <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-2 px-1">Examples</div>
+                          <div className="space-y-0.5">
+                            {EXAMPLE_PRESETS.map((preset) => (
+                              <button
+                                key={preset.name}
+                                onClick={() => applyPreset(preset)}
+                                className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-neutral-700/50 transition-colors group"
+                              >
+                                <span className="text-xs text-neutral-300 group-hover:text-white transition-colors">{preset.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {(userPresets.length > 0 || savePresetInputVisible) && (
+                          <div>
+                            <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-2 px-1">Favourites</div>
+                            <div className="space-y-0.5">
+                              {userPresets.map((preset, index) => (
+                                <div key={index} className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => applyPreset(preset)}
+                                    className="flex-1 text-left px-3 py-2 rounded-xl hover:bg-neutral-700/50 transition-colors group"
+                                  >
+                                    <div className="text-xs font-semibold text-white group-hover:text-blue-300 transition-colors">{preset.name}</div>
+                                  </button>
+                                  <button
+                                    onClick={() => { deleteUserPreset(index); setUserPresets(getUserPresets()); }}
+                                    className={OPERATOR_DELETE_BUTTON_CLASS}
+                                    title="Delete preset"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div>
+                          {savePresetInputVisible ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="Preset name…"
+                                value={newPresetName}
+                                onChange={(e) => setNewPresetName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') saveCurrentPreset();
+                                  if (e.key === 'Escape') { setSavePresetInputVisible(false); setNewPresetName(''); }
+                                }}
+                                autoFocus
+                                className="flex-1 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-blue-600"
+                              />
+                              <button
+                                onClick={saveCurrentPreset}
+                                disabled={!newPresetName.trim()}
+                                className="rounded-lg border border-blue-700/60 bg-blue-950/20 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-blue-300 transition-colors hover:bg-blue-900/40 disabled:opacity-40"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setSavePresetInputVisible(true)}
+                              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-neutral-700/50 bg-neutral-800/30 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 transition-colors hover:bg-neutral-800/60 hover:text-white"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Save current as favourite
+                            </button>
+                          )}
+                        </div>
+
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(import.meta as any).env?.DEV && (
+                          <button
+                            onClick={copyCurrentAsExamplePreset}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-orange-700/50 bg-orange-950/20 text-[10px] font-semibold uppercase tracking-widest text-orange-400 transition-colors hover:bg-orange-900/40"
+                            title="Copies a ready-to-paste AppPreset entry to the clipboard"
+                          >
+                            [DEV] Copy as example preset
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </section>
+
             {/* Mode toggle */}
             <section>
               <div className="flex gap-1 p-1 bg-neutral-800/40 rounded-xl border border-neutral-800">
