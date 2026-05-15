@@ -909,7 +909,7 @@ export default function App() {
 
   const copyCurrentAsExamplePreset = async () => {
     const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
-    const entry = `  {\n    name: '',\n    description: '',\n    params: '${params.toString()}',\n  },`;
+    const entry = `{ name: 'name', params: '${params.toString()}'},`;
     await navigator.clipboard.writeText(entry);
   };
 
@@ -1618,8 +1618,9 @@ export default function App() {
                       exit={{ height: 0, opacity: 0 }}
                       className="border-t border-neutral-800"
                     >
-                      <div className="p-3 space-y-3">
-                        <div className="space-y-3">
+                      <div className="p-3 space-y-4">
+                        <div className="space-y-2.5">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Faces</div>
                           <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
                             <button
                               onClick={() => setPaletteMenuOpen(!paletteMenuOpen)}
@@ -1722,7 +1723,94 @@ export default function App() {
                               By Sides
                             </button>
                           </div>
-                          <div className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2">
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
+                            <input type="checkbox" checked={showFaces} onChange={(e) => setShowFaces(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
+                          <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                            <div className="mb-3 text-sm text-neutral-300">Lighting</div>
+                            <div className="space-y-3">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Ambient</span>
+                                  <span className="font-mono text-neutral-300">{ambientLightIntensity.toFixed(2)}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1.5"
+                                  step="0.05"
+                                  value={ambientLightIntensity}
+                                  onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Key Light</span>
+                                  <span className="font-mono text-neutral-300">{keyLightIntensity.toFixed(2)}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="2"
+                                  step="0.05"
+                                  value={keyLightIntensity}
+                                  onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Key Azimuth</span>
+                                  <span className="font-mono text-neutral-300">{keyLightAzimuth.toFixed(0)}°</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="-180"
+                                  max="180"
+                                  step="1"
+                                  value={keyLightAzimuth}
+                                  onChange={(e) => setKeyLightAzimuth(parseFloat(e.target.value))}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Key Elevation</span>
+                                  <span className="font-mono text-neutral-300">{keyLightElevation.toFixed(0)}°</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="-85"
+                                  max="85"
+                                  step="1"
+                                  value={keyLightElevation}
+                                  onChange={(e) => setKeyLightElevation(parseFloat(e.target.value))}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Roughness</span>
+                                  <span className="font-mono text-neutral-300">{faceRoughness.toFixed(2)}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.02"
+                                  value={faceRoughness}
+                                  onChange={(e) => setFaceRoughness(parseFloat(e.target.value))}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-2.5 border-t border-neutral-800 pt-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Edges</div>
+                          <div className="flex items-center justify-between gap-3 px-1 py-1">
                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Edge Colour</span>
                             <label className="flex items-center gap-2">
                               <span className="font-mono text-[10px] text-neutral-400">{edgeColor}</span>
@@ -1734,7 +1822,12 @@ export default function App() {
                               />
                             </label>
                           </div>
-                          <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Edges</span>
+                            <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
+                          <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                            <div className="mb-3 text-sm text-neutral-300">Emboss</div>
                             <label className="flex items-center justify-between cursor-pointer group">
                               <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Emboss Faces</span>
                               <input
@@ -1744,7 +1837,7 @@ export default function App() {
                                 className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600"
                               />
                             </label>
-                            <div className={`space-y-3 transition-opacity ${embossEnabled ? 'opacity-100' : 'opacity-50'}`}>
+                            <div className={`mt-3 space-y-3 transition-opacity ${embossEnabled ? 'opacity-100' : 'opacity-50'}`}>
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                                   <span>Emboss Width</span>
@@ -1795,106 +1888,21 @@ export default function App() {
                               </div>
                             </div>
                           </div>
-                          <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
-                            <div className="text-sm text-neutral-300">Lighting</div>
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                <span>Ambient</span>
-                                <span className="font-mono text-neutral-300">{ambientLightIntensity.toFixed(2)}</span>
-                              </div>
-                              <input
-                                type="range"
-                                min="0"
-                                max="1.5"
-                                step="0.05"
-                                value={ambientLightIntensity}
-                                onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
-                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                <span>Key Light</span>
-                                <span className="font-mono text-neutral-300">{keyLightIntensity.toFixed(2)}</span>
-                              </div>
-                              <input
-                                type="range"
-                                min="0"
-                                max="2"
-                                step="0.05"
-                                value={keyLightIntensity}
-                                onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
-                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                <span>Key Azimuth</span>
-                                <span className="font-mono text-neutral-300">{keyLightAzimuth.toFixed(0)}°</span>
-                              </div>
-                              <input
-                                type="range"
-                                min="-180"
-                                max="180"
-                                step="1"
-                                value={keyLightAzimuth}
-                                onChange={(e) => setKeyLightAzimuth(parseFloat(e.target.value))}
-                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                <span>Key Elevation</span>
-                                <span className="font-mono text-neutral-300">{keyLightElevation.toFixed(0)}°</span>
-                              </div>
-                              <input
-                                type="range"
-                                min="-85"
-                                max="85"
-                                step="1"
-                                value={keyLightElevation}
-                                onChange={(e) => setKeyLightElevation(parseFloat(e.target.value))}
-                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                <span>Roughness</span>
-                                <span className="font-mono text-neutral-300">{faceRoughness.toFixed(2)}</span>
-                              </div>
-                              <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.02"
-                                value={faceRoughness}
-                                onChange={(e) => setFaceRoughness(parseFloat(e.target.value))}
-                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-                          </div>
-                          <div className="pt-3 border-t border-neutral-800 space-y-3">
-                            <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
-                              <input type="checkbox" checked={showFaces} onChange={(e) => setShowFaces(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                            </label>
-                            <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Edges</span>
-                              <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                            </label>
-                            <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Vertices</span>
-                              <input type="checkbox" checked={showVertices} onChange={(e) => setShowVertices(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                            </label>
-                            <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Wireframe</span>
-                              <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
-                            </label>
-                            <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Face Highlight</span>
-                              <input type="checkbox" checked={faceHighlight} onChange={(e) => setFaceHighlight(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
-                            </label>
-                          </div>
+                        </div>
+                        <div className="space-y-2.5 border-t border-neutral-800 pt-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Debug</div>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Vertices</span>
+                            <input type="checkbox" checked={showVertices} onChange={(e) => setShowVertices(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Wireframe</span>
+                            <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
+                          </label>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Face Highlight</span>
+                            <input type="checkbox" checked={faceHighlight} onChange={(e) => setFaceHighlight(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
+                          </label>
                         </div>
                       </div>
                     </motion.div>
