@@ -21,6 +21,7 @@ function normalizePreset(preset: AppPreset): AppPreset {
 
 export const EXAMPLE_PRESETS: AppPreset[] = [
   { name: 'Companion Cubie', params: 'm=3&rt=a&rs=6&t=15&cm=v&gd=9&gv=9&go=-1.43&o=4av4.1e2e1m' },
+  { name: 'Meteor Shrine', params: 'm=3&rt=g&p=alhambra&cm=r&o=1reo' },
   { name: 'Isfahan', params: 'rt=15&t=p&p=desert&cm=s&o=3ifs' },
   { name: 'Pointy Grid', params: 'o=47wg.1b0y21'},
   { name: 'Maltese Floor', params: 'o=4ni8'},
