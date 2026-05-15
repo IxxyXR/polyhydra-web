@@ -22,6 +22,7 @@ const DEFAULT_KEY_LIGHT_INTENSITY = 0.8;
 const DEFAULT_KEY_LIGHT_AZIMUTH = 45;
 const DEFAULT_KEY_LIGHT_ELEVATION = 35;
 const DEFAULT_FACE_ROUGHNESS = 0.66;
+const DEFAULT_FACE_OPACITY = 0.9;
 const KEY_LIGHT_DISTANCE = 8.660254037844387;
 
 interface FitAnimationState {
@@ -198,13 +199,14 @@ function createEmbossedFaceMaterial(
   embossDepth: number,
   embossSmoothness: number,
   faceRoughness: number,
+  faceOpacity: number,
 ) {
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
     flatShading: false,
     transparent: true,
-    opacity: 0.9,
+    opacity: faceOpacity,
     roughness: faceRoughness,
     metalness: 0,
     polygonOffset: true,
@@ -339,6 +341,7 @@ function buildEmbossedFaceGeometry(
   embossDepth: number,
   embossSmoothness: number,
   faceRoughness: number,
+  faceOpacity: number,
 ) {
   const positionAttr: number[] = [];
   const colorAttr: number[] = [];
@@ -418,6 +421,7 @@ function buildEmbossedFaceGeometry(
     embossDepth,
     embossSmoothness,
     faceRoughness,
+    faceOpacity,
   );
 
   return { geometry, material };
@@ -457,6 +461,7 @@ interface TilingCanvasProps {
   keyLightAzimuth?: number;
   keyLightElevation?: number;
   faceRoughness?: number;
+  faceOpacity?: number;
   generationOptions?: TilingGenerationOptions;
   mode?: '2d' | '3d';
   radialType?: RadialPolyType;
@@ -488,6 +493,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   keyLightAzimuth = DEFAULT_KEY_LIGHT_AZIMUTH,
   keyLightElevation = DEFAULT_KEY_LIGHT_ELEVATION,
   faceRoughness = DEFAULT_FACE_ROUGHNESS,
+  faceOpacity = DEFAULT_FACE_OPACITY,
   generationOptions,
   mode = '2d' as '2d' | '3d',
   radialType = 'Prism' as RadialPolyType,
@@ -751,6 +757,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
           embossDepth,
           embossSmoothness,
           faceRoughness,
+          faceOpacity,
         );
         faceMesh = new THREE.Mesh(embossedFace.geometry, embossedFace.material);
         faceMesh.renderOrder = 0;
@@ -784,7 +791,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
         flatShading: true,
         wireframe: wireframe,
         transparent: true,
-        opacity: 0.9,
+        opacity: faceOpacity,
         roughness: faceRoughness,
         metalness: 0,
         polygonOffset: true,
@@ -808,6 +815,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
             embossDepth,
             embossSmoothness,
             faceRoughness,
+            faceOpacity,
           );
 
           const previousGeometry = faceMesh.geometry;
@@ -983,7 +991,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       containerRef.current?.removeEventListener('click', onClick);
       containerRef.current?.removeEventListener('mousemove', onMouseMove);
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 };

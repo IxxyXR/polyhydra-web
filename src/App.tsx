@@ -96,6 +96,7 @@ const APP_DEFAULTS = {
   keyLightAzimuth: 45,
   keyLightElevation: 35,
   faceRoughness: 0.66,
+  faceOpacity: 0.9,
 };
 
 const NO_PRESET_VALUE = '';
@@ -171,6 +172,7 @@ const URL_KEYS = {
   faces: 'f',
   wireframe: 'w',
   palette: 'p',
+  paletteOrder: 'po',
   colorMode: 'cm',
   edgeColor: 'ec',
   embossEnabled: 'em',
@@ -182,6 +184,7 @@ const URL_KEYS = {
   keyLightAzimuth: 'ka',
   keyLightElevation: 'ke',
   faceRoughness: 'rf',
+  faceOpacity: 'fo',
   multigridDimensions: 'gd',
   multigridDivisions: 'gv',
   multigridOffset: 'go',
@@ -338,6 +341,50 @@ function decodeAliasedValue(value: string | null, aliases: Record<string, string
   return aliases[value] ?? value;
 }
 
+function encodePaletteOrder(paletteKey: PaletteKey, paletteColors: string[] | null) {
+  if (!paletteColors) return null;
+
+  const baseColors = PALETTES[paletteKey].colors;
+  if (paletteColors.length !== baseColors.length) {
+    return null;
+  }
+
+  const used = new Array(baseColors.length).fill(false);
+  const indices: number[] = [];
+
+  for (const color of paletteColors) {
+    const index = baseColors.findIndex((baseColor, baseIndex) => !used[baseIndex] && baseColor === color);
+    if (index === -1) {
+      return null;
+    }
+    used[index] = true;
+    indices.push(index);
+  }
+
+  const isIdentity = indices.every((value, index) => value === index);
+  return isIdentity ? null : indices.map((value) => value.toString(36)).join('');
+}
+
+function decodePaletteOrder(paletteKey: PaletteKey, encoded: string | null) {
+  if (!encoded) return null;
+
+  const baseColors = PALETTES[paletteKey].colors;
+  if (encoded.length !== baseColors.length) {
+    return null;
+  }
+
+  const indices = encoded.split('').map((char) => Number.parseInt(char, 36));
+  if (indices.some((value) => !Number.isFinite(value) || value < 0 || value >= baseColors.length)) {
+    return null;
+  }
+
+  if (new Set(indices).size !== baseColors.length) {
+    return null;
+  }
+
+  return indices.map((index) => baseColors[index]);
+}
+
 function parseBooleanParamValue(value: string | null, fallback: boolean) {
   if (value === null) return fallback;
   if (value === '1' || value === 'true') return true;
@@ -439,6 +486,7 @@ function buildAppSearchParams(state: {
   showFaces: boolean;
   wireframe: boolean;
   palette: PaletteKey;
+  paletteColors: string[] | null;
   colorMode: ColorMode;
   edgeColor: string;
   embossEnabled: boolean;
@@ -450,6 +498,7 @@ function buildAppSearchParams(state: {
   keyLightAzimuth: number;
   keyLightElevation: number;
   faceRoughness: number;
+  faceOpacity: number;
   multigridSettings: MultiGridSettings;
   operators: OperatorState[];
 }) {
@@ -480,6 +529,10 @@ function buildAppSearchParams(state: {
   setParamIfNeeded(params, URL_KEYS.faces, Number(state.showFaces), Number(APP_DEFAULTS.showFaces));
   setParamIfNeeded(params, URL_KEYS.wireframe, Number(state.wireframe), Number(APP_DEFAULTS.wireframe));
   setParamIfNeeded(params, URL_KEYS.palette, state.palette, APP_DEFAULTS.palette);
+  const encodedPaletteOrder = encodePaletteOrder(state.palette, state.paletteColors);
+  if (encodedPaletteOrder) {
+    params.set(URL_KEYS.paletteOrder, encodedPaletteOrder);
+  }
   setParamIfNeeded(params, URL_KEYS.colorMode, COLOR_MODE_TO_URL[state.colorMode], COLOR_MODE_TO_URL[APP_DEFAULTS.colorMode]);
   setParamIfNeeded(params, URL_KEYS.edgeColor, state.edgeColor, APP_DEFAULTS.edgeColor);
   setParamIfNeeded(params, URL_KEYS.embossEnabled, Number(state.embossEnabled), Number(APP_DEFAULTS.embossEnabled));
@@ -491,6 +544,7 @@ function buildAppSearchParams(state: {
   setParamIfNeeded(params, URL_KEYS.keyLightAzimuth, state.keyLightAzimuth, APP_DEFAULTS.keyLightAzimuth);
   setParamIfNeeded(params, URL_KEYS.keyLightElevation, state.keyLightElevation, APP_DEFAULTS.keyLightElevation);
   setParamIfNeeded(params, URL_KEYS.faceRoughness, state.faceRoughness, APP_DEFAULTS.faceRoughness);
+  setParamIfNeeded(params, URL_KEYS.faceOpacity, state.faceOpacity, APP_DEFAULTS.faceOpacity);
   setParamIfNeeded(params, URL_KEYS.multigridDimensions, state.multigridSettings.dimensions, MULTIGRID_DEFAULTS.dimensions);
   setParamIfNeeded(params, URL_KEYS.multigridDivisions, state.multigridSettings.divisions, MULTIGRID_DEFAULTS.divisions);
   setParamIfNeeded(params, URL_KEYS.multigridOffset, state.multigridSettings.offset, MULTIGRID_DEFAULTS.offset);
@@ -585,6 +639,7 @@ export default function App() {
   const [keyLightAzimuth, setKeyLightAzimuth] = useState(APP_DEFAULTS.keyLightAzimuth);
   const [keyLightElevation, setKeyLightElevation] = useState(APP_DEFAULTS.keyLightElevation);
   const [faceRoughness, setFaceRoughness] = useState(APP_DEFAULTS.faceRoughness);
+  const [faceOpacity, setFaceOpacity] = useState(APP_DEFAULTS.faceOpacity);
   const [multigridSettings, setMultigridSettings] = useState<MultiGridSettings>(MULTIGRID_DEFAULTS);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [tilingMenuOpen, setTilingMenuOpen] = useState(false);
@@ -749,7 +804,9 @@ export default function App() {
     setWireframe(parseBooleanParamValue(getUrlParam(params, URL_KEYS.wireframe, 'wireframe'), APP_DEFAULTS.wireframe));
 
     const urlPalette = getUrlParam(params, URL_KEYS.palette, 'palette');
-    setPalette(urlPalette && PALETTES[urlPalette as PaletteKey] ? urlPalette as PaletteKey : APP_DEFAULTS.palette);
+    const resolvedPalette = urlPalette && PALETTES[urlPalette as PaletteKey] ? urlPalette as PaletteKey : APP_DEFAULTS.palette;
+    setPalette(resolvedPalette);
+    setShuffledColors(decodePaletteOrder(resolvedPalette, params.get(URL_KEYS.paletteOrder)));
 
     const urlColorMode = getUrlParam(params, URL_KEYS.colorMode, 'colorMode');
     setColorMode(
@@ -806,6 +863,9 @@ export default function App() {
       const normalizedShininess = Math.min(Math.max(parsedShininess, 0), 120);
       setFaceRoughness(1 - (normalizedShininess / 120));
     }
+
+    const parsedOpacity = parseFloatParam(getUrlParam(params, URL_KEYS.faceOpacity, 'opacity'), APP_DEFAULTS.faceOpacity);
+    setFaceOpacity(Math.min(Math.max(parsedOpacity, 0), 1));
 
     setMultigridSettings({
       dimensions: parseIntParam(getUrlParam(params, URL_KEYS.multigridDimensions, 'mgDim'), MULTIGRID_DEFAULTS.dimensions),
@@ -864,6 +924,7 @@ export default function App() {
       showFaces,
       wireframe,
       palette,
+      paletteColors: shuffledColors,
       colorMode,
       edgeColor,
       embossEnabled,
@@ -875,6 +936,7 @@ export default function App() {
       keyLightAzimuth,
       keyLightElevation,
       faceRoughness,
+      faceOpacity,
       multigridSettings,
       operators,
     });
@@ -887,7 +949,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, isReady]);
+  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
 
 
   const applyPreset = (preset: AppPreset) => {
@@ -900,7 +962,7 @@ export default function App() {
 
   const saveCurrentPreset = () => {
     if (!newPresetName.trim()) return;
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
     setUserPresets(getUserPresets());
     setNewPresetName('');
@@ -908,7 +970,7 @@ export default function App() {
   };
 
   const copyCurrentAsExamplePreset = async () => {
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     const entry = `{ name: 'name', params: '${params.toString()}'},`;
     await navigator.clipboard.writeText(entry);
   };
@@ -1805,6 +1867,21 @@ export default function App() {
                                   className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
                                 />
                               </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Opacity</span>
+                                  <span className="font-mono text-neutral-300">{faceOpacity.toFixed(2)}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.02"
+                                  value={faceOpacity}
+                                  onChange={(e) => setFaceOpacity(parseFloat(e.target.value))}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -2676,6 +2753,7 @@ export default function App() {
                     showFaces,
                     wireframe,
                     palette,
+                    paletteColors: shuffledColors,
                     colorMode,
                     edgeColor,
                     embossEnabled,
@@ -2687,6 +2765,7 @@ export default function App() {
                     keyLightAzimuth,
                     keyLightElevation,
                     faceRoughness,
+                    faceOpacity,
                     multigridSettings,
                     operators,
                   });
@@ -2752,6 +2831,7 @@ export default function App() {
             keyLightAzimuth={keyLightAzimuth}
             keyLightElevation={keyLightElevation}
             faceRoughness={faceRoughness}
+            faceOpacity={faceOpacity}
             generationOptions={generationOptions}
             mode={mode}
             radialType={radialType}
