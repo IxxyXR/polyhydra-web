@@ -70,6 +70,35 @@ interface OperatorState extends OperatorSpec {
   enabled: boolean;
 }
 
+type EmbossProfile = 'smooth' | 'linear';
+
+const APP_DEFAULTS = {
+  mode: '2d' as const,
+  radialType: 'Prism' as RadialPolyType,
+  radialSides: 5,
+  tilingType: '4.4.4.4',
+  rows: 5,
+  cols: 5,
+  showEdges: false,
+  showVertices: false,
+  showFaces: true,
+  wireframe: false,
+  faceHighlight: false,
+  finalization: 'planarize' as MeshFinalizationMode,
+  palette: 'vibrant' as PaletteKey,
+  colorMode: 'role' as ColorMode,
+  edgeColor: '#3b82f6',
+  embossEnabled: true,
+  embossWidth: 0.015,
+  embossDepth: 0.005,
+  embossProfile: 'smooth' as EmbossProfile,
+  ambientLightIntensity: 0.5,
+  keyLightIntensity: 0.8,
+  keyLightAzimuth: 45,
+  keyLightElevation: 35,
+  faceRoughness: 0.66,
+};
+
 const NO_PRESET_VALUE = '';
 const CUSTOM_PRESET_VALUE = '__custom__';
 const OPERATOR_ACTION_BUTTON_CLASS = 'rounded-md border border-neutral-700/70 bg-neutral-800/55 p-1 text-neutral-300 transition-colors hover:bg-neutral-700/85 hover:text-white';
@@ -152,6 +181,15 @@ function buildAppSearchParams(state: {
   palette: PaletteKey;
   colorMode: ColorMode;
   edgeColor: string;
+  embossEnabled: boolean;
+  embossWidth: number;
+  embossDepth: number;
+  embossProfile: EmbossProfile;
+  ambientLightIntensity: number;
+  keyLightIntensity: number;
+  keyLightAzimuth: number;
+  keyLightElevation: number;
+  faceRoughness: number;
   multigridSettings: MultiGridSettings;
   operators: OperatorState[];
 }) {
@@ -170,6 +208,15 @@ function buildAppSearchParams(state: {
   params.set('palette', state.palette);
   params.set('colorMode', state.colorMode);
   params.set('edgeColor', state.edgeColor);
+  params.set('emboss', state.embossEnabled.toString());
+  params.set('embossWidth', state.embossWidth.toString());
+  params.set('embossDepth', state.embossDepth.toString());
+  params.set('embossProfile', state.embossProfile);
+  params.set('ambient', state.ambientLightIntensity.toString());
+  params.set('key', state.keyLightIntensity.toString());
+  params.set('keyAz', state.keyLightAzimuth.toString());
+  params.set('keyEl', state.keyLightElevation.toString());
+  params.set('rough', state.faceRoughness.toString());
   params.set('mgDim', state.multigridSettings.dimensions.toString());
   params.set('mgDiv', state.multigridSettings.divisions.toString());
   params.set('mgOff', state.multigridSettings.offset.toString());
@@ -228,26 +275,35 @@ function parseOperatorsFromUrlParam(urlOps: string): OperatorState[] {
 }
 
 export default function App() {
-  const [mode, setMode] = useState<'2d' | '3d'>('2d');
-  const [radialType, setRadialType] = useState<RadialPolyType>('Prism');
-  const [radialSides, setRadialSides] = useState(5);
+  const [mode, setMode] = useState<'2d' | '3d'>(APP_DEFAULTS.mode);
+  const [radialType, setRadialType] = useState<RadialPolyType>(APP_DEFAULTS.radialType);
+  const [radialSides, setRadialSides] = useState(APP_DEFAULTS.radialSides);
   const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
-  const [tilingType, setTilingType] = useState('4.4.4.4');
-  const [rows, setRows] = useState(5);
-  const [cols, setCols] = useState(5);
-  const [showEdges, setShowEdges] = useState(true);
-  const [showVertices, setShowVertices] = useState(false);
-  const [showFaces, setShowFaces] = useState(true);
-  const [wireframe, setWireframe] = useState(false);
-  const [faceHighlight, setFaceHighlight] = useState(false);
-  const [finalization, setFinalization] = useState<MeshFinalizationMode>('planarize');
+  const [tilingType, setTilingType] = useState(APP_DEFAULTS.tilingType);
+  const [rows, setRows] = useState(APP_DEFAULTS.rows);
+  const [cols, setCols] = useState(APP_DEFAULTS.cols);
+  const [showEdges, setShowEdges] = useState(APP_DEFAULTS.showEdges);
+  const [showVertices, setShowVertices] = useState(APP_DEFAULTS.showVertices);
+  const [showFaces, setShowFaces] = useState(APP_DEFAULTS.showFaces);
+  const [wireframe, setWireframe] = useState(APP_DEFAULTS.wireframe);
+  const [faceHighlight, setFaceHighlight] = useState(APP_DEFAULTS.faceHighlight);
+  const [finalization, setFinalization] = useState<MeshFinalizationMode>(APP_DEFAULTS.finalization);
   const [isReady, setIsReady] = useState(false);
   const isPopStateRef = useRef(false);
   const [operators, setOperators] = useState<OperatorState[]>([]);
-  const [palette, setPalette] = useState<PaletteKey>('vibrant');
+  const [palette, setPalette] = useState<PaletteKey>(APP_DEFAULTS.palette);
   const [shuffledColors, setShuffledColors] = useState<string[] | null>(null);
-  const [colorMode, setColorMode] = useState<ColorMode>('role');
-  const [edgeColor, setEdgeColor] = useState('#3b82f6');
+  const [colorMode, setColorMode] = useState<ColorMode>(APP_DEFAULTS.colorMode);
+  const [edgeColor, setEdgeColor] = useState(APP_DEFAULTS.edgeColor);
+  const [embossEnabled, setEmbossEnabled] = useState(APP_DEFAULTS.embossEnabled);
+  const [embossWidth, setEmbossWidth] = useState(APP_DEFAULTS.embossWidth);
+  const [embossDepth, setEmbossDepth] = useState(APP_DEFAULTS.embossDepth);
+  const [embossProfile, setEmbossProfile] = useState<EmbossProfile>(APP_DEFAULTS.embossProfile);
+  const [ambientLightIntensity, setAmbientLightIntensity] = useState(APP_DEFAULTS.ambientLightIntensity);
+  const [keyLightIntensity, setKeyLightIntensity] = useState(APP_DEFAULTS.keyLightIntensity);
+  const [keyLightAzimuth, setKeyLightAzimuth] = useState(APP_DEFAULTS.keyLightAzimuth);
+  const [keyLightElevation, setKeyLightElevation] = useState(APP_DEFAULTS.keyLightElevation);
+  const [faceRoughness, setFaceRoughness] = useState(APP_DEFAULTS.faceRoughness);
   const [multigridSettings, setMultigridSettings] = useState<MultiGridSettings>(MULTIGRID_DEFAULTS);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [tilingMenuOpen, setTilingMenuOpen] = useState(false);
@@ -333,58 +389,105 @@ export default function App() {
       const parsed = Number.parseFloat(value ?? '');
       return Number.isFinite(parsed) ? parsed : fallback;
     };
+    const parseBooleanParam = (value: string | null, fallback: boolean) => {
+      if (value === null) return fallback;
+      return value === 'true';
+    };
 
     const urlMode = params.get('mode');
-    if (urlMode === '2d' || urlMode === '3d') setMode(urlMode);
+    setMode(urlMode === '2d' || urlMode === '3d' ? urlMode : APP_DEFAULTS.mode);
 
     const urlFinalization = params.get('finalization');
-    if (urlFinalization === 'none' || urlFinalization === 'planarize' || urlFinalization === 'canonicalize') {
-      setFinalization(urlFinalization);
-    }
+    setFinalization(
+      urlFinalization === 'none' || urlFinalization === 'planarize' || urlFinalization === 'canonicalize'
+        ? urlFinalization
+        : APP_DEFAULTS.finalization
+    );
 
     const urlRadialType = params.get('radialType');
-    if (urlRadialType && RADIAL_SOLID_NAMES[urlRadialType as RadialPolyType]) {
-      setRadialType(urlRadialType as RadialPolyType);
-    }
+    setRadialType(
+      urlRadialType && RADIAL_SOLID_NAMES[urlRadialType as RadialPolyType]
+        ? urlRadialType as RadialPolyType
+        : APP_DEFAULTS.radialType
+    );
     const urlRadialSides = params.get('radialSides');
-    if (urlRadialSides) {
-      const parsed = parseInt(urlRadialSides, 10);
-      if (parsed >= 3 && parsed <= 16) setRadialSides(parsed);
+    {
+      const parsed = parseIntParam(urlRadialSides, APP_DEFAULTS.radialSides);
+      setRadialSides(parsed >= 3 && parsed <= 16 ? parsed : APP_DEFAULTS.radialSides);
     }
 
     const urlTiling = params.get('tiling');
-    if (urlTiling && UNIFORM_TILINGS[urlTiling]) setTilingType(urlTiling);
+    setTilingType(urlTiling && UNIFORM_TILINGS[urlTiling] ? urlTiling : APP_DEFAULTS.tilingType);
 
     const urlRows = params.get('rows');
     const urlCols = params.get('cols');
     if (urlRows && urlCols) {
-      setRows(parseInt(urlRows, 10));
-      setCols(parseInt(urlCols, 10));
+      setRows(parseIntParam(urlRows, APP_DEFAULTS.rows));
+      setCols(parseIntParam(urlCols, APP_DEFAULTS.cols));
     } else if (urlRows) {
-      const size = parseInt(urlRows, 10);
+      const size = parseIntParam(urlRows, APP_DEFAULTS.rows);
       setRows(size);
       setCols(size);
     } else if (urlCols) {
-      const size = parseInt(urlCols, 10);
+      const size = parseIntParam(urlCols, APP_DEFAULTS.cols);
       setRows(size);
       setCols(size);
+    } else {
+      setRows(APP_DEFAULTS.rows);
+      setCols(APP_DEFAULTS.cols);
     }
 
-    setShowEdges(params.get('edges') !== 'false');
-    setShowVertices(params.get('vertices') === 'true');
-    setShowFaces(params.get('faces') !== 'false');
-    setWireframe(params.get('wireframe') === 'true');
+    setShowEdges(parseBooleanParam(params.get('edges'), APP_DEFAULTS.showEdges));
+    setShowVertices(parseBooleanParam(params.get('vertices'), APP_DEFAULTS.showVertices));
+    setShowFaces(parseBooleanParam(params.get('faces'), APP_DEFAULTS.showFaces));
+    setWireframe(parseBooleanParam(params.get('wireframe'), APP_DEFAULTS.wireframe));
 
     const urlPalette = params.get('palette');
-    if (urlPalette && PALETTES[urlPalette as PaletteKey]) setPalette(urlPalette as PaletteKey);
+    setPalette(urlPalette && PALETTES[urlPalette as PaletteKey] ? urlPalette as PaletteKey : APP_DEFAULTS.palette);
 
     const urlColorMode = params.get('colorMode');
-    if (urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value') {
-      setColorMode(urlColorMode);
-    }
+    setColorMode(
+      urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value'
+        ? urlColorMode
+        : APP_DEFAULTS.colorMode
+    );
 
     const urlEdgeColor = params.get('edgeColor');
-    if (urlEdgeColor) setEdgeColor(urlEdgeColor);
+    setEdgeColor(urlEdgeColor ?? APP_DEFAULTS.edgeColor);
+
+    const urlEmboss = params.get('emboss');
+    setEmbossEnabled(parseBooleanParam(urlEmboss, APP_DEFAULTS.embossEnabled));
+
+    const parsedEmbossWidth = parseFloatParam(params.get('embossWidth'), APP_DEFAULTS.embossWidth);
+    setEmbossWidth(Math.min(Math.max(Math.abs(parsedEmbossWidth), 0), 0.3));
+
+    const parsedEmbossDepth = parseFloatParam(params.get('embossDepth'), APP_DEFAULTS.embossDepth);
+    setEmbossDepth(Math.min(Math.max(parsedEmbossDepth, -0.04), 0.04));
+
+    const parsedEmbossProfile = params.get('embossProfile');
+    setEmbossProfile(parsedEmbossProfile === 'linear' ? 'linear' : APP_DEFAULTS.embossProfile);
+
+    const parsedAmbient = parseFloatParam(params.get('ambient'), APP_DEFAULTS.ambientLightIntensity);
+    setAmbientLightIntensity(Math.min(Math.max(parsedAmbient, 0), 1.5));
+
+    const parsedKey = parseFloatParam(params.get('key'), APP_DEFAULTS.keyLightIntensity);
+    setKeyLightIntensity(Math.min(Math.max(parsedKey, 0), 2));
+
+    const parsedKeyAzimuth = parseFloatParam(params.get('keyAz'), APP_DEFAULTS.keyLightAzimuth);
+    setKeyLightAzimuth(Math.min(Math.max(parsedKeyAzimuth, -180), 180));
+
+    const parsedKeyElevation = parseFloatParam(params.get('keyEl'), APP_DEFAULTS.keyLightElevation);
+    setKeyLightElevation(Math.min(Math.max(parsedKeyElevation, -85), 85));
+
+    const parsedRoughness = params.get('rough');
+    if (parsedRoughness !== null) {
+      const value = parseFloatParam(parsedRoughness, APP_DEFAULTS.faceRoughness);
+      setFaceRoughness(Math.min(Math.max(value, 0), 1));
+    } else {
+      const parsedShininess = parseFloatParam(params.get('shine'), 40);
+      const normalizedShininess = Math.min(Math.max(parsedShininess, 0), 120);
+      setFaceRoughness(1 - (normalizedShininess / 120));
+    }
 
     setMultigridSettings({
       dimensions: parseIntParam(params.get('mgDim'), MULTIGRID_DEFAULTS.dimensions),
@@ -445,6 +548,15 @@ export default function App() {
       palette,
       colorMode,
       edgeColor,
+      embossEnabled,
+      embossWidth,
+      embossDepth,
+      embossProfile,
+      ambientLightIntensity,
+      keyLightIntensity,
+      keyLightAzimuth,
+      keyLightElevation,
+      faceRoughness,
       multigridSettings,
       operators,
     });
@@ -457,7 +569,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, multigridSettings, isReady]);
+  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, isReady]);
 
 
   const applyPreset = (preset: AppPreset) => {
@@ -470,7 +582,7 @@ export default function App() {
 
   const saveCurrentPreset = () => {
     if (!newPresetName.trim()) return;
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
     saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
     setUserPresets(getUserPresets());
     setNewPresetName('');
@@ -478,7 +590,7 @@ export default function App() {
   };
 
   const copyCurrentAsExamplePreset = async () => {
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
     const entry = `  {\n    name: '',\n    description: '',\n    params: '${params.toString()}',\n  },`;
     await navigator.clipboard.writeText(entry);
   };
@@ -1304,6 +1416,153 @@ export default function App() {
                               />
                             </label>
                           </div>
+                          <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                            <label className="flex items-center justify-between cursor-pointer group">
+                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Emboss Faces</span>
+                              <input
+                                type="checkbox"
+                                checked={embossEnabled}
+                                onChange={(e) => setEmbossEnabled(e.target.checked)}
+                                className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600"
+                              />
+                            </label>
+                            <div className={`space-y-3 transition-opacity ${embossEnabled ? 'opacity-100' : 'opacity-50'}`}>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={() => setEmbossProfile('smooth')}
+                                  disabled={!embossEnabled}
+                                  className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
+                                    embossProfile === 'smooth'
+                                      ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
+                                      : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                  }`}
+                                >
+                                  Smooth
+                                </button>
+                                <button
+                                  onClick={() => setEmbossProfile('linear')}
+                                  disabled={!embossEnabled}
+                                  className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
+                                    embossProfile === 'linear'
+                                      ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
+                                      : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                  }`}
+                                >
+                                  Linear
+                                </button>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Emboss Width</span>
+                                  <span className="font-mono text-neutral-300">{embossWidth.toFixed(3)}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="0.3"
+                                  step="0.005"
+                                  value={embossWidth}
+                                  onChange={(e) => setEmbossWidth(parseFloat(e.target.value))}
+                                  disabled={!embossEnabled}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Emboss Depth</span>
+                                  <span className="font-mono text-neutral-300">{embossDepth.toFixed(3)}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="-0.04"
+                                  max="0.04"
+                                  step="0.0025"
+                                  value={embossDepth}
+                                  onChange={(e) => setEmbossDepth(parseFloat(e.target.value))}
+                                  disabled={!embossEnabled}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                            <div className="text-sm text-neutral-300">Lighting</div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                <span>Ambient</span>
+                                <span className="font-mono text-neutral-300">{ambientLightIntensity.toFixed(2)}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="1.5"
+                                step="0.05"
+                                value={ambientLightIntensity}
+                                onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
+                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                <span>Key Light</span>
+                                <span className="font-mono text-neutral-300">{keyLightIntensity.toFixed(2)}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="2"
+                                step="0.05"
+                                value={keyLightIntensity}
+                                onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
+                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                <span>Key Azimuth</span>
+                                <span className="font-mono text-neutral-300">{keyLightAzimuth.toFixed(0)}°</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value={keyLightAzimuth}
+                                onChange={(e) => setKeyLightAzimuth(parseFloat(e.target.value))}
+                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                <span>Key Elevation</span>
+                                <span className="font-mono text-neutral-300">{keyLightElevation.toFixed(0)}°</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="-85"
+                                max="85"
+                                step="1"
+                                value={keyLightElevation}
+                                onChange={(e) => setKeyLightElevation(parseFloat(e.target.value))}
+                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                <span>Roughness</span>
+                                <span className="font-mono text-neutral-300">{faceRoughness.toFixed(2)}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.02"
+                                value={faceRoughness}
+                                onChange={(e) => setFaceRoughness(parseFloat(e.target.value))}
+                                className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                          </div>
                           <div className="pt-3 border-t border-neutral-800 space-y-3">
                             <label className="flex items-center justify-between cursor-pointer group">
                               <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
@@ -2101,6 +2360,15 @@ export default function App() {
                     palette,
                     colorMode,
                     edgeColor,
+                    embossEnabled,
+                    embossWidth,
+                    embossDepth,
+                    embossProfile,
+                    ambientLightIntensity,
+                    keyLightIntensity,
+                    keyLightAzimuth,
+                    keyLightElevation,
+                    faceRoughness,
                     multigridSettings,
                     operators,
                   });
@@ -2157,6 +2425,15 @@ export default function App() {
             paletteColors={shuffledColors ?? undefined}
             colorMode={colorMode}
             edgeColor={edgeColor}
+            embossEnabled={embossEnabled}
+            embossWidth={embossWidth}
+            embossDepth={embossDepth}
+            embossProfile={embossProfile}
+            ambientLightIntensity={ambientLightIntensity}
+            keyLightIntensity={keyLightIntensity}
+            keyLightAzimuth={keyLightAzimuth}
+            keyLightElevation={keyLightElevation}
+            faceRoughness={faceRoughness}
             generationOptions={generationOptions}
             mode={mode}
             radialType={radialType}

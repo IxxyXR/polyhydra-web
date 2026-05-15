@@ -13,6 +13,16 @@ import { generateFinalMesh } from '../lib/mesh-pipeline';
 const FIT_PADDING_MULTIPLIER = 1.12;
 const FIT_LERP_ALPHA = 0.14;
 const FIT_EPSILON = 0.0001;
+const DEFAULT_EMBOSS_IDLE_DELAY_MS = 150;
+const DEFAULT_EMBOSS_WIDTH = 0.015;
+const DEFAULT_EMBOSS_DEPTH = 0.005;
+const DEFAULT_AMBIENT_LIGHT_INTENSITY = 0.5;
+const DEFAULT_KEY_LIGHT_INTENSITY = 0.8;
+const DEFAULT_KEY_LIGHT_AZIMUTH = 45;
+const DEFAULT_KEY_LIGHT_ELEVATION = 35;
+const DEFAULT_FACE_ROUGHNESS = 0.66;
+const KEY_LIGHT_DISTANCE = 8.660254037844387;
+type EmbossProfile = 'smooth' | 'linear';
 
 interface FitAnimationState {
   active: boolean;
@@ -25,6 +35,401 @@ interface MeshBounds {
   centerY: number;
   centerZ: number;
   radius: number;
+}
+
+interface FaceProjectionData {
+  basisU: THREE.Vector3;
+  basisV: THREE.Vector3;
+  normal: THREE.Vector3;
+  localPointByVertex: Map<number, [number, number]>;
+  orderedLocalPoints: Array<[number, number]>;
+}
+
+function disposeMaterialResources(material: THREE.Material | THREE.Material[]) {
+  const materials = Array.isArray(material) ? material : [material];
+
+  materials.forEach((entry) => {
+    const faceEdgeTexture = entry.userData?.faceEdgeTexture as THREE.Texture | undefined;
+    if (faceEdgeTexture) {
+      faceEdgeTexture.dispose();
+    }
+    entry.dispose();
+  });
+}
+
+function isEmbossMaterial(material: THREE.Material | THREE.Material[]) {
+  const materials = Array.isArray(material) ? material : [material];
+  return materials.some((entry) => Boolean(entry.userData?.faceEdgeTexture));
+}
+
+function computeFaceProjection(face: number[], vertices: number[]): FaceProjectionData {
+  const normal = new THREE.Vector3();
+
+  for (let index = 0; index < face.length; index++) {
+    const current = face[index];
+    const next = face[(index + 1) % face.length];
+    const currentX = vertices[current * 3];
+    const currentY = vertices[current * 3 + 1];
+    const currentZ = vertices[current * 3 + 2];
+    const nextX = vertices[next * 3];
+    const nextY = vertices[next * 3 + 1];
+    const nextZ = vertices[next * 3 + 2];
+
+    normal.x += (currentY - nextY) * (currentZ + nextZ);
+    normal.y += (currentZ - nextZ) * (currentX + nextX);
+    normal.z += (currentX - nextX) * (currentY + nextY);
+  }
+
+  if (normal.lengthSq() < 1e-10) {
+    const first = new THREE.Vector3(
+      vertices[face[0] * 3],
+      vertices[face[0] * 3 + 1],
+      vertices[face[0] * 3 + 2],
+    );
+
+    for (let index = 1; index < face.length - 1; index++) {
+      const second = new THREE.Vector3(
+        vertices[face[index] * 3],
+        vertices[face[index] * 3 + 1],
+        vertices[face[index] * 3 + 2],
+      );
+      const third = new THREE.Vector3(
+        vertices[face[index + 1] * 3],
+        vertices[face[index + 1] * 3 + 1],
+        vertices[face[index + 1] * 3 + 2],
+      );
+
+      normal.copy(second.sub(first).cross(third.sub(first)));
+      if (normal.lengthSq() >= 1e-10) {
+        break;
+      }
+    }
+  }
+
+  if (normal.lengthSq() < 1e-10) {
+    normal.set(0, 0, 1);
+  } else {
+    normal.normalize();
+  }
+
+  const centroid = new THREE.Vector3();
+  face.forEach((vertexIndex) => {
+    centroid.x += vertices[vertexIndex * 3];
+    centroid.y += vertices[vertexIndex * 3 + 1];
+    centroid.z += vertices[vertexIndex * 3 + 2];
+  });
+  centroid.multiplyScalar(1 / face.length);
+
+  const helperAxis = Math.abs(normal.z) < 0.9
+    ? new THREE.Vector3(0, 0, 1)
+    : new THREE.Vector3(0, 1, 0);
+  const basisU = new THREE.Vector3().crossVectors(helperAxis, normal).normalize();
+  const basisV = new THREE.Vector3().crossVectors(normal, basisU).normalize();
+
+  const localPointByVertex = new Map<number, [number, number]>();
+  const orderedLocalPoints: Array<[number, number]> = face.map((vertexIndex) => {
+    const point = new THREE.Vector3(
+      vertices[vertexIndex * 3],
+      vertices[vertexIndex * 3 + 1],
+      vertices[vertexIndex * 3 + 2],
+    );
+    const relative = point.sub(centroid);
+    const localPoint: [number, number] = [
+      relative.dot(basisU),
+      relative.dot(basisV),
+    ];
+    localPointByVertex.set(vertexIndex, localPoint);
+    return localPoint;
+  });
+
+  let signedArea = 0;
+  for (let index = 0; index < orderedLocalPoints.length; index++) {
+    const current = orderedLocalPoints[index];
+    const next = orderedLocalPoints[(index + 1) % orderedLocalPoints.length];
+    signedArea += current[0] * next[1] - next[0] * current[1];
+  }
+
+  if (signedArea < 0) {
+    basisV.multiplyScalar(-1);
+
+    const flipped = new Map<number, [number, number]>();
+    orderedLocalPoints.forEach(([x, y], index) => {
+      const flippedPoint: [number, number] = [x, -y];
+      const vertexIndex = face[index];
+      flipped.set(vertexIndex, flippedPoint);
+      orderedLocalPoints[index] = flippedPoint;
+    });
+
+    return {
+      basisU,
+      basisV,
+      normal,
+      localPointByVertex: flipped,
+      orderedLocalPoints,
+    };
+  }
+
+  return {
+    basisU,
+    basisV,
+    normal,
+    localPointByVertex,
+    orderedLocalPoints,
+  };
+}
+
+function createFaceEdgeTexture(edgeData: Float32Array, width: number, height: number) {
+  const texture = new THREE.DataTexture(edgeData, width, height, THREE.RGBAFormat, THREE.FloatType);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createEmbossedFaceMaterial(
+  edgeTexture: THREE.DataTexture,
+  textureWidth: number,
+  textureHeight: number,
+  maxFaceEdges: number,
+  embossWidth: number,
+  embossDepth: number,
+  embossProfile: EmbossProfile,
+  faceRoughness: number,
+) {
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    flatShading: false,
+    transparent: true,
+    opacity: 0.9,
+    roughness: faceRoughness,
+    metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+
+  material.userData.faceEdgeTexture = edgeTexture;
+  material.customProgramCacheKey = () => `face-emboss-${maxFaceEdges}`;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.faceEdgeTexture = { value: edgeTexture };
+    shader.uniforms.faceEdgeTextureSize = { value: new THREE.Vector2(textureWidth, textureHeight) };
+    shader.uniforms.embossWidth = { value: embossWidth };
+    shader.uniforms.embossDepth = { value: embossDepth };
+    shader.uniforms.embossProfileMode = { value: embossProfile === 'linear' ? 0 : 1 };
+    shader.uniforms.embossBlendSharpness = { value: 12 / Math.max(embossWidth, 1e-4) };
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+attribute vec2 faceLocalPos;
+attribute vec3 faceBasisU;
+attribute vec3 faceBasisV;
+attribute float faceEdgeStart;
+attribute float faceEdgeCount;
+varying vec2 vFaceLocalPos;
+varying vec3 vFaceBasisUView;
+varying vec3 vFaceBasisVView;
+varying float vFaceEdgeStart;
+varying float vFaceEdgeCount;`
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vFaceLocalPos = faceLocalPos;
+vFaceBasisUView = normalize( normalMatrix * faceBasisU );
+vFaceBasisVView = normalize( normalMatrix * faceBasisV );
+vFaceEdgeStart = faceEdgeStart;
+vFaceEdgeCount = faceEdgeCount;`
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform sampler2D faceEdgeTexture;
+uniform vec2 faceEdgeTextureSize;
+uniform float embossWidth;
+uniform float embossDepth;
+uniform float embossProfileMode;
+uniform float embossBlendSharpness;
+varying vec2 vFaceLocalPos;
+varying vec3 vFaceBasisUView;
+varying vec3 vFaceBasisVView;
+varying float vFaceEdgeStart;
+varying float vFaceEdgeCount;
+
+vec4 sampleFaceEdge( float edgeIndex ) {
+  float x = mod( edgeIndex, faceEdgeTextureSize.x );
+  float y = floor( edgeIndex / faceEdgeTextureSize.x );
+  vec2 uv = vec2(
+    ( x + 0.5 ) / faceEdgeTextureSize.x,
+    ( y + 0.5 ) / faceEdgeTextureSize.y
+  );
+  return texture2D( faceEdgeTexture, uv );
+}`
+      )
+      .replace(
+        '#include <normal_fragment_begin>',
+        `float faceDirection = gl_FrontFacing ? 1.0 : - 1.0;
+vec3 normal = normalize( vNormal );
+
+#ifdef DOUBLE_SIDED
+normal *= faceDirection;
+#endif
+
+if ( vFaceEdgeCount > 0.5 ) {
+  float minDistance = 1.0e20;
+  vec2 directionSum = vec2( 0.0 );
+  float directionWeight = 0.0;
+
+  for ( int edgeIndex = 0; edgeIndex < ${Math.max(maxFaceEdges, 1)}; edgeIndex ++ ) {
+    if ( float( edgeIndex ) >= vFaceEdgeCount ) break;
+
+    vec4 edgeSample = sampleFaceEdge( vFaceEdgeStart + float( edgeIndex ) );
+    vec2 edgeA = edgeSample.xy;
+    vec2 edgeB = edgeSample.zw;
+    vec2 edgeVector = edgeB - edgeA;
+    float edgeLengthSq = max( dot( edgeVector, edgeVector ), 1.0e-6 );
+    float t = clamp( dot( vFaceLocalPos - edgeA, edgeVector ) / edgeLengthSq, 0.0, 1.0 );
+    vec2 closestPoint = edgeA + edgeVector * t;
+    float distanceToEdge = length( vFaceLocalPos - closestPoint );
+
+    minDistance = min( minDistance, distanceToEdge );
+
+    vec2 inward = vec2( - edgeVector.y, edgeVector.x ) * inversesqrt( edgeLengthSq );
+    float weight = exp( - distanceToEdge * embossBlendSharpness );
+    directionSum += inward * weight;
+    directionWeight += weight;
+  }
+
+  if ( directionWeight > 0.0 && minDistance < embossWidth ) {
+    vec2 inwardDirection = normalize( directionSum / directionWeight );
+    float x = clamp( minDistance / embossWidth, 0.0, 1.0 );
+    float profileSlope = embossProfileMode < 0.5
+      ? 1.0 / max( embossWidth, 1.0e-5 )
+      : ( 6.0 * x * ( 1.0 - x ) ) / max( embossWidth, 1.0e-5 );
+    float heightDerivative = embossDepth * profileSlope;
+    vec2 gradient2D = inwardDirection * heightDerivative;
+    vec3 basisUView = normalize( vFaceBasisUView );
+    vec3 basisVView = normalize( vFaceBasisVView );
+    normal = normalize( normal - gradient2D.x * basisUView - gradient2D.y * basisVView );
+  }
+}
+
+vec3 nonPerturbedNormal = normal;`
+      );
+  };
+
+  return material;
+}
+
+function buildEmbossedFaceGeometry(
+  faces: number[][],
+  faceTriangulations: number[][],
+  vertices: number[],
+  computedFaceColors: string[],
+  embossWidth: number,
+  embossDepth: number,
+  embossProfile: EmbossProfile,
+  faceRoughness: number,
+) {
+  const positionAttr: number[] = [];
+  const colorAttr: number[] = [];
+  const normalAttr: number[] = [];
+  const localPosAttr: number[] = [];
+  const basisUAttr: number[] = [];
+  const basisVAttr: number[] = [];
+  const faceEdgeStartAttr: number[] = [];
+  const faceEdgeCountAttr: number[] = [];
+
+  const totalEdges = faces.reduce((sum, face) => sum + face.length, 0);
+  const textureWidth = Math.max(1, Math.ceil(Math.sqrt(totalEdges)));
+  const textureHeight = Math.max(1, Math.ceil(totalEdges / textureWidth));
+  const edgeData = new Float32Array(textureWidth * textureHeight * 4);
+
+  let edgeCursor = 0;
+  let maxFaceEdges = 0;
+  const faceColor = new THREE.Color();
+
+  faces.forEach((face, faceIndex) => {
+    const projection = computeFaceProjection(face, vertices);
+    const edgeStart = edgeCursor;
+    const edgeCount = face.length;
+    maxFaceEdges = Math.max(maxFaceEdges, edgeCount);
+
+    for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex++) {
+      const current = projection.orderedLocalPoints[edgeIndex];
+      const next = projection.orderedLocalPoints[(edgeIndex + 1) % edgeCount];
+      const textureOffset = edgeCursor * 4;
+      edgeData[textureOffset] = current[0];
+      edgeData[textureOffset + 1] = current[1];
+      edgeData[textureOffset + 2] = next[0];
+      edgeData[textureOffset + 3] = next[1];
+      edgeCursor += 1;
+    }
+
+    faceColor.set(computedFaceColors[faceIndex] || '#ffffff');
+    const triIndices = faceTriangulations[faceIndex];
+
+    for (let triIndex = 0; triIndex < triIndices.length; triIndex++) {
+      const vertexIndex = triIndices[triIndex];
+      const localPoint = projection.localPointByVertex.get(vertexIndex);
+      if (!localPoint) continue;
+
+      positionAttr.push(
+        vertices[vertexIndex * 3],
+        vertices[vertexIndex * 3 + 1],
+        vertices[vertexIndex * 3 + 2],
+      );
+      colorAttr.push(faceColor.r, faceColor.g, faceColor.b);
+      normalAttr.push(projection.normal.x, projection.normal.y, projection.normal.z);
+      localPosAttr.push(localPoint[0], localPoint[1]);
+      basisUAttr.push(projection.basisU.x, projection.basisU.y, projection.basisU.z);
+      basisVAttr.push(projection.basisV.x, projection.basisV.y, projection.basisV.z);
+      faceEdgeStartAttr.push(edgeStart);
+      faceEdgeCountAttr.push(edgeCount);
+    }
+  });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positionAttr, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorAttr, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normalAttr, 3));
+  geometry.setAttribute('faceLocalPos', new THREE.Float32BufferAttribute(localPosAttr, 2));
+  geometry.setAttribute('faceBasisU', new THREE.Float32BufferAttribute(basisUAttr, 3));
+  geometry.setAttribute('faceBasisV', new THREE.Float32BufferAttribute(basisVAttr, 3));
+  geometry.setAttribute('faceEdgeStart', new THREE.Float32BufferAttribute(faceEdgeStartAttr, 1));
+  geometry.setAttribute('faceEdgeCount', new THREE.Float32BufferAttribute(faceEdgeCountAttr, 1));
+
+  const edgeTexture = createFaceEdgeTexture(edgeData, textureWidth, textureHeight);
+  const material = createEmbossedFaceMaterial(
+    edgeTexture,
+    textureWidth,
+    textureHeight,
+    maxFaceEdges,
+    embossWidth,
+    embossDepth,
+    embossProfile,
+    faceRoughness,
+  );
+
+  return { geometry, material };
+}
+
+function updateKeyLightPosition(light: THREE.DirectionalLight, azimuthDegrees: number, elevationDegrees: number) {
+  const azimuth = THREE.MathUtils.degToRad(azimuthDegrees);
+  const elevation = THREE.MathUtils.degToRad(elevationDegrees);
+  const planarRadius = Math.cos(elevation) * KEY_LIGHT_DISTANCE;
+  light.position.set(
+    Math.cos(azimuth) * planarRadius,
+    Math.sin(elevation) * KEY_LIGHT_DISTANCE,
+    Math.sin(azimuth) * planarRadius,
+  );
 }
 
 interface TilingCanvasProps {
@@ -41,6 +446,15 @@ interface TilingCanvasProps {
   paletteColors?: string[];
   colorMode: ColorMode;
   edgeColor: string;
+  embossEnabled?: boolean;
+  embossWidth?: number;
+  embossDepth?: number;
+  embossProfile?: EmbossProfile;
+  ambientLightIntensity?: number;
+  keyLightIntensity?: number;
+  keyLightAzimuth?: number;
+  keyLightElevation?: number;
+  faceRoughness?: number;
   generationOptions?: TilingGenerationOptions;
   mode?: '2d' | '3d';
   radialType?: RadialPolyType;
@@ -63,6 +477,15 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   paletteColors,
   colorMode,
   edgeColor,
+  embossEnabled = true,
+  embossWidth = DEFAULT_EMBOSS_WIDTH,
+  embossDepth = DEFAULT_EMBOSS_DEPTH,
+  embossProfile = 'smooth',
+  ambientLightIntensity = DEFAULT_AMBIENT_LIGHT_INTENSITY,
+  keyLightIntensity = DEFAULT_KEY_LIGHT_INTENSITY,
+  keyLightAzimuth = DEFAULT_KEY_LIGHT_AZIMUTH,
+  keyLightElevation = DEFAULT_KEY_LIGHT_ELEVATION,
+  faceRoughness = DEFAULT_FACE_ROUGHNESS,
   generationOptions,
   mode = '2d' as '2d' | '3d',
   radialType = 'Prism' as RadialPolyType,
@@ -80,6 +503,8 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     renderer: THREE.WebGLRenderer;
     controls: OrbitControls;
     meshGroup: THREE.Group;
+    ambientLight: THREE.AmbientLight;
+    directLight: THREE.DirectionalLight;
   } | null>(null);
 
   const fitCameraToBounds = (bounds: MeshBounds) => {
@@ -178,17 +603,17 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     };
     controls.addEventListener('start', handleControlsStart);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    const ambientLight = new THREE.AmbientLight(0xffffff, ambientLightIntensity);
     scene.add(ambientLight);
 
-    const directLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directLight.position.set(5, 5, 5);
+    const directLight = new THREE.DirectionalLight(0xffffff, keyLightIntensity);
+    updateKeyLightPosition(directLight, keyLightAzimuth, keyLightElevation);
     scene.add(directLight);
 
     const meshGroup = new THREE.Group();
     scene.add(meshGroup);
 
-    sceneRef.current = { scene, camera, renderer, controls, meshGroup };
+    sceneRef.current = { scene, camera, renderer, controls, meshGroup, ambientLight, directLight };
 
     const animate = () => {
       requestAnimationFrame(animate);
@@ -231,15 +656,26 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
 
   useEffect(() => {
     if (!sceneRef.current) return;
-    const { meshGroup, camera } = sceneRef.current;
+
+    const { ambientLight, directLight } = sceneRef.current;
+    ambientLight.intensity = ambientLightIntensity;
+    directLight.intensity = keyLightIntensity;
+    updateKeyLightPosition(directLight, keyLightAzimuth, keyLightElevation);
+  }, [ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation]);
+
+  useEffect(() => {
+    if (!sceneRef.current) return;
+    const { meshGroup, camera, renderer } = sceneRef.current;
+    const hadEmbossedFaces = meshGroup.children.some((child) => {
+      const material = (child as any).material as THREE.Material | THREE.Material[] | undefined;
+      return material ? isEmbossMaterial(material) : false;
+    });
 
     while (meshGroup.children.length > 0) {
       const child = meshGroup.children[0] as THREE.Mesh;
       if (child.geometry) child.geometry.dispose();
-      if (Array.isArray(child.material)) {
-        child.material.forEach((m) => m.dispose());
-      } else if ((child as any).material) {
-        (child as any).material.dispose();
+      if ((child as any).material) {
+        disposeMaterialResources((child as any).material);
       }
       meshGroup.remove(child);
     }
@@ -268,6 +704,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     }
 
     const computedFaceColors = computeFaceColors({ vertices, faces }, paletteColors ?? palette, colorMode);
+    const faceTriangulations = faces.map((face) => triangulateFaces([face], vertices));
     const uniqueColorsUsed = new Set(computedFaceColors);
     const uniqueEdges = new Set<string>();
     faces.forEach((face) => {
@@ -291,15 +728,39 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
 
     let faceMesh: THREE.Mesh | null = null;
     const triangleToFaceIndex: number[] = [];
+    let embossTimeoutId: number | null = null;
+    const shouldRenderEmbossImmediately = hadEmbossedFaces && embossEnabled && !wireframe && renderer.capabilities.isWebGL2;
 
     if (showFaces) {
+      if (shouldRenderEmbossImmediately) {
+        faces.forEach((face, fIdx) => {
+          const triIndices = faceTriangulations[fIdx];
+          for (let t = 0; t < triIndices.length; t += 3) {
+            triangleToFaceIndex.push(fIdx);
+          }
+        });
+
+        const embossedFace = buildEmbossedFaceGeometry(
+          faces,
+          faceTriangulations,
+          vertices,
+          computedFaceColors,
+          embossWidth,
+          embossDepth,
+          embossProfile,
+          faceRoughness,
+        );
+        faceMesh = new THREE.Mesh(embossedFace.geometry, embossedFace.material);
+        faceMesh.renderOrder = 0;
+        meshGroup.add(faceMesh);
+      } else {
       const posAttr: number[] = [];
       const colorAttr: number[] = [];
       const tmpColor = new THREE.Color();
 
       faces.forEach((face, fIdx) => {
         tmpColor.set(computedFaceColors[fIdx] || '#ffffff');
-        const triIndices = triangulateFaces([face], vertices);
+        const triIndices = faceTriangulations[fIdx];
         for (let t = 0; t < triIndices.length; t += 3) {
           triangleToFaceIndex.push(fIdx);
           for (let k = 0; k < 3; k++) {
@@ -315,14 +776,15 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       coloredGeom.setAttribute('color', new THREE.Float32BufferAttribute(colorAttr, 3));
       coloredGeom.computeVertexNormals();
 
-      const material = new THREE.MeshPhongMaterial({
+      const material = new THREE.MeshStandardMaterial({
         vertexColors: true,
         side: THREE.DoubleSide,
         flatShading: true,
         wireframe: wireframe,
         transparent: true,
         opacity: 0.9,
-        shininess: 30,
+        roughness: faceRoughness,
+        metalness: 0,
         polygonOffset: true,
         polygonOffsetFactor: 1,
         polygonOffsetUnits: 1,
@@ -330,6 +792,31 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       faceMesh = new THREE.Mesh(coloredGeom, material);
       faceMesh.renderOrder = 0;
       meshGroup.add(faceMesh);
+
+      if (embossEnabled && !wireframe && renderer.capabilities.isWebGL2) {
+        embossTimeoutId = window.setTimeout(() => {
+          if (!faceMesh || !sceneRef.current) return;
+
+          const embossedFace = buildEmbossedFaceGeometry(
+            faces,
+            faceTriangulations,
+            vertices,
+            computedFaceColors,
+            embossWidth,
+            embossDepth,
+            embossProfile,
+            faceRoughness,
+          );
+
+          const previousGeometry = faceMesh.geometry;
+          const previousMaterial = faceMesh.material;
+          faceMesh.geometry = embossedFace.geometry;
+          faceMesh.material = embossedFace.material;
+          previousGeometry.dispose();
+          disposeMaterialResources(previousMaterial);
+        }, DEFAULT_EMBOSS_IDLE_DELAY_MS);
+      }
+      }
     }
 
     if (showEdges) {
@@ -488,10 +975,13 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     containerRef.current!.addEventListener('mousemove', onMouseMove);
 
     return () => {
+      if (embossTimeoutId !== null) {
+        window.clearTimeout(embossTimeoutId);
+      }
       containerRef.current?.removeEventListener('click', onClick);
       containerRef.current?.removeEventListener('mousemove', onMouseMove);
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, faceRoughness, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 };
