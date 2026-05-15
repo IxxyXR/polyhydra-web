@@ -10,6 +10,23 @@ import { ColorMode, computeFaceColors } from '../lib/coloring';
 import { MeshFinalizationMode } from '../lib/mesh-finalization';
 import { generateFinalMesh } from '../lib/mesh-pipeline';
 
+const FIT_PADDING_MULTIPLIER = 1.12;
+const FIT_LERP_ALPHA = 0.14;
+const FIT_EPSILON = 0.0001;
+
+interface FitAnimationState {
+  active: boolean;
+  targetPosition: THREE.Vector3;
+  targetTarget: THREE.Vector3;
+}
+
+interface MeshBounds {
+  centerX: number;
+  centerY: number;
+  centerZ: number;
+  radius: number;
+}
+
 interface TilingCanvasProps {
   tilingType: string;
   rows: number;
@@ -29,6 +46,7 @@ interface TilingCanvasProps {
   radialType?: RadialPolyType;
   radialSides?: number;
   finalization?: MeshFinalizationMode;
+  fitRequestKey?: number;
 }
 
 export const TilingCanvas: React.FC<TilingCanvasProps> = ({
@@ -50,8 +68,12 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   radialType = 'Prism' as RadialPolyType,
   radialSides = 5,
   finalization = 'planarize',
+  fitRequestKey = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fitAnimationRef = useRef<FitAnimationState | null>(null);
+  const lastHandledFitRequestKeyRef = useRef(0);
+  const meshBoundsRef = useRef<MeshBounds | null>(null);
   const sceneRef = useRef<{
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
@@ -59,6 +81,73 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     controls: OrbitControls;
     meshGroup: THREE.Group;
   } | null>(null);
+
+  const fitCameraToBounds = (bounds: MeshBounds) => {
+    if (!sceneRef.current) return;
+
+    const { camera, controls } = sceneRef.current;
+    const center = new THREE.Vector3(bounds.centerX, bounds.centerY, bounds.centerZ);
+    const radius = Math.max(bounds.radius, 0.5);
+    const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
+    const fitHeightDistance = radius / Math.tan(verticalFov / 2);
+    const fitWidthDistance = radius / Math.tan(horizontalFov / 2);
+    const distance = Math.max(fitHeightDistance, fitWidthDistance) * FIT_PADDING_MULTIPLIER;
+    const direction = camera.position.clone().sub(controls.target);
+
+    if (direction.lengthSq() === 0) {
+      direction.set(0, 0, 1);
+    } else {
+      direction.normalize();
+    }
+
+    camera.near = Math.max(distance / 100, 0.01);
+    camera.far = Math.max(distance * 100, 1000);
+    camera.updateProjectionMatrix();
+    fitAnimationRef.current = {
+      active: true,
+      targetPosition: center.clone().add(direction.multiplyScalar(distance)),
+      targetTarget: center.clone(),
+    };
+  };
+
+  const computeMeshBounds = (vertices: number[]): MeshBounds | null => {
+    if (vertices.length < 3) return null;
+
+    let minX = vertices[0];
+    let minY = vertices[1];
+    let minZ = vertices[2];
+    let maxX = vertices[0];
+    let maxY = vertices[1];
+    let maxZ = vertices[2];
+
+    for (let index = 3; index < vertices.length; index += 3) {
+      const x = vertices[index];
+      const y = vertices[index + 1];
+      const z = vertices[index + 2];
+
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+
+    const centerX = (minX + maxX) * 0.5;
+    const centerY = (minY + maxY) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+    const halfSizeX = (maxX - minX) * 0.5;
+    const halfSizeY = (maxY - minY) * 0.5;
+    const halfSizeZ = (maxZ - minZ) * 0.5;
+
+    return {
+      centerX,
+      centerY,
+      centerZ,
+      radius: Math.hypot(halfSizeX, halfSizeY, halfSizeZ),
+    };
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -82,6 +171,13 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
+    const handleControlsStart = () => {
+      if (fitAnimationRef.current?.active) {
+        fitAnimationRef.current.active = false;
+      }
+    };
+    controls.addEventListener('start', handleControlsStart);
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
 
@@ -96,6 +192,20 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
 
     const animate = () => {
       requestAnimationFrame(animate);
+      const fitAnimation = fitAnimationRef.current;
+      if (fitAnimation?.active) {
+        camera.position.lerp(fitAnimation.targetPosition, FIT_LERP_ALPHA);
+        controls.target.lerp(fitAnimation.targetTarget, FIT_LERP_ALPHA);
+
+        const positionSettled = camera.position.distanceToSquared(fitAnimation.targetPosition) <= FIT_EPSILON;
+        const targetSettled = controls.target.distanceToSquared(fitAnimation.targetTarget) <= FIT_EPSILON;
+
+        if (positionSettled && targetSettled) {
+          camera.position.copy(fitAnimation.targetPosition);
+          controls.target.copy(fitAnimation.targetTarget);
+          fitAnimation.active = false;
+        }
+      }
       controls.update();
       renderer.render(scene, camera);
     };
@@ -112,6 +222,8 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      controls.removeEventListener('start', handleControlsStart);
+      fitAnimationRef.current = null;
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -134,7 +246,6 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
 
     let vertices: number[];
     let faces: number[][];
-
     try {
       const mesh = generateFinalMesh({
         mode,
@@ -150,6 +261,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       if (!mesh) return;
       vertices = mesh.vertices;
       faces = mesh.faces;
+      meshBoundsRef.current = computeMeshBounds(vertices);
     } catch (e) {
       console.warn('Mesh generation failed:', (e as Error).message);
       return;
@@ -267,6 +379,12 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       meshGroup.add(points);
     }
 
+    const shouldFitToExtents = fitRequestKey > lastHandledFitRequestKeyRef.current;
+    if (shouldFitToExtents && meshBoundsRef.current) {
+      lastHandledFitRequestKeyRef.current = fitRequestKey;
+      fitCameraToBounds(meshBoundsRef.current);
+    }
+
     // Highlight line objects — always created so the mousemove handler can clear them
     const makeLines = (color: string, order: number): THREE.LineSegments => {
       const geom = new THREE.BufferGeometry();
@@ -373,7 +491,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       containerRef.current?.removeEventListener('click', onClick);
       containerRef.current?.removeEventListener('mousemove', onMouseMove);
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, generationOptions, mode, radialType, radialSides, finalization]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 };

@@ -21,6 +21,7 @@ import {
   ArrowRight,
   GripVertical,
   Download,
+  Search,
   Plus,
   Github,
   Link2,
@@ -266,6 +267,7 @@ export default function App() {
   const [userPresets, setUserPresets] = useState<AppPreset[]>(() => getUserPresets());
   const [newPresetName, setNewPresetName] = useState('');
   const [savePresetInputVisible, setSavePresetInputVisible] = useState(false);
+  const [fitRequestKey, setFitRequestKey] = useState(0);
   const selectedShapeButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedTilingButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -295,6 +297,10 @@ export default function App() {
   const dismissOnboarding = () => {
     localStorage.setItem('polyhydra-onboarding-done', '1');
     setOnboardingDismissed(true);
+  };
+
+  const requestFitToExtents = () => {
+    setFitRequestKey((current) => current + 1);
   };
 
   // Poll for Blender availability
@@ -412,6 +418,7 @@ export default function App() {
   useEffect(() => {
     applyParamsFromUrl(window.location.search);
     setIsReady(true);
+    requestFitToExtents();
 
     const handlePopState = () => {
       isPopStateRef.current = true;
@@ -455,6 +462,7 @@ export default function App() {
 
   const applyPreset = (preset: AppPreset) => {
     applyParamsFromUrl('?' + preset.params);
+    requestFitToExtents();
     setPresetsMenuOpen(false);
     setSavePresetInputVisible(false);
     setNewPresetName('');
@@ -665,11 +673,21 @@ export default function App() {
   return (
     <div id="app-root" className="flex h-screen bg-neutral-950 text-neutral-100 font-sans overflow-hidden">
       {/* Sidebar */}
-      <motion.aside
+      <motion.div
         initial={false}
-        animate={{ width: sidebarOpen ? 360 : 0, opacity: sidebarOpen ? 1 : 0 }}
-        className="relative h-full bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col z-20 overflow-hidden"
+        animate={{ width: sidebarOpen ? 360 : 0 }}
+        className="relative h-full shrink-0 overflow-visible z-20"
       >
+        <button
+          onClick={() => setSidebarOpen((current) => !current)}
+          className="absolute right-0 top-6 z-30 flex h-10 w-5 translate-x-1/2 items-center justify-center rounded-r-xl border border-neutral-800 border-l-0 bg-neutral-900/90 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white"
+          title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        >
+          {sidebarOpen ? <ArrowLeft className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
+        </button>
+        <div className="h-full w-full overflow-hidden">
+        <aside className="h-full w-[360px] bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col overflow-hidden">
         <div className="p-6 overflow-y-auto flex-1">
           <div className="flex items-center justify-between gap-3 mb-8">
             <div className="flex items-center gap-3 min-w-0">
@@ -875,7 +893,7 @@ export default function App() {
                                 <button
                                   key={type}
                                   ref={radialType === type ? selectedShapeButtonRef : null}
-                                  onClick={() => { setRadialType(type); setShapeMenuOpen(false); }}
+                                  onClick={() => { setRadialType(type); requestFitToExtents(); setShapeMenuOpen(false); }}
                                   className={`w-full rounded-xl p-3 text-left transition-all ${radialType === type ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-neutral-900/40 text-neutral-300 hover:bg-neutral-800'}`}
                                 >
                                   <div className="flex items-center justify-between gap-3">
@@ -963,6 +981,7 @@ export default function App() {
                                     if (key === 'multigrid') {
                                       setColorMode((current) => current === 'role' ? 'value' : current);
                                     }
+                                    requestFitToExtents();
                                     setTilingMenuOpen(false);
                                   }}
                                   className={`w-full rounded-xl p-3 text-left transition-all ${
@@ -1605,6 +1624,7 @@ export default function App() {
                                                     setOperators((current) => current.map((item) =>
                                                       item.id === selectedOperatorId ? { ...item, notation } : item
                                                     ));
+                                                    requestFitToExtents();
                                                     setPresetOrRandomUsed(true);
                                                   }
                                                 }}
@@ -2116,19 +2136,12 @@ export default function App() {
             <span title="Colours Used" className="text-blue-400">C <span id="stat-colors">-</span></span>
           </div>
         </div>
-      </motion.aside>
+        </aside>
+        </div>
+      </motion.div>
 
       {/* Main Content */}
       <main className="flex-1 relative flex flex-col min-w-0">
-        <div className="absolute top-6 left-6 z-10 pointer-events-none">
-          <button 
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="pointer-events-auto p-2 bg-neutral-900/80 backdrop-blur-md border border-neutral-800 rounded-xl hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-white"
-          >
-            <Maximize className="w-5 h-5" />
-          </button>
-        </div>
-
         <div className="w-full h-full">
           <TilingCanvas
             tilingType={tilingType}
@@ -2149,6 +2162,7 @@ export default function App() {
             radialType={radialType}
             radialSides={radialSides}
             finalization={finalization}
+            fitRequestKey={fitRequestKey}
           />
         </div>
 
@@ -2225,11 +2239,20 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-4 py-2 bg-neutral-900/60 backdrop-blur-md border border-neutral-800 rounded-full flex items-center gap-6">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-4 py-2 backdrop-blur-md">
           <div className="flex items-center gap-2">
              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
              <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-mono">Live Rendering</span>
-          </div>
+           </div>
+          <div className="w-px h-4 bg-neutral-800" />
+          <button
+            onClick={requestFitToExtents}
+            className="flex items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white"
+            title="Zoom to extents"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span>Zoom to Extents</span>
+          </button>
           <div className="w-px h-4 bg-neutral-800" />
           <div className="flex gap-4">
             <TriangleIcon className="w-4 h-4 text-neutral-600" />
