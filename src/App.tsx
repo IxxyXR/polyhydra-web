@@ -44,6 +44,7 @@ import { AppPreset, EXAMPLE_PRESETS, getUserPresets, saveUserPreset, deleteUserP
 import {
   createOperatorSpec,
   DEFAULT_OMNI_PARAMS,
+  OMNI_ATOMS,
   OMNI_POINT_CLASSES,
   OMNI_PRESETS,
   OMNI_VALID_OPERATORS,
@@ -70,8 +71,6 @@ interface OperatorState extends OperatorSpec {
   enabled: boolean;
 }
 
-type EmbossProfile = 'smooth' | 'linear';
-
 const APP_DEFAULTS = {
   mode: '2d' as const,
   radialType: 'Prism' as RadialPolyType,
@@ -91,7 +90,7 @@ const APP_DEFAULTS = {
   embossEnabled: true,
   embossWidth: 0.015,
   embossDepth: 0.005,
-  embossProfile: 'smooth' as EmbossProfile,
+  embossSmoothness: 0.8,
   ambientLightIntensity: 0.5,
   keyLightIntensity: 0.8,
   keyLightAzimuth: 45,
@@ -158,6 +157,267 @@ const CATALAN_LAVES_TILING_KEYS = new Set([
 
 const TILING_GROUP_ORDER = ['Regular', 'Uniform', '2-Uniform', 'Catalan/Laves', 'Other'] as const;
 
+const URL_KEYS = {
+  mode: 'm',
+  finalization: 'fn',
+  radialType: 'rt',
+  radialSides: 'rs',
+  tiling: 't',
+  size: 's',
+  rows: 'r',
+  cols: 'c',
+  edges: 'e',
+  vertices: 'v',
+  faces: 'f',
+  wireframe: 'w',
+  palette: 'p',
+  colorMode: 'cm',
+  edgeColor: 'ec',
+  embossEnabled: 'em',
+  embossWidth: 'ew',
+  embossDepth: 'ed',
+  embossSmoothness: 'es',
+  ambientLightIntensity: 'a',
+  keyLightIntensity: 'k',
+  keyLightAzimuth: 'ka',
+  keyLightElevation: 'ke',
+  faceRoughness: 'rf',
+  multigridDimensions: 'gd',
+  multigridDivisions: 'gv',
+  multigridOffset: 'go',
+  multigridRandomize: 'gr',
+  multigridSharedVertices: 'gs',
+  multigridMinDistance: 'gn',
+  multigridMaxDistance: 'gx',
+  multigridColorRatio: 'gq',
+  multigridColorIntersect: 'gi',
+  multigridColorIndex: 'gj',
+  multigridRandomSeed: 'gz',
+  operators: 'o',
+} as const;
+
+const MODE_TO_URL: Record<'2d' | '3d', string> = {
+  '2d': '2',
+  '3d': '3',
+};
+
+const FINALIZATION_TO_URL: Record<MeshFinalizationMode, string> = {
+  planarize: 'p',
+  canonicalize: 'c',
+  none: 'n',
+};
+
+const COLOR_MODE_TO_URL: Record<ColorMode, string> = {
+  role: 'r',
+  sides: 's',
+  value: 'v',
+};
+
+const TILING_URL_VALUES = [
+  '3.3.3.3.3.3',
+  '4.4.4.4',
+  '6.6.6',
+  '3.6.3.6',
+  '4.8.8',
+  '3.12.12',
+  '3.4.6.4',
+  '4.6.12',
+  '3.3.4.3.4',
+  '3.3.3.4.4',
+  '3.3.3.3.6',
+  'tetrakis-square',
+  'cairo-pentagonal',
+  'rhombille',
+  'triakis-triangular',
+  'deltoidal-trihexagonal',
+  'kisrhombille',
+  'floret-pentagonal',
+  'prismatic-pentagonal',
+  'durer-1',
+  'durer-2',
+  'dissected-rhombitrihexagonal',
+  'dissected-truncated-hexagonal-1',
+  'dissected-truncated-hexagonal-2',
+  'hexagonal-truncated-triangular',
+  'demiregular-hexagonal',
+  'dissected-truncated-trihexagonal',
+  'demiregular-square',
+  'dissected-hexagonal-1',
+  'dissected-hexagonal-2',
+  'dissected-hexagonal-3',
+  'alternating-trihexagonal',
+  'dissected-rhombihexagonal',
+  'alternating-trihex-square',
+  'trihex-square',
+  'alternating-tri-square',
+  'semi-snub-tri-square',
+  'tri-square-square-1',
+  'tri-square-square-2',
+  'tri-tri-square-1',
+  'tri-tri-square-2',
+  'multigrid',
+] as const;
+
+const RADIAL_TYPE_URL_VALUES = [
+  'Tetrahedron',
+  'Cube',
+  'Octahedron',
+  'Dodecahedron',
+  'Icosahedron',
+  'TruncatedTetrahedron',
+  'Cuboctahedron',
+  'TruncatedCube',
+  'TruncatedOctahedron',
+  'Rhombicuboctahedron',
+  'TruncatedCuboctahedron',
+  'SnubCube',
+  'Icosidodecahedron',
+  'TruncatedDodecahedron',
+  'TruncatedIcosahedron',
+  'Rhombicosidodecahedron',
+  'TruncatedIcosidodecahedron',
+  'SnubDodecahedron',
+  'TriakisTetrahedron',
+  'RhombicDodecahedron',
+  'TriakisOctahedron',
+  'TetrakisHexahedron',
+  'DeltoidalIcositetrahedron',
+  'DisdyakisDodecahedron',
+  'PentagonalIcositetrahedron',
+  'RhombicTriacontahedron',
+  'TriakisIcosahedron',
+  'PentakisDodecahedron',
+  'DeltoidalHexecontahedron',
+  'DisdyakisTriacontahedron',
+  'PentagonalHexecontahedron',
+  'Prism',
+  'Antiprism',
+  'Trapezohedron',
+  'Pyramid',
+  'Dipyramid',
+  'ElongatedPyramid',
+  'ElongatedDipyramid',
+  'GyroelongatedPyramid',
+  'GyroelongatedDipyramid',
+  'Cupola',
+  'ElongatedCupola',
+  'GyroelongatedCupola',
+  'OrthoBicupola',
+  'GyroBicupola',
+  'ElongatedOrthoBicupola',
+  'ElongatedGyroBicupola',
+  'GyroelongatedBicupola',
+] as const;
+
+const TILING_KEY_TO_ALIAS = Object.fromEntries(
+  TILING_URL_VALUES.map((value, index) => [value, index.toString(36)])
+) as Record<string, string>;
+
+const TILING_ALIAS_TO_KEY = Object.fromEntries(
+  TILING_URL_VALUES.map((value, index) => [index.toString(36), value])
+) as Record<string, string>;
+
+const RADIAL_TYPE_KEY_TO_ALIAS = Object.fromEntries(
+  RADIAL_TYPE_URL_VALUES.map((value, index) => [value, index.toString(36)])
+) as Record<string, string>;
+
+const RADIAL_TYPE_ALIAS_TO_KEY = Object.fromEntries(
+  RADIAL_TYPE_URL_VALUES.map((value, index) => [index.toString(36), value])
+) as Record<string, string>;
+
+function getUrlParam(params: URLSearchParams, shortKey: string, legacyKey: string) {
+  return params.get(shortKey) ?? params.get(legacyKey);
+}
+
+function encodeAliasedValue(value: string, aliases: Record<string, string>) {
+  return aliases[value] ?? value;
+}
+
+function decodeAliasedValue(value: string | null, aliases: Record<string, string>) {
+  if (value === null) return null;
+  return aliases[value] ?? value;
+}
+
+function parseBooleanParamValue(value: string | null, fallback: boolean) {
+  if (value === null) return fallback;
+  if (value === '1' || value === 'true') return true;
+  if (value === '0' || value === 'false') return false;
+  return fallback;
+}
+
+function setParamIfNeeded(
+  params: URLSearchParams,
+  key: string,
+  value: string | number | boolean,
+  defaultValue: string | number | boolean,
+) {
+  if (value !== defaultValue) {
+    params.set(key, String(value));
+  }
+}
+
+function encodeOperatorParam(value: number) {
+  const clamped = Math.min(Math.max(Math.round(value * 100), 0), 99);
+  return clamped.toString(36).padStart(2, '0');
+}
+
+function decodeOperatorParam(value: string, fallback: number) {
+  const parsed = Number.parseInt(value, 36);
+  return Number.isFinite(parsed) ? parsed / 100 : fallback;
+}
+
+function serializeCompactOperator(operator: OperatorState) {
+  let atomMask = 0;
+  const selectedAtoms = new Set(parseAtomList(operator.notation));
+  OMNI_ATOMS.forEach((atom, index) => {
+    if (selectedAtoms.has(atom)) {
+      atomMask += 2 ** index;
+    }
+  });
+
+  const encodedParams = [
+    encodeOperatorParam(operator.tVe),
+    encodeOperatorParam(operator.tVf),
+    encodeOperatorParam(operator.tFe),
+  ].join('');
+  const defaultParams = encodeOperatorParam(DEFAULT_OMNI_PARAMS.tVe).repeat(3);
+  const payload = encodedParams === defaultParams
+    ? atomMask.toString(36)
+    : `${atomMask.toString(36)}.${encodedParams}`;
+
+  return `${operator.enabled ? '' : '!'}${payload}`;
+}
+
+function parseCompactOperator(token: string): OperatorState | null {
+  const enabled = !token.startsWith('!');
+  const payload = enabled ? token : token.slice(1);
+  const [maskRaw, paramRaw] = payload.split('.');
+  if (!maskRaw) return null;
+
+  const atomMask = Number.parseInt(maskRaw, 36);
+  if (!Number.isFinite(atomMask)) return null;
+
+  const atoms: string[] = [];
+  OMNI_ATOMS.forEach((atom, index) => {
+    const bit = 2 ** index;
+    if (Math.floor(atomMask / bit) % 2 === 1) {
+      atoms.push(atom);
+    }
+  });
+
+  if (atoms.length === 0) return null;
+
+  const params = paramRaw && paramRaw.length === 6
+    ? {
+        tVe: decodeOperatorParam(paramRaw.slice(0, 2), DEFAULT_OMNI_PARAMS.tVe),
+        tVf: decodeOperatorParam(paramRaw.slice(2, 4), DEFAULT_OMNI_PARAMS.tVf),
+        tFe: decodeOperatorParam(paramRaw.slice(4, 6), DEFAULT_OMNI_PARAMS.tFe),
+      }
+    : DEFAULT_OMNI_PARAMS;
+
+  return createOperator(joinAtomList(atoms), enabled, params);
+}
+
 function createOperator(notation: string, enabled = true, overrides: Partial<OperatorSpec> = {}): OperatorState {
   return {
     id: Math.random().toString(36).substring(7) + Date.now(),
@@ -184,7 +444,7 @@ function buildAppSearchParams(state: {
   embossEnabled: boolean;
   embossWidth: number;
   embossDepth: number;
-  embossProfile: EmbossProfile;
+  embossSmoothness: number;
   ambientLightIntensity: number;
   keyLightIntensity: number;
   keyLightAzimuth: number;
@@ -194,50 +454,71 @@ function buildAppSearchParams(state: {
   operators: OperatorState[];
 }) {
   const params = new URLSearchParams();
-  params.set('mode', state.mode);
-  params.set('finalization', state.finalization);
-  params.set('radialType', state.radialType);
-  params.set('radialSides', state.radialSides.toString());
-  params.set('tiling', state.tilingType);
-  params.set('rows', state.rows.toString());
-  params.set('cols', state.cols.toString());
-  params.set('edges', state.showEdges.toString());
-  params.set('vertices', state.showVertices.toString());
-  params.set('faces', state.showFaces.toString());
-  params.set('wireframe', state.wireframe.toString());
-  params.set('palette', state.palette);
-  params.set('colorMode', state.colorMode);
-  params.set('edgeColor', state.edgeColor);
-  params.set('emboss', state.embossEnabled.toString());
-  params.set('embossWidth', state.embossWidth.toString());
-  params.set('embossDepth', state.embossDepth.toString());
-  params.set('embossProfile', state.embossProfile);
-  params.set('ambient', state.ambientLightIntensity.toString());
-  params.set('key', state.keyLightIntensity.toString());
-  params.set('keyAz', state.keyLightAzimuth.toString());
-  params.set('keyEl', state.keyLightElevation.toString());
-  params.set('rough', state.faceRoughness.toString());
-  params.set('mgDim', state.multigridSettings.dimensions.toString());
-  params.set('mgDiv', state.multigridSettings.divisions.toString());
-  params.set('mgOff', state.multigridSettings.offset.toString());
-  params.set('mgRand', state.multigridSettings.randomize.toString());
-  params.set('mgShared', state.multigridSettings.sharedVertices.toString());
-  params.set('mgMin', state.multigridSettings.minDistance.toString());
-  params.set('mgMax', state.multigridSettings.maxDistance.toString());
-  params.set('mgRatio', state.multigridSettings.colorRatio.toString());
-  params.set('mgIntersect', state.multigridSettings.colorIntersect.toString());
-  params.set('mgIndex', state.multigridSettings.colorIndex.toString());
-  params.set('mgSeed', state.multigridSettings.randomSeed.toString());
+  setParamIfNeeded(params, URL_KEYS.mode, MODE_TO_URL[state.mode], MODE_TO_URL[APP_DEFAULTS.mode]);
+  setParamIfNeeded(params, URL_KEYS.finalization, FINALIZATION_TO_URL[state.finalization], FINALIZATION_TO_URL[APP_DEFAULTS.finalization]);
+  setParamIfNeeded(
+    params,
+    URL_KEYS.radialType,
+    encodeAliasedValue(state.radialType, RADIAL_TYPE_KEY_TO_ALIAS),
+    encodeAliasedValue(APP_DEFAULTS.radialType, RADIAL_TYPE_KEY_TO_ALIAS)
+  );
+  setParamIfNeeded(params, URL_KEYS.radialSides, state.radialSides, APP_DEFAULTS.radialSides);
+  setParamIfNeeded(
+    params,
+    URL_KEYS.tiling,
+    encodeAliasedValue(state.tilingType, TILING_KEY_TO_ALIAS),
+    encodeAliasedValue(APP_DEFAULTS.tilingType, TILING_KEY_TO_ALIAS)
+  );
+  if (state.rows === state.cols) {
+    setParamIfNeeded(params, URL_KEYS.size, state.rows, APP_DEFAULTS.rows);
+  } else {
+    setParamIfNeeded(params, URL_KEYS.rows, state.rows, APP_DEFAULTS.rows);
+    setParamIfNeeded(params, URL_KEYS.cols, state.cols, APP_DEFAULTS.cols);
+  }
+  setParamIfNeeded(params, URL_KEYS.edges, Number(state.showEdges), Number(APP_DEFAULTS.showEdges));
+  setParamIfNeeded(params, URL_KEYS.vertices, Number(state.showVertices), Number(APP_DEFAULTS.showVertices));
+  setParamIfNeeded(params, URL_KEYS.faces, Number(state.showFaces), Number(APP_DEFAULTS.showFaces));
+  setParamIfNeeded(params, URL_KEYS.wireframe, Number(state.wireframe), Number(APP_DEFAULTS.wireframe));
+  setParamIfNeeded(params, URL_KEYS.palette, state.palette, APP_DEFAULTS.palette);
+  setParamIfNeeded(params, URL_KEYS.colorMode, COLOR_MODE_TO_URL[state.colorMode], COLOR_MODE_TO_URL[APP_DEFAULTS.colorMode]);
+  setParamIfNeeded(params, URL_KEYS.edgeColor, state.edgeColor, APP_DEFAULTS.edgeColor);
+  setParamIfNeeded(params, URL_KEYS.embossEnabled, Number(state.embossEnabled), Number(APP_DEFAULTS.embossEnabled));
+  setParamIfNeeded(params, URL_KEYS.embossWidth, state.embossWidth, APP_DEFAULTS.embossWidth);
+  setParamIfNeeded(params, URL_KEYS.embossDepth, state.embossDepth, APP_DEFAULTS.embossDepth);
+  setParamIfNeeded(params, URL_KEYS.embossSmoothness, state.embossSmoothness, APP_DEFAULTS.embossSmoothness);
+  setParamIfNeeded(params, URL_KEYS.ambientLightIntensity, state.ambientLightIntensity, APP_DEFAULTS.ambientLightIntensity);
+  setParamIfNeeded(params, URL_KEYS.keyLightIntensity, state.keyLightIntensity, APP_DEFAULTS.keyLightIntensity);
+  setParamIfNeeded(params, URL_KEYS.keyLightAzimuth, state.keyLightAzimuth, APP_DEFAULTS.keyLightAzimuth);
+  setParamIfNeeded(params, URL_KEYS.keyLightElevation, state.keyLightElevation, APP_DEFAULTS.keyLightElevation);
+  setParamIfNeeded(params, URL_KEYS.faceRoughness, state.faceRoughness, APP_DEFAULTS.faceRoughness);
+  setParamIfNeeded(params, URL_KEYS.multigridDimensions, state.multigridSettings.dimensions, MULTIGRID_DEFAULTS.dimensions);
+  setParamIfNeeded(params, URL_KEYS.multigridDivisions, state.multigridSettings.divisions, MULTIGRID_DEFAULTS.divisions);
+  setParamIfNeeded(params, URL_KEYS.multigridOffset, state.multigridSettings.offset, MULTIGRID_DEFAULTS.offset);
+  setParamIfNeeded(params, URL_KEYS.multigridRandomize, Number(state.multigridSettings.randomize), Number(MULTIGRID_DEFAULTS.randomize));
+  setParamIfNeeded(params, URL_KEYS.multigridSharedVertices, Number(state.multigridSettings.sharedVertices), Number(MULTIGRID_DEFAULTS.sharedVertices));
+  setParamIfNeeded(params, URL_KEYS.multigridMinDistance, state.multigridSettings.minDistance, MULTIGRID_DEFAULTS.minDistance);
+  setParamIfNeeded(params, URL_KEYS.multigridMaxDistance, state.multigridSettings.maxDistance, MULTIGRID_DEFAULTS.maxDistance);
+  setParamIfNeeded(params, URL_KEYS.multigridColorRatio, state.multigridSettings.colorRatio, MULTIGRID_DEFAULTS.colorRatio);
+  setParamIfNeeded(params, URL_KEYS.multigridColorIntersect, state.multigridSettings.colorIntersect, MULTIGRID_DEFAULTS.colorIntersect);
+  setParamIfNeeded(params, URL_KEYS.multigridColorIndex, state.multigridSettings.colorIndex, MULTIGRID_DEFAULTS.colorIndex);
+  setParamIfNeeded(params, URL_KEYS.multigridRandomSeed, state.multigridSettings.randomSeed, MULTIGRID_DEFAULTS.randomSeed);
   if (state.operators.length > 0) {
-    params.set('ops', state.operators.map((operator) => {
-      const serialized = serializeOperatorSpec(operator);
-      return encodeURIComponent((operator.enabled ? '' : '!') + serialized);
-    }).join(';'));
+    params.set(URL_KEYS.operators, state.operators.map(serializeCompactOperator).join(';'));
   }
   return params;
 }
 
 function parseOperatorsFromUrlParam(urlOps: string): OperatorState[] {
+  const compactEntries = urlOps.split(';').filter(Boolean);
+  if (compactEntries.length > 0 && compactEntries.every((entry) => entry.includes('.') || /^[!0-9a-z]+$/i.test(entry))) {
+    const parsedCompact = compactEntries
+      .map(parseCompactOperator)
+      .filter((operator): operator is OperatorState => operator !== null);
+    if (parsedCompact.length > 0) {
+      return parsedCompact;
+    }
+  }
+
   const entries = urlOps.includes(';')
     ? urlOps.split(';').filter(Boolean)
     : (() => {
@@ -298,7 +579,7 @@ export default function App() {
   const [embossEnabled, setEmbossEnabled] = useState(APP_DEFAULTS.embossEnabled);
   const [embossWidth, setEmbossWidth] = useState(APP_DEFAULTS.embossWidth);
   const [embossDepth, setEmbossDepth] = useState(APP_DEFAULTS.embossDepth);
-  const [embossProfile, setEmbossProfile] = useState<EmbossProfile>(APP_DEFAULTS.embossProfile);
+  const [embossSmoothness, setEmbossSmoothness] = useState(APP_DEFAULTS.embossSmoothness);
   const [ambientLightIntensity, setAmbientLightIntensity] = useState(APP_DEFAULTS.ambientLightIntensity);
   const [keyLightIntensity, setKeyLightIntensity] = useState(APP_DEFAULTS.keyLightIntensity);
   const [keyLightAzimuth, setKeyLightAzimuth] = useState(APP_DEFAULTS.keyLightAzimuth);
@@ -337,7 +618,7 @@ export default function App() {
   const [sliderMoved, setSliderMoved] = useState(false);
   const [diagramOrGridClicked, setDiagramOrGridClicked] = useState(false);
   const [initialHadOperators] = useState(() =>
-    new URLSearchParams(window.location.search).has('ops')
+    new URLSearchParams(window.location.search).has(URL_KEYS.operators) || new URLSearchParams(window.location.search).has('ops')
   );
 
   const step1Complete = mode === '3d' ? shapeEverOpened : tilingEverOpened;
@@ -357,6 +638,11 @@ export default function App() {
 
   const requestFitToExtents = () => {
     setFitRequestKey((current) => current + 1);
+  };
+
+  const setModeAndFit = (nextMode: '2d' | '3d') => {
+    setMode(nextMode);
+    requestFitToExtents();
   };
 
   // Poll for Blender availability
@@ -389,39 +675,59 @@ export default function App() {
       const parsed = Number.parseFloat(value ?? '');
       return Number.isFinite(parsed) ? parsed : fallback;
     };
-    const parseBooleanParam = (value: string | null, fallback: boolean) => {
-      if (value === null) return fallback;
-      return value === 'true';
-    };
+    const urlMode = getUrlParam(params, URL_KEYS.mode, 'mode');
+    setMode(
+      urlMode === '2d' || urlMode === '3d'
+        ? urlMode
+        : urlMode === MODE_TO_URL['2d']
+          ? '2d'
+          : urlMode === MODE_TO_URL['3d']
+            ? '3d'
+            : APP_DEFAULTS.mode
+    );
 
-    const urlMode = params.get('mode');
-    setMode(urlMode === '2d' || urlMode === '3d' ? urlMode : APP_DEFAULTS.mode);
-
-    const urlFinalization = params.get('finalization');
+    const urlFinalization = getUrlParam(params, URL_KEYS.finalization, 'finalization');
     setFinalization(
       urlFinalization === 'none' || urlFinalization === 'planarize' || urlFinalization === 'canonicalize'
         ? urlFinalization
+        : urlFinalization === FINALIZATION_TO_URL.none
+          ? 'none'
+          : urlFinalization === FINALIZATION_TO_URL.planarize
+            ? 'planarize'
+            : urlFinalization === FINALIZATION_TO_URL.canonicalize
+              ? 'canonicalize'
         : APP_DEFAULTS.finalization
     );
 
-    const urlRadialType = params.get('radialType');
+    const urlRadialType = decodeAliasedValue(
+      getUrlParam(params, URL_KEYS.radialType, 'radialType'),
+      RADIAL_TYPE_ALIAS_TO_KEY
+    );
     setRadialType(
       urlRadialType && RADIAL_SOLID_NAMES[urlRadialType as RadialPolyType]
         ? urlRadialType as RadialPolyType
         : APP_DEFAULTS.radialType
     );
-    const urlRadialSides = params.get('radialSides');
+    const urlRadialSides = getUrlParam(params, URL_KEYS.radialSides, 'radialSides');
     {
       const parsed = parseIntParam(urlRadialSides, APP_DEFAULTS.radialSides);
       setRadialSides(parsed >= 3 && parsed <= 16 ? parsed : APP_DEFAULTS.radialSides);
     }
 
-    const urlTiling = params.get('tiling');
+    const urlTiling = decodeAliasedValue(
+      getUrlParam(params, URL_KEYS.tiling, 'tiling'),
+      TILING_ALIAS_TO_KEY
+    );
     setTilingType(urlTiling && UNIFORM_TILINGS[urlTiling] ? urlTiling : APP_DEFAULTS.tilingType);
 
-    const urlRows = params.get('rows');
-    const urlCols = params.get('cols');
-    if (urlRows && urlCols) {
+    const urlSize = params.get(URL_KEYS.size);
+    const urlRows = getUrlParam(params, URL_KEYS.rows, 'rows');
+    const urlCols = getUrlParam(params, URL_KEYS.cols, 'cols');
+    if (urlSize) {
+      const size = parseIntParam(urlSize, APP_DEFAULTS.rows);
+      setRows(size);
+      setCols(size);
+    } else if (urlRows && urlCols) {
       setRows(parseIntParam(urlRows, APP_DEFAULTS.rows));
       setCols(parseIntParam(urlCols, APP_DEFAULTS.cols));
     } else if (urlRows) {
@@ -437,49 +743,61 @@ export default function App() {
       setCols(APP_DEFAULTS.cols);
     }
 
-    setShowEdges(parseBooleanParam(params.get('edges'), APP_DEFAULTS.showEdges));
-    setShowVertices(parseBooleanParam(params.get('vertices'), APP_DEFAULTS.showVertices));
-    setShowFaces(parseBooleanParam(params.get('faces'), APP_DEFAULTS.showFaces));
-    setWireframe(parseBooleanParam(params.get('wireframe'), APP_DEFAULTS.wireframe));
+    setShowEdges(parseBooleanParamValue(getUrlParam(params, URL_KEYS.edges, 'edges'), APP_DEFAULTS.showEdges));
+    setShowVertices(parseBooleanParamValue(getUrlParam(params, URL_KEYS.vertices, 'vertices'), APP_DEFAULTS.showVertices));
+    setShowFaces(parseBooleanParamValue(getUrlParam(params, URL_KEYS.faces, 'faces'), APP_DEFAULTS.showFaces));
+    setWireframe(parseBooleanParamValue(getUrlParam(params, URL_KEYS.wireframe, 'wireframe'), APP_DEFAULTS.wireframe));
 
-    const urlPalette = params.get('palette');
+    const urlPalette = getUrlParam(params, URL_KEYS.palette, 'palette');
     setPalette(urlPalette && PALETTES[urlPalette as PaletteKey] ? urlPalette as PaletteKey : APP_DEFAULTS.palette);
 
-    const urlColorMode = params.get('colorMode');
+    const urlColorMode = getUrlParam(params, URL_KEYS.colorMode, 'colorMode');
     setColorMode(
       urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value'
         ? urlColorMode
+        : urlColorMode === COLOR_MODE_TO_URL.role
+          ? 'role'
+          : urlColorMode === COLOR_MODE_TO_URL.sides
+            ? 'sides'
+            : urlColorMode === COLOR_MODE_TO_URL.value
+              ? 'value'
         : APP_DEFAULTS.colorMode
     );
 
-    const urlEdgeColor = params.get('edgeColor');
+    const urlEdgeColor = getUrlParam(params, URL_KEYS.edgeColor, 'edgeColor');
     setEdgeColor(urlEdgeColor ?? APP_DEFAULTS.edgeColor);
 
-    const urlEmboss = params.get('emboss');
-    setEmbossEnabled(parseBooleanParam(urlEmboss, APP_DEFAULTS.embossEnabled));
+    const urlEmboss = getUrlParam(params, URL_KEYS.embossEnabled, 'emboss');
+    setEmbossEnabled(parseBooleanParamValue(urlEmboss, APP_DEFAULTS.embossEnabled));
 
-    const parsedEmbossWidth = parseFloatParam(params.get('embossWidth'), APP_DEFAULTS.embossWidth);
+    const parsedEmbossWidth = parseFloatParam(getUrlParam(params, URL_KEYS.embossWidth, 'embossWidth'), APP_DEFAULTS.embossWidth);
     setEmbossWidth(Math.min(Math.max(Math.abs(parsedEmbossWidth), 0), 0.3));
 
-    const parsedEmbossDepth = parseFloatParam(params.get('embossDepth'), APP_DEFAULTS.embossDepth);
+    const parsedEmbossDepth = parseFloatParam(getUrlParam(params, URL_KEYS.embossDepth, 'embossDepth'), APP_DEFAULTS.embossDepth);
     setEmbossDepth(Math.min(Math.max(parsedEmbossDepth, -0.04), 0.04));
 
-    const parsedEmbossProfile = params.get('embossProfile');
-    setEmbossProfile(parsedEmbossProfile === 'linear' ? 'linear' : APP_DEFAULTS.embossProfile);
+    const parsedEmbossSmoothness = getUrlParam(params, URL_KEYS.embossSmoothness, 'embossSmooth');
+    if (parsedEmbossSmoothness !== null) {
+      const value = parseFloatParam(parsedEmbossSmoothness, APP_DEFAULTS.embossSmoothness);
+      setEmbossSmoothness(Math.min(Math.max(value, 0), 1));
+    } else {
+      const parsedEmbossProfile = params.get('embossProfile');
+      setEmbossSmoothness(parsedEmbossProfile === 'linear' ? 0 : APP_DEFAULTS.embossSmoothness);
+    }
 
-    const parsedAmbient = parseFloatParam(params.get('ambient'), APP_DEFAULTS.ambientLightIntensity);
+    const parsedAmbient = parseFloatParam(getUrlParam(params, URL_KEYS.ambientLightIntensity, 'ambient'), APP_DEFAULTS.ambientLightIntensity);
     setAmbientLightIntensity(Math.min(Math.max(parsedAmbient, 0), 1.5));
 
-    const parsedKey = parseFloatParam(params.get('key'), APP_DEFAULTS.keyLightIntensity);
+    const parsedKey = parseFloatParam(getUrlParam(params, URL_KEYS.keyLightIntensity, 'key'), APP_DEFAULTS.keyLightIntensity);
     setKeyLightIntensity(Math.min(Math.max(parsedKey, 0), 2));
 
-    const parsedKeyAzimuth = parseFloatParam(params.get('keyAz'), APP_DEFAULTS.keyLightAzimuth);
+    const parsedKeyAzimuth = parseFloatParam(getUrlParam(params, URL_KEYS.keyLightAzimuth, 'keyAz'), APP_DEFAULTS.keyLightAzimuth);
     setKeyLightAzimuth(Math.min(Math.max(parsedKeyAzimuth, -180), 180));
 
-    const parsedKeyElevation = parseFloatParam(params.get('keyEl'), APP_DEFAULTS.keyLightElevation);
+    const parsedKeyElevation = parseFloatParam(getUrlParam(params, URL_KEYS.keyLightElevation, 'keyEl'), APP_DEFAULTS.keyLightElevation);
     setKeyLightElevation(Math.min(Math.max(parsedKeyElevation, -85), 85));
 
-    const parsedRoughness = params.get('rough');
+    const parsedRoughness = getUrlParam(params, URL_KEYS.faceRoughness, 'rough');
     if (parsedRoughness !== null) {
       const value = parseFloatParam(parsedRoughness, APP_DEFAULTS.faceRoughness);
       setFaceRoughness(Math.min(Math.max(value, 0), 1));
@@ -490,22 +808,22 @@ export default function App() {
     }
 
     setMultigridSettings({
-      dimensions: parseIntParam(params.get('mgDim'), MULTIGRID_DEFAULTS.dimensions),
-      divisions: parseIntParam(params.get('mgDiv'), MULTIGRID_DEFAULTS.divisions),
-      offset: parseFloatParam(params.get('mgOff'), MULTIGRID_DEFAULTS.offset),
-      randomize: params.get('mgRand') === 'true',
-      sharedVertices: params.get('mgShared') === null
+      dimensions: parseIntParam(getUrlParam(params, URL_KEYS.multigridDimensions, 'mgDim'), MULTIGRID_DEFAULTS.dimensions),
+      divisions: parseIntParam(getUrlParam(params, URL_KEYS.multigridDivisions, 'mgDiv'), MULTIGRID_DEFAULTS.divisions),
+      offset: parseFloatParam(getUrlParam(params, URL_KEYS.multigridOffset, 'mgOff'), MULTIGRID_DEFAULTS.offset),
+      randomize: parseBooleanParamValue(getUrlParam(params, URL_KEYS.multigridRandomize, 'mgRand'), MULTIGRID_DEFAULTS.randomize),
+      sharedVertices: getUrlParam(params, URL_KEYS.multigridSharedVertices, 'mgShared') === null
         ? MULTIGRID_DEFAULTS.sharedVertices
-        : params.get('mgShared') === 'true',
-      minDistance: parseFloatParam(params.get('mgMin'), MULTIGRID_DEFAULTS.minDistance),
-      maxDistance: parseFloatParam(params.get('mgMax'), MULTIGRID_DEFAULTS.maxDistance),
-      colorRatio: parseFloatParam(params.get('mgRatio'), MULTIGRID_DEFAULTS.colorRatio),
-      colorIntersect: parseFloatParam(params.get('mgIntersect'), MULTIGRID_DEFAULTS.colorIntersect),
-      colorIndex: parseFloatParam(params.get('mgIndex'), MULTIGRID_DEFAULTS.colorIndex),
-      randomSeed: parseIntParam(params.get('mgSeed'), MULTIGRID_DEFAULTS.randomSeed),
+        : parseBooleanParamValue(getUrlParam(params, URL_KEYS.multigridSharedVertices, 'mgShared'), MULTIGRID_DEFAULTS.sharedVertices),
+      minDistance: parseFloatParam(getUrlParam(params, URL_KEYS.multigridMinDistance, 'mgMin'), MULTIGRID_DEFAULTS.minDistance),
+      maxDistance: parseFloatParam(getUrlParam(params, URL_KEYS.multigridMaxDistance, 'mgMax'), MULTIGRID_DEFAULTS.maxDistance),
+      colorRatio: parseFloatParam(getUrlParam(params, URL_KEYS.multigridColorRatio, 'mgRatio'), MULTIGRID_DEFAULTS.colorRatio),
+      colorIntersect: parseFloatParam(getUrlParam(params, URL_KEYS.multigridColorIntersect, 'mgIntersect'), MULTIGRID_DEFAULTS.colorIntersect),
+      colorIndex: parseFloatParam(getUrlParam(params, URL_KEYS.multigridColorIndex, 'mgIndex'), MULTIGRID_DEFAULTS.colorIndex),
+      randomSeed: parseIntParam(getUrlParam(params, URL_KEYS.multigridRandomSeed, 'mgSeed'), MULTIGRID_DEFAULTS.randomSeed),
     });
 
-    const urlOps = params.get('ops');
+    const urlOps = getUrlParam(params, URL_KEYS.operators, 'ops');
     if (urlOps) {
       const loadedOperators = parseOperatorsFromUrlParam(urlOps);
       setOperators(loadedOperators);
@@ -551,7 +869,7 @@ export default function App() {
       embossEnabled,
       embossWidth,
       embossDepth,
-      embossProfile,
+      embossSmoothness,
       ambientLightIntensity,
       keyLightIntensity,
       keyLightAzimuth,
@@ -569,7 +887,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, isReady]);
+  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, isReady]);
 
 
   const applyPreset = (preset: AppPreset) => {
@@ -582,7 +900,7 @@ export default function App() {
 
   const saveCurrentPreset = () => {
     if (!newPresetName.trim()) return;
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
     saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
     setUserPresets(getUserPresets());
     setNewPresetName('');
@@ -590,7 +908,7 @@ export default function App() {
   };
 
   const copyCurrentAsExamplePreset = async () => {
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, multigridSettings, operators });
     const entry = `  {\n    name: '',\n    description: '',\n    params: '${params.toString()}',\n  },`;
     await navigator.clipboard.writeText(entry);
   };
@@ -938,13 +1256,13 @@ export default function App() {
             <section>
               <div className="flex gap-1 p-1 bg-neutral-800/40 rounded-xl border border-neutral-800">
                 <button
-                  onClick={() => setMode('2d')}
+                  onClick={() => setModeAndFit('2d')}
                   className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${mode === '2d' ? 'bg-blue-600 text-white shadow' : 'text-neutral-400 hover:text-white'}`}
                 >
                   2D Tilings
                 </button>
                 <button
-                  onClick={() => setMode('3d')}
+                  onClick={() => setModeAndFit('3d')}
                   className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${mode === '3d' ? 'bg-blue-600 text-white shadow' : 'text-neutral-400 hover:text-white'}`}
                 >
                   3D Shapes
@@ -1427,30 +1745,6 @@ export default function App() {
                               />
                             </label>
                             <div className={`space-y-3 transition-opacity ${embossEnabled ? 'opacity-100' : 'opacity-50'}`}>
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  onClick={() => setEmbossProfile('smooth')}
-                                  disabled={!embossEnabled}
-                                  className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
-                                    embossProfile === 'smooth'
-                                      ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
-                                      : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
-                                  }`}
-                                >
-                                  Smooth
-                                </button>
-                                <button
-                                  onClick={() => setEmbossProfile('linear')}
-                                  disabled={!embossEnabled}
-                                  className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
-                                    embossProfile === 'linear'
-                                      ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
-                                      : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
-                                  }`}
-                                >
-                                  Linear
-                                </button>
-                              </div>
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                                   <span>Emboss Width</span>
@@ -1479,6 +1773,22 @@ export default function App() {
                                   step="0.0025"
                                   value={embossDepth}
                                   onChange={(e) => setEmbossDepth(parseFloat(e.target.value))}
+                                  disabled={!embossEnabled}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Emboss Smoothness</span>
+                                  <span className="font-mono text-neutral-300">{embossSmoothness.toFixed(2)}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.05"
+                                  value={embossSmoothness}
+                                  onChange={(e) => setEmbossSmoothness(parseFloat(e.target.value))}
                                   disabled={!embossEnabled}
                                   className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
                                 />
@@ -2363,7 +2673,7 @@ export default function App() {
                     embossEnabled,
                     embossWidth,
                     embossDepth,
-                    embossProfile,
+                    embossSmoothness,
                     ambientLightIntensity,
                     keyLightIntensity,
                     keyLightAzimuth,
@@ -2428,7 +2738,7 @@ export default function App() {
             embossEnabled={embossEnabled}
             embossWidth={embossWidth}
             embossDepth={embossDepth}
-            embossProfile={embossProfile}
+            embossSmoothness={embossSmoothness}
             ambientLightIntensity={ambientLightIntensity}
             keyLightIntensity={keyLightIntensity}
             keyLightAzimuth={keyLightAzimuth}

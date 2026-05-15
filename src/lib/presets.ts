@@ -5,18 +5,41 @@ export interface AppPreset {
   params: string;
 }
 
+function normalizePresetParams(paramsString: string) {
+  const params = new URLSearchParams(paramsString);
+  params.delete('e');
+  params.delete('edges');
+  return params.toString();
+}
+
+function normalizePreset(preset: AppPreset): AppPreset {
+  return {
+    ...preset,
+    params: normalizePresetParams(preset.params),
+  };
+}
+
 export const EXAMPLE_PRESETS: AppPreset[] = [
-  { name: 'Companion Cubie', params: 'mode=3d&finalization=planarize&radialType=TruncatedCuboctahedron&radialSides=6&tiling=multigrid&rows=5&cols=5&edges=true&vertices=false&faces=true&wireframe=false&palette=vibrant&colorMode=value&edgeColor=%233b82f6&mgDim=9&mgDiv=9&mgOff=-1.43&mgRand=false&mgShared=true&mgMin=0&mgMax=0.35&mgRatio=1&mgIntersect=0&mgIndex=0&mgSeed=1&ops=V-ve%252Cfe-fe%21%252Cfe-ve%7E0.5%7E0.86%7E0.58' },
-  { name: 'Isfahan', params: 'mode=2d&finalization=planarize&radialType=ElongatedCupola&radialSides=5&tiling=demiregular-hexagonal&rows=5&cols=5&edges=false&vertices=false&faces=true&wireframe=false&palette=desert&colorMode=sides&edgeColor=%233b82f6&mgDim=5&mgDiv=5&mgOff=0.2&mgRand=false&mgShared=true&mgMin=0&mgMax=0.35&mgRatio=1&mgIntersect=0&mgIndex=0&mgSeed=1&ops=E-fe%252CE-ve%252Cfe-fe%252Cfe-ve%7E0.5%7E0.5%7E0.5' },
-  { name: 'Pointy Grid', params: 'mode=2d&finalization=planarize&radialType=Prism&radialSides=5&tiling=4.4.4.4&rows=5&cols=5&edges=true&vertices=false&faces=true&wireframe=false&palette=vibrant&colorMode=role&edgeColor=%233b82f6&mgDim=5&mgDiv=5&mgOff=0.2&mgRand=false&mgShared=true&mgMin=0&mgMax=0.35&mgRatio=1&mgIntersect=0&mgIndex=0&mgSeed=1&ops=F-fe%252Cfe-fe%21%252Cfe-ve%7E0.47%7E0.34%7E0.73'},
-  { name: 'Maltese Floor', params: 'mode=2d&finalization=planarize&radialType=Prism&radialSides=5&tiling=4.4.4.4&rows=5&cols=5&edges=true&vertices=false&faces=true&wireframe=false&palette=vibrant&colorMode=role&edgeColor=%233b82f6&mgDim=5&mgDiv=5&mgOff=0.2&mgRand=false&mgShared=true&mgMin=0&mgMax=0.35&mgRatio=1&mgIntersect=0&mgIndex=0&mgSeed=1&ops=V-ve%252Cfe-V%252Cfe-fe%21%252Cfe-ve%7E0.5%7E0.5%7E0.5'},
-  { name: 'Frutti', params: 'mode=2d&finalization=planarize&radialType=Prism&radialSides=5&tiling=multigrid&rows=5&cols=5&edges=false&vertices=false&faces=true&wireframe=false&palette=vibrant&colorMode=sides&edgeColor=%233b82f6&mgDim=5&mgDiv=5&mgOff=0.2&mgRand=false&mgShared=true&mgMin=0&mgMax=0.35&mgRatio=1&mgIntersect=0&mgIndex=0&mgSeed=1&ops=F-vf%252Cvf-vf%21%7E0.62%7E0.61%7E0.76'}
+  { name: 'Companion Cubie', params: 'm=3&rt=a&rs=6&t=15&cm=v&gd=9&gv=9&go=-1.43&o=4av4.1e2e1m' },
+  { name: 'Isfahan', params: 'rt=15&t=p&p=desert&cm=s&o=3ifs' },
+  { name: 'Pointy Grid', params: 'o=47wg.1b0y21'},
+  { name: 'Maltese Floor', params: 'o=4ni8'},
+  { name: 'Frutti', params: 't=15&cm=s&o=4zthc.1q1p24'}
 ];
 
 export function getUserPresets(): AppPreset[] {
   try {
     const stored = localStorage.getItem(USER_PRESETS_KEY);
-    return stored ? (JSON.parse(stored) as AppPreset[]) : [];
+    if (!stored) {
+      return [];
+    }
+
+    const presets = (JSON.parse(stored) as AppPreset[]).map(normalizePreset);
+    const normalized = JSON.stringify(presets);
+    if (normalized !== stored) {
+      localStorage.setItem(USER_PRESETS_KEY, normalized);
+    }
+    return presets;
   } catch {
     return [];
   }
@@ -24,7 +47,7 @@ export function getUserPresets(): AppPreset[] {
 
 export function saveUserPreset(preset: AppPreset): void {
   const presets = getUserPresets();
-  presets.push(preset);
+  presets.push(normalizePreset(preset));
   localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(presets));
 }
 

@@ -16,13 +16,13 @@ const FIT_EPSILON = 0.0001;
 const DEFAULT_EMBOSS_IDLE_DELAY_MS = 150;
 const DEFAULT_EMBOSS_WIDTH = 0.015;
 const DEFAULT_EMBOSS_DEPTH = 0.005;
+const DEFAULT_EMBOSS_SMOOTHNESS = 0.8;
 const DEFAULT_AMBIENT_LIGHT_INTENSITY = 0.5;
 const DEFAULT_KEY_LIGHT_INTENSITY = 0.8;
 const DEFAULT_KEY_LIGHT_AZIMUTH = 45;
 const DEFAULT_KEY_LIGHT_ELEVATION = 35;
 const DEFAULT_FACE_ROUGHNESS = 0.66;
 const KEY_LIGHT_DISTANCE = 8.660254037844387;
-type EmbossProfile = 'smooth' | 'linear';
 
 interface FitAnimationState {
   active: boolean;
@@ -196,7 +196,7 @@ function createEmbossedFaceMaterial(
   maxFaceEdges: number,
   embossWidth: number,
   embossDepth: number,
-  embossProfile: EmbossProfile,
+  embossSmoothness: number,
   faceRoughness: number,
 ) {
   const material = new THREE.MeshStandardMaterial({
@@ -219,7 +219,7 @@ function createEmbossedFaceMaterial(
     shader.uniforms.faceEdgeTextureSize = { value: new THREE.Vector2(textureWidth, textureHeight) };
     shader.uniforms.embossWidth = { value: embossWidth };
     shader.uniforms.embossDepth = { value: embossDepth };
-    shader.uniforms.embossProfileMode = { value: embossProfile === 'linear' ? 0 : 1 };
+    shader.uniforms.embossSmoothness = { value: embossSmoothness };
     shader.uniforms.embossBlendSharpness = { value: 12 / Math.max(embossWidth, 1e-4) };
 
     shader.vertexShader = shader.vertexShader
@@ -255,7 +255,7 @@ uniform sampler2D faceEdgeTexture;
 uniform vec2 faceEdgeTextureSize;
 uniform float embossWidth;
 uniform float embossDepth;
-uniform float embossProfileMode;
+uniform float embossSmoothness;
 uniform float embossBlendSharpness;
 varying vec2 vFaceLocalPos;
 varying vec3 vFaceBasisUView;
@@ -310,9 +310,11 @@ if ( vFaceEdgeCount > 0.5 ) {
   if ( directionWeight > 0.0 && minDistance < embossWidth ) {
     vec2 inwardDirection = normalize( directionSum / directionWeight );
     float x = clamp( minDistance / embossWidth, 0.0, 1.0 );
-    float profileSlope = embossProfileMode < 0.5
-      ? 1.0 / max( embossWidth, 1.0e-5 )
-      : ( 6.0 * x * ( 1.0 - x ) ) / max( embossWidth, 1.0e-5 );
+    float linearSlope = 1.0;
+    float smoothstepSlope = 6.0 * x * ( 1.0 - x );
+    float smootherstepSlope = 30.0 * x * x * ( 1.0 - x ) * ( 1.0 - x );
+    float curvedSlope = mix( smoothstepSlope, smootherstepSlope, embossSmoothness );
+    float profileSlope = mix( linearSlope, curvedSlope, embossSmoothness ) / max( embossWidth, 1.0e-5 );
     float heightDerivative = embossDepth * profileSlope;
     vec2 gradient2D = inwardDirection * heightDerivative;
     vec3 basisUView = normalize( vFaceBasisUView );
@@ -335,7 +337,7 @@ function buildEmbossedFaceGeometry(
   computedFaceColors: string[],
   embossWidth: number,
   embossDepth: number,
-  embossProfile: EmbossProfile,
+  embossSmoothness: number,
   faceRoughness: number,
 ) {
   const positionAttr: number[] = [];
@@ -414,7 +416,7 @@ function buildEmbossedFaceGeometry(
     maxFaceEdges,
     embossWidth,
     embossDepth,
-    embossProfile,
+    embossSmoothness,
     faceRoughness,
   );
 
@@ -449,7 +451,7 @@ interface TilingCanvasProps {
   embossEnabled?: boolean;
   embossWidth?: number;
   embossDepth?: number;
-  embossProfile?: EmbossProfile;
+  embossSmoothness?: number;
   ambientLightIntensity?: number;
   keyLightIntensity?: number;
   keyLightAzimuth?: number;
@@ -480,7 +482,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   embossEnabled = true,
   embossWidth = DEFAULT_EMBOSS_WIDTH,
   embossDepth = DEFAULT_EMBOSS_DEPTH,
-  embossProfile = 'smooth',
+  embossSmoothness = DEFAULT_EMBOSS_SMOOTHNESS,
   ambientLightIntensity = DEFAULT_AMBIENT_LIGHT_INTENSITY,
   keyLightIntensity = DEFAULT_KEY_LIGHT_INTENSITY,
   keyLightAzimuth = DEFAULT_KEY_LIGHT_AZIMUTH,
@@ -747,7 +749,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
           computedFaceColors,
           embossWidth,
           embossDepth,
-          embossProfile,
+          embossSmoothness,
           faceRoughness,
         );
         faceMesh = new THREE.Mesh(embossedFace.geometry, embossedFace.material);
@@ -804,7 +806,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
             computedFaceColors,
             embossWidth,
             embossDepth,
-            embossProfile,
+            embossSmoothness,
             faceRoughness,
           );
 
@@ -981,7 +983,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       containerRef.current?.removeEventListener('click', onClick);
       containerRef.current?.removeEventListener('mousemove', onMouseMove);
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossProfile, faceRoughness, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 };
