@@ -651,7 +651,21 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [blenderStatus, setBlenderStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
   const [blenderError, setBlenderError] = useState<string | null>(null);
-  const [blenderAvailable, setBlenderAvailable] = useState(false);
+  const sendToBlenderNow = async () => {
+    setBlenderStatus('sending');
+    setBlenderError(null);
+    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization);
+    if (result.ok) {
+      setBlenderStatus('ok');
+      setTimeout(() => setBlenderStatus('idle'), 3000);
+    } else {
+      // The localhost probe only happens here, on an explicit click — so no
+      // Local Network Access prompt fires on page load. On failure we surface
+      // the choice (open Blender + retry, or download the add-on).
+      setBlenderError(result.error ?? null);
+      setBlenderStatus('error');
+    }
+  };
   const [hoveredDotType, setHoveredDotType] = useState<string | null>(null);
   const [dotPopup, setDotPopup] = useState<{ type: string; x: number; y: number } | null>(null);
   const [presetsMenuOpen, setPresetsMenuOpen] = useState(false);
@@ -710,25 +724,6 @@ export default function App() {
     setMode(nextMode);
     requestFitToExtents();
   };
-
-  // Poll for Blender availability
-  useEffect(() => {
-    const check = async () => {
-      try {
-        await fetch('http://localhost:8765/polyhydra', {
-          method: 'GET',
-          mode: 'no-cors',
-          signal: AbortSignal.timeout(2000),
-        });
-        setBlenderAvailable(true);
-      } catch {
-        setBlenderAvailable(false);
-      }
-    };
-    check();
-    const id = setInterval(check, 5000);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -2726,41 +2721,44 @@ export default function App() {
                   OFF
                 </button>
               </div>
-              {blenderAvailable ? (
-                <>
-                  <button
-                    onClick={async () => {
-                      setBlenderStatus('sending');
-                      setBlenderError(null);
-                      const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization);
-                      setBlenderStatus(result.ok ? 'ok' : 'error');
-                      if (!result.ok) setBlenderError(result.error ?? null);
-                      setTimeout(() => setBlenderStatus('idle'), 3000);
-                    }}
-                    disabled={blenderStatus === 'sending'}
-                    className={`mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
-                      blenderStatus === 'ok'
-                        ? 'bg-green-800/60 border-green-600/50 text-green-300'
-                        : blenderStatus === 'error'
-                        ? 'bg-red-800/60 border-red-600/50 text-red-300'
-                        : 'bg-orange-900/30 border-orange-700/50 text-orange-400 hover:bg-orange-900/60 hover:text-orange-200'
-                    }`}
-                  >
-                    {blenderStatus === 'sending' ? 'Sending...' : blenderStatus === 'ok' ? 'Sent to Blender!' : blenderStatus === 'error' ? 'Error' : 'Send to Blender'}
-                  </button>
-                  {blenderStatus === 'error' && blenderError && (
-                    <p className="mt-1 text-[9px] text-red-400">{blenderError}</p>
+              <button
+                onClick={sendToBlenderNow}
+                disabled={blenderStatus === 'sending'}
+                className={`mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                  blenderStatus === 'ok'
+                    ? 'bg-green-800/60 border-green-600/50 text-green-300'
+                    : blenderStatus === 'error'
+                    ? 'bg-red-900/40 border-red-700/50 text-red-300 hover:bg-red-900/60'
+                    : 'bg-orange-900/30 border-orange-700/50 text-orange-400 hover:bg-orange-900/60 hover:text-orange-200'
+                }`}
+              >
+                {blenderStatus === 'sending' ? 'Sending...' : blenderStatus === 'ok' ? 'Sent to Blender!' : 'Send to Blender'}
+              </button>
+              {blenderStatus === 'error' && (
+                <div className="mt-2 rounded-lg border border-neutral-700/50 bg-neutral-800/40 p-2 space-y-2">
+                  <p className="text-[10px] leading-relaxed text-neutral-300">
+                    Couldn't reach Blender. Open it with the Polyhydra add-on running and retry — or grab the add-on if you don't have it yet.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={sendToBlenderNow}
+                      className="flex-1 px-2 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider border bg-orange-900/30 border-orange-700/50 text-orange-300 hover:bg-orange-900/60 hover:text-orange-200 transition-all"
+                    >
+                      Retry
+                    </button>
+                    <a
+                      href="https://github.com/IxxyXR/polyhydra-web/releases/latest"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 px-2 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider border bg-neutral-800/40 border-neutral-700/50 text-neutral-300 hover:bg-neutral-800 hover:text-neutral-200 transition-all text-center"
+                    >
+                      Get add-on ↗
+                    </a>
+                  </div>
+                  {blenderError && (
+                    <p className="text-[9px] text-red-400/80">{blenderError}</p>
                   )}
-                </>
-              ) : (
-                <a
-                  href="https://github.com/IxxyXR/polyhydra-web/releases/latest"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 text-center block"
-                >
-                  Get Blender Add-on
-                </a>
+                </div>
               )}
               <button
                 onClick={async () => {
