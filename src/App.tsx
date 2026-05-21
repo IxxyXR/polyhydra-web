@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Settings,
@@ -7,9 +7,6 @@ import {
   Maximize,
   Info,
   ChevronRight,
-  Hexagon,
-  Square,
-  Triangle as TriangleIcon,
   Circle,
   Eye,
   EyeOff,
@@ -675,6 +672,7 @@ export default function App() {
   const [fitRequestKey, setFitRequestKey] = useState(0);
   const [webXrSupported, setWebXrSupported] = useState<boolean | null>(null);
   const [webXrError, setWebXrError] = useState<string | null>(null);
+  const [isGeometryGenerating, setIsGeometryGenerating] = useState(true);
   const tilingCanvasRef = useRef<TilingCanvasHandle | null>(null);
   const selectedShapeButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedTilingButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -710,6 +708,10 @@ export default function App() {
   const requestFitToExtents = () => {
     setFitRequestKey((current) => current + 1);
   };
+
+  const handleGeometryGenerationChange = useCallback((isGenerating: boolean) => {
+    setIsGeometryGenerating(isGenerating);
+  }, []);
 
   const enterWebXR = async () => {
     setWebXrError(null);
@@ -1046,7 +1048,7 @@ export default function App() {
     ? NO_PRESET_VALUE
     : (selectedMatchingPresetName ?? CUSTOM_PRESET_VALUE);
   const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation, hoveredGridAtom) ?? (selectedOperatorNotation.trim() === '' ? createEmptyDiagramSvg(hoveredGridAtom) : null);
-  const activeOperators = operators.filter((op) => op.enabled);
+  const activeOperators = useMemo(() => operators.filter((op) => op.enabled), [operators]);
 
   const updateSelectedOperatorNotation = (notation: string) => {
     if (!selectedOperatorId) return;
@@ -1140,9 +1142,38 @@ export default function App() {
     }
   }, [operators, tilingType, selectedOperatorId]);
   const isMultigrid = tilingType === 'multigrid';
-  const generationOptions: TilingGenerationOptions = {
+  const generationOptions: TilingGenerationOptions = useMemo(() => ({
     multigrid: multigridSettings,
-  };
+  }), [multigridSettings]);
+
+  useLayoutEffect(() => {
+    setIsGeometryGenerating(true);
+  }, [
+    mode,
+    tilingType,
+    rows,
+    cols,
+    showEdges,
+    showVertices,
+    showFaces,
+    wireframe,
+    activeOperators,
+    palette,
+    shuffledColors,
+    colorMode,
+    edgeColor,
+    embossEnabled,
+    embossWidth,
+    embossDepth,
+    embossSmoothness,
+    faceRoughness,
+    faceOpacity,
+    generationOptions,
+    radialType,
+    radialSides,
+    finalization,
+    fitRequestKey,
+  ]);
   const tilingGroups = Object.entries(UNIFORM_TILINGS).reduce<Record<string, Array<[string, typeof selectedTiling]>>>((groups, [key, tiling]) => {
     let group = 'Other';
     if (REGULAR_TILING_KEYS.has(key)) {
@@ -1668,25 +1699,9 @@ export default function App() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
                         <Eye className="w-3 h-3" />
                         Appearance
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex -space-x-1">
-                          {selectedPalette.colors.slice(0, 5).map((c, i) => (
-                            <div
-                              key={i}
-                              className="h-3 w-3 rounded-full border border-neutral-900"
-                              style={{ backgroundColor: c }}
-                            />
-                          ))}
-                        </div>
-                        <div
-                          className="h-2 w-6 rounded-full border border-neutral-700"
-                          style={{ backgroundColor: edgeColor }}
-                          title="Edge colour"
-                        />
                       </div>
                     </div>
                     <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
@@ -2860,6 +2875,7 @@ export default function App() {
             radialSides={radialSides}
             finalization={finalization}
             fitRequestKey={fitRequestKey}
+            onGeometryGenerationChange={handleGeometryGenerationChange}
           />
         </div>
 
@@ -2937,11 +2953,15 @@ export default function App() {
         </AnimatePresence>
 
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-4 py-2 backdrop-blur-md">
-          <div className="flex items-center gap-2">
-             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-             <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-mono">Live Rendering</span>
-           </div>
-          <div className="w-px h-4 bg-neutral-800" />
+          {isGeometryGenerating && (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+                <span className="font-mono text-[10px] uppercase tracking-widest text-amber-200">Generating Geometry</span>
+              </div>
+              <div className="h-4 w-px bg-neutral-800" />
+            </>
+          )}
           <button
             onClick={requestFitToExtents}
             className="flex items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white"
@@ -2959,12 +2979,6 @@ export default function App() {
             <Headset className="h-3.5 w-3.5" />
             <span>WebXR</span>
           </button>
-          <div className="w-px h-4 bg-neutral-800" />
-          <div className="flex gap-4">
-            <TriangleIcon className="w-4 h-4 text-neutral-600" />
-            <Square className="w-4 h-4 text-neutral-600" />
-            <Hexagon className="w-4 h-4 text-neutral-600" />
-          </div>
         </div>
       </main>
     </div>

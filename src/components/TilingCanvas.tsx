@@ -499,6 +499,7 @@ interface TilingCanvasProps {
   radialSides?: number;
   finalization?: MeshFinalizationMode;
   fitRequestKey?: number;
+  onGeometryGenerationChange?: (isGenerating: boolean) => void;
 }
 
 interface XRNavigator extends Navigator {
@@ -545,6 +546,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   radialSides = 5,
   finalization = 'planarize' as MeshFinalizationMode,
   fitRequestKey = 0,
+  onGeometryGenerationChange,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitAnimationRef = useRef<FitAnimationState | null>(null);
@@ -808,25 +810,36 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   }, [ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation]);
 
   useEffect(() => {
-    if (!sceneRef.current) return;
-    const { meshGroup, renderer } = sceneRef.current;
-    const hadEmbossedFaces = meshGroup.children.some((child) => {
-      const material = (child as any).material as THREE.Material | THREE.Material[] | undefined;
-      return material ? isEmbossMaterial(material) : false;
-    });
-
-    while (meshGroup.children.length > 0) {
-      const child = meshGroup.children[0] as THREE.Mesh;
-      if (child.geometry) child.geometry.dispose();
-      if ((child as any).material) {
-        disposeMaterialResources((child as any).material);
-      }
-      meshGroup.remove(child);
+    if (!sceneRef.current) {
+      onGeometryGenerationChange?.(false);
+      return;
     }
 
-    let vertices: number[];
-    let faces: number[][];
-    try {
+    let embossTimeoutId: number | null = null;
+    let cancelled = false;
+    onGeometryGenerationChange?.(true);
+
+    const generationTimeoutId = window.setTimeout(() => {
+      if (cancelled || !sceneRef.current) return;
+
+      try {
+      const { meshGroup, renderer } = sceneRef.current;
+      const hadEmbossedFaces = meshGroup.children.some((child) => {
+        const material = (child as any).material as THREE.Material | THREE.Material[] | undefined;
+        return material ? isEmbossMaterial(material) : false;
+      });
+
+      while (meshGroup.children.length > 0) {
+        const child = meshGroup.children[0] as THREE.Mesh;
+        if (child.geometry) child.geometry.dispose();
+        if ((child as any).material) {
+          disposeMaterialResources((child as any).material);
+        }
+        meshGroup.remove(child);
+      }
+
+      let vertices: number[];
+      let faces: number[][];
       const mesh = generateFinalMesh({
         mode,
         tilingType,
@@ -842,103 +855,40 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       vertices = mesh.vertices;
       faces = mesh.faces;
       meshBoundsRef.current = computeMeshBounds(vertices);
-    } catch (e) {
-      console.warn('Mesh generation failed:', (e as Error).message);
-      return;
-    }
 
-    const computedFaceColors = computeFaceColors({ vertices, faces }, paletteColors ?? palette, colorMode);
-    const faceTriangulations = faces.map((face) => triangulateFaces([face], vertices));
-    const uniqueColorsUsed = new Set(computedFaceColors);
-    const uniqueEdges = new Set<string>();
-    faces.forEach((face) => {
-      for (let i = 0; i < face.length; i++) {
-        const a = face[i];
-        const b = face[(i + 1) % face.length];
-        uniqueEdges.add(a < b ? `${a},${b}` : `${b},${a}`);
-      }
-    });
-
-    const updateStat = (ids: string[], value: string) => {
-      ids.forEach((id) => {
-        const element = document.getElementById(id);
-        if (element) element.innerText = value;
-      });
-    };
-    updateStat(['stat-colors'], uniqueColorsUsed.size.toString());
-    updateStat(['stat-vertices'], (vertices.length / 3).toString());
-    updateStat(['stat-faces'], faces.length.toString());
-    updateStat(['stat-edges'], uniqueEdges.size.toString());
-
-    let faceMesh: THREE.Mesh | null = null;
-    let embossTimeoutId: number | null = null;
-    // 3D solids are consistently wound outward, so opaque solids can backface-cull.
-    // Transparent shapes and 2D tilings need both sides visible.
-    const isOpaqueFaces = faceOpacity >= 0.999;
-    const faceSide = mode === '3d' && isOpaqueFaces ? THREE.FrontSide : THREE.DoubleSide;
-    const useEmboss = embossEnabled && !wireframe && renderer.capabilities.isWebGL2;
-    const shouldRenderEmbossImmediately = hadEmbossedFaces && useEmboss;
-
-    if (showFaces) {
-      if (shouldRenderEmbossImmediately) {
-        const embossedFace = buildEmbossedFaceGeometry(
-          faces,
-          faceTriangulations,
-          vertices,
-          computedFaceColors,
-          embossWidth,
-          embossDepth,
-          embossSmoothness,
-          faceRoughness,
-          faceOpacity,
-          faceSide,
-        );
-        faceMesh = new THREE.Mesh(embossedFace.geometry, embossedFace.material);
-        faceMesh.renderOrder = 0;
-        meshGroup.add(faceMesh);
-      } else {
-      const posAttr: number[] = [];
-      const colorAttr: number[] = [];
-      const tmpColor = new THREE.Color();
-
-      faces.forEach((face, fIdx) => {
-        tmpColor.set(computedFaceColors[fIdx] || '#ffffff');
-        const triIndices = faceTriangulations[fIdx];
-        for (let t = 0; t < triIndices.length; t += 3) {
-          for (let k = 0; k < 3; k++) {
-            const vIdx = triIndices[t + k];
-            posAttr.push(vertices[vIdx * 3], vertices[vIdx * 3 + 1], vertices[vIdx * 3 + 2]);
-            colorAttr.push(tmpColor.r, tmpColor.g, tmpColor.b);
-          }
+      const computedFaceColors = computeFaceColors({ vertices, faces }, paletteColors ?? palette, colorMode);
+      const faceTriangulations = faces.map((face) => triangulateFaces([face], vertices));
+      const uniqueColorsUsed = new Set(computedFaceColors);
+      const uniqueEdges = new Set<string>();
+      faces.forEach((face) => {
+        for (let i = 0; i < face.length; i++) {
+          const a = face[i];
+          const b = face[(i + 1) % face.length];
+          uniqueEdges.add(a < b ? `${a},${b}` : `${b},${a}`);
         }
       });
 
-      const coloredGeom = new THREE.BufferGeometry();
-      coloredGeom.setAttribute('position', new THREE.Float32BufferAttribute(posAttr, 3));
-      coloredGeom.setAttribute('color', new THREE.Float32BufferAttribute(colorAttr, 3));
-      coloredGeom.computeVertexNormals();
+      const updateStat = (ids: string[], value: string) => {
+        ids.forEach((id) => {
+          const element = document.getElementById(id);
+          if (element) element.innerText = value;
+        });
+      };
+      updateStat(['stat-colors'], uniqueColorsUsed.size.toString());
+      updateStat(['stat-vertices'], (vertices.length / 3).toString());
+      updateStat(['stat-faces'], faces.length.toString());
+      updateStat(['stat-edges'], uniqueEdges.size.toString());
 
-      const material = new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        side: faceSide,
-        flatShading: true,
-        wireframe: wireframe,
-        transparent: !isOpaqueFaces,
-        opacity: faceOpacity,
-        roughness: faceRoughness,
-        metalness: 0,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1,
-      });
-      faceMesh = new THREE.Mesh(coloredGeom, material);
-      faceMesh.renderOrder = 0;
-      meshGroup.add(faceMesh);
+      let faceMesh: THREE.Mesh | null = null;
+      // 3D solids are consistently wound outward, so opaque solids can backface-cull.
+      // Transparent shapes and 2D tilings need both sides visible.
+      const isOpaqueFaces = faceOpacity >= 0.999;
+      const faceSide = mode === '3d' && isOpaqueFaces ? THREE.FrontSide : THREE.DoubleSide;
+      const useEmboss = embossEnabled && !wireframe && renderer.capabilities.isWebGL2;
+      const shouldRenderEmbossImmediately = hadEmbossedFaces && useEmboss;
 
-      if (useEmboss) {
-        embossTimeoutId = window.setTimeout(() => {
-          if (!faceMesh || !sceneRef.current) return;
-
+      if (showFaces) {
+        if (shouldRenderEmbossImmediately) {
           const embossedFace = buildEmbossedFaceGeometry(
             faces,
             faceTriangulations,
@@ -951,77 +901,145 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
             faceOpacity,
             faceSide,
           );
+          faceMesh = new THREE.Mesh(embossedFace.geometry, embossedFace.material);
+          faceMesh.renderOrder = 0;
+          meshGroup.add(faceMesh);
+        } else {
+          const posAttr: number[] = [];
+          const colorAttr: number[] = [];
+          const tmpColor = new THREE.Color();
 
-          const previousGeometry = faceMesh.geometry;
-          const previousMaterial = faceMesh.material;
-          faceMesh.geometry = embossedFace.geometry;
-          faceMesh.material = embossedFace.material;
-          previousGeometry.dispose();
-          disposeMaterialResources(previousMaterial);
-        }, DEFAULT_EMBOSS_IDLE_DELAY_MS);
-      }
-      }
-    }
+          faces.forEach((face, fIdx) => {
+            tmpColor.set(computedFaceColors[fIdx] || '#ffffff');
+            const triIndices = faceTriangulations[fIdx];
+            for (let t = 0; t < triIndices.length; t += 3) {
+              for (let k = 0; k < 3; k++) {
+                const vIdx = triIndices[t + k];
+                posAttr.push(vertices[vIdx * 3], vertices[vIdx * 3 + 1], vertices[vIdx * 3 + 2]);
+                colorAttr.push(tmpColor.r, tmpColor.g, tmpColor.b);
+              }
+            }
+          });
 
-    if (showEdges) {
-      const edgeIndices: number[] = [];
-      faces.forEach(face => {
-        for (let i = 0; i < face.length; i++) {
-          edgeIndices.push(face[i], face[(i + 1) % face.length]);
+          const coloredGeom = new THREE.BufferGeometry();
+          coloredGeom.setAttribute('position', new THREE.Float32BufferAttribute(posAttr, 3));
+          coloredGeom.setAttribute('color', new THREE.Float32BufferAttribute(colorAttr, 3));
+          coloredGeom.computeVertexNormals();
+
+          const material = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            side: faceSide,
+            flatShading: true,
+            wireframe: wireframe,
+            transparent: !isOpaqueFaces,
+            opacity: faceOpacity,
+            roughness: faceRoughness,
+            metalness: 0,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1,
+          });
+          faceMesh = new THREE.Mesh(coloredGeom, material);
+          faceMesh.renderOrder = 0;
+          meshGroup.add(faceMesh);
+
+          if (useEmboss) {
+            embossTimeoutId = window.setTimeout(() => {
+              if (!faceMesh || !sceneRef.current) return;
+
+              const embossedFace = buildEmbossedFaceGeometry(
+                faces,
+                faceTriangulations,
+                vertices,
+                computedFaceColors,
+                embossWidth,
+                embossDepth,
+                embossSmoothness,
+                faceRoughness,
+                faceOpacity,
+                faceSide,
+              );
+
+              const previousGeometry = faceMesh.geometry;
+              const previousMaterial = faceMesh.material;
+              faceMesh.geometry = embossedFace.geometry;
+              faceMesh.material = embossedFace.material;
+              previousGeometry.dispose();
+              disposeMaterialResources(previousMaterial);
+            }, DEFAULT_EMBOSS_IDLE_DELAY_MS);
+          }
         }
-      });
-      const edgeGeom = new THREE.BufferGeometry();
-      edgeGeom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-      edgeGeom.setIndex(edgeIndices);
-      const edgeMat = new THREE.LineBasicMaterial({
-        color: new THREE.Color(edgeColor),
-        linewidth: 2,
-        transparent: true,
-        opacity: 0.8
-      });
-      const edges = new THREE.LineSegments(edgeGeom, edgeMat);
-      edges.renderOrder = 1;
-      meshGroup.add(edges);
-    }
+      }
 
-    if (showVertices) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
-      const ctx = canvas.getContext('2d')!;
-      ctx.beginPath();
-      ctx.arc(32, 32, 30, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      const texture = new THREE.CanvasTexture(canvas);
+      if (showEdges) {
+        const edgeIndices: number[] = [];
+        faces.forEach(face => {
+          for (let i = 0; i < face.length; i++) {
+            edgeIndices.push(face[i], face[(i + 1) % face.length]);
+          }
+        });
+        const edgeGeom = new THREE.BufferGeometry();
+        edgeGeom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        edgeGeom.setIndex(edgeIndices);
+        const edgeMat = new THREE.LineBasicMaterial({
+          color: new THREE.Color(edgeColor),
+          linewidth: 2,
+          transparent: true,
+          opacity: 0.8
+        });
+        const edges = new THREE.LineSegments(edgeGeom, edgeMat);
+        edges.renderOrder = 1;
+        meshGroup.add(edges);
+      }
 
-      const pointsGeom = new THREE.BufferGeometry();
-      pointsGeom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-      const pointsMat = new THREE.PointsMaterial({
-        color: 0xffffff,
-        size: 0.1,
-        transparent: true,
-        opacity: 0.8,
-        map: texture,
-        alphaTest: 0.5
-      });
-      const points = new THREE.Points(pointsGeom, pointsMat);
-      points.position.z = 0.02;
-      meshGroup.add(points);
-    }
+      if (showVertices) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d')!;
+        ctx.beginPath();
+        ctx.arc(32, 32, 30, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        const texture = new THREE.CanvasTexture(canvas);
 
-    const shouldFitToExtents = fitRequestKey > lastHandledFitRequestKeyRef.current;
-    if (shouldFitToExtents && meshBoundsRef.current) {
-      lastHandledFitRequestKeyRef.current = fitRequestKey;
-      fitCameraToBounds(meshBoundsRef.current);
-    }
+        const pointsGeom = new THREE.BufferGeometry();
+        pointsGeom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        const pointsMat = new THREE.PointsMaterial({
+          color: 0xffffff,
+          size: 0.1,
+          transparent: true,
+          opacity: 0.8,
+          map: texture,
+          alphaTest: 0.5
+        });
+        const points = new THREE.Points(pointsGeom, pointsMat);
+        points.position.z = 0.02;
+        meshGroup.add(points);
+      }
+
+      const shouldFitToExtents = fitRequestKey > lastHandledFitRequestKeyRef.current;
+      if (shouldFitToExtents && meshBoundsRef.current) {
+        lastHandledFitRequestKeyRef.current = fitRequestKey;
+        fitCameraToBounds(meshBoundsRef.current);
+      }
+      } catch (e) {
+        console.warn('Mesh generation failed:', (e as Error).message);
+      } finally {
+        if (!cancelled) {
+          onGeometryGenerationChange?.(false);
+        }
+      }
+    }, 50);
 
     return () => {
+      cancelled = true;
+      window.clearTimeout(generationTimeoutId);
       if (embossTimeoutId !== null) {
         window.clearTimeout(embossTimeoutId);
       }
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey, onGeometryGenerationChange]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 });
