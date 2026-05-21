@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TilingGenerationOptions, triangulateFaces } from '../lib/tiling-geometries';
@@ -22,7 +22,7 @@ const DEFAULT_KEY_LIGHT_INTENSITY = 0.8;
 const DEFAULT_KEY_LIGHT_AZIMUTH = 45;
 const DEFAULT_KEY_LIGHT_ELEVATION = 35;
 const DEFAULT_FACE_ROUGHNESS = 0.66;
-const DEFAULT_FACE_OPACITY = 0.9;
+const DEFAULT_FACE_OPACITY = 1;
 const KEY_LIGHT_DISTANCE = 8.660254037844387;
 
 interface FitAnimationState {
@@ -200,12 +200,15 @@ function createEmbossedFaceMaterial(
   embossSmoothness: number,
   faceRoughness: number,
   faceOpacity: number,
+  side: THREE.Side,
 ) {
+  // Emboss is the opaque path: opaque rendering restores early-Z so the
+  // expensive per-pixel edge loop only runs on visible fragments.
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    side: THREE.DoubleSide,
+    side,
     flatShading: false,
-    transparent: true,
+    transparent: false,
     opacity: faceOpacity,
     roughness: faceRoughness,
     metalness: 0,
@@ -265,14 +268,11 @@ varying vec3 vFaceBasisVView;
 varying float vFaceEdgeStart;
 varying float vFaceEdgeCount;
 
-vec4 sampleFaceEdge( float edgeIndex ) {
-  float x = mod( edgeIndex, faceEdgeTextureSize.x );
-  float y = floor( edgeIndex / faceEdgeTextureSize.x );
-  vec2 uv = vec2(
-    ( x + 0.5 ) / faceEdgeTextureSize.x,
-    ( y + 0.5 ) / faceEdgeTextureSize.y
-  );
-  return texture2D( faceEdgeTexture, uv );
+vec4 sampleFaceEdgeTexel( int index ) {
+  int width = int(faceEdgeTextureSize.x);
+  int x = index % width;
+  int y = index / width;
+  return texelFetch( faceEdgeTexture, ivec2(x, y), 0 );
 }`
       )
       .replace(
@@ -284,28 +284,36 @@ vec3 normal = normalize( vNormal );
 normal *= faceDirection;
 #endif
 
-if ( vFaceEdgeCount > 0.5 ) {
+// These per-face varyings carry integer indices but are smooth-interpolated,
+// so perspective interpolation drifts them by a fraction across the triangle.
+// Round before truncating, or int() reads the wrong face's texels -> shimmering ghost edges.
+int faceEdgeCount = int( vFaceEdgeCount + 0.5 );
+if ( faceEdgeCount > 0 ) {
+  int faceEdgeStart = int( vFaceEdgeStart + 0.5 );
   float minDistance = 1.0e20;
   vec2 directionSum = vec2( 0.0 );
   float directionWeight = 0.0;
 
   for ( int edgeIndex = 0; edgeIndex < ${Math.max(maxFaceEdges, 1)}; edgeIndex ++ ) {
-    if ( float( edgeIndex ) >= vFaceEdgeCount ) break;
+    if ( edgeIndex >= faceEdgeCount ) break;
 
-    vec4 edgeSample = sampleFaceEdge( vFaceEdgeStart + float( edgeIndex ) );
-    vec2 edgeA = edgeSample.xy;
-    vec2 edgeB = edgeSample.zw;
-    vec2 edgeVector = edgeB - edgeA;
-    float edgeLengthSq = max( dot( edgeVector, edgeVector ), 1.0e-6 );
-    float t = clamp( dot( vFaceLocalPos - edgeA, edgeVector ) / edgeLengthSq, 0.0, 1.0 );
+    int baseIndex = faceEdgeStart * 2 + edgeIndex * 2;
+    vec4 texel0 = sampleFaceEdgeTexel( baseIndex );
+    vec4 texel1 = sampleFaceEdgeTexel( baseIndex + 1 );
+    
+    vec2 edgeA = texel0.xy;
+    vec2 edgeVector = texel0.zw;
+    vec2 inwardNormal = texel1.xy;
+    float invEdgeLengthSq = texel1.z;
+
+    float t = clamp( dot( vFaceLocalPos - edgeA, edgeVector ) * invEdgeLengthSq, 0.0, 1.0 );
     vec2 closestPoint = edgeA + edgeVector * t;
-    float distanceToEdge = length( vFaceLocalPos - closestPoint );
+    float distanceToEdge = distance( vFaceLocalPos, closestPoint );
 
     minDistance = min( minDistance, distanceToEdge );
 
-    vec2 inward = vec2( - edgeVector.y, edgeVector.x ) * inversesqrt( edgeLengthSq );
     float weight = exp( - distanceToEdge * embossBlendSharpness );
-    directionSum += inward * weight;
+    directionSum += inwardNormal * weight;
     directionWeight += weight;
   }
 
@@ -342,6 +350,7 @@ function buildEmbossedFaceGeometry(
   embossSmoothness: number,
   faceRoughness: number,
   faceOpacity: number,
+  side: THREE.Side,
 ) {
   const positionAttr: number[] = [];
   const colorAttr: number[] = [];
@@ -353,8 +362,10 @@ function buildEmbossedFaceGeometry(
   const faceEdgeCountAttr: number[] = [];
 
   const totalEdges = faces.reduce((sum, face) => sum + face.length, 0);
-  const textureWidth = Math.max(1, Math.ceil(Math.sqrt(totalEdges)));
-  const textureHeight = Math.max(1, Math.ceil(totalEdges / textureWidth));
+  // We need 2 texels per edge, so we double the total elements needed
+  const totalTexels = totalEdges * 2;
+  const textureWidth = Math.max(1, Math.ceil(Math.sqrt(totalTexels)));
+  const textureHeight = Math.max(1, Math.ceil(totalTexels / textureWidth));
   const edgeData = new Float32Array(textureWidth * textureHeight * 4);
 
   let edgeCursor = 0;
@@ -370,11 +381,31 @@ function buildEmbossedFaceGeometry(
     for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex++) {
       const current = projection.orderedLocalPoints[edgeIndex];
       const next = projection.orderedLocalPoints[(edgeIndex + 1) % edgeCount];
-      const textureOffset = edgeCursor * 4;
+      
+      const dx = next[0] - current[0];
+      const dy = next[1] - current[1];
+      const lenSq = dx * dx + dy * dy;
+      const invLenSq = lenSq > 1e-10 ? 1.0 / lenSq : 0.0;
+      const len = Math.sqrt(lenSq);
+      // Inward normal is (-dy, dx) normalized
+      const nx = len > 1e-10 ? -dy / len : 0.0;
+      const ny = len > 1e-10 ? dx / len : 0.0;
+
+      // 2 texels (8 floats) per edge
+      const textureOffset = edgeCursor * 8; 
+      
+      // Texel 0: A.x, A.y, dx, dy
       edgeData[textureOffset] = current[0];
       edgeData[textureOffset + 1] = current[1];
-      edgeData[textureOffset + 2] = next[0];
-      edgeData[textureOffset + 3] = next[1];
+      edgeData[textureOffset + 2] = dx;
+      edgeData[textureOffset + 3] = dy;
+      
+      // Texel 1: inward.x, inward.y, invEdgeLengthSq, 0
+      edgeData[textureOffset + 4] = nx;
+      edgeData[textureOffset + 5] = ny;
+      edgeData[textureOffset + 6] = invLenSq;
+      edgeData[textureOffset + 7] = 0.0;
+      
       edgeCursor += 1;
     }
 
@@ -422,6 +453,7 @@ function buildEmbossedFaceGeometry(
     embossSmoothness,
     faceRoughness,
     faceOpacity,
+    side,
   );
 
   return { geometry, material };
@@ -470,7 +502,22 @@ interface TilingCanvasProps {
   fitRequestKey?: number;
 }
 
-export const TilingCanvas: React.FC<TilingCanvasProps> = ({
+interface XRNavigator extends Navigator {
+  xr?: {
+    isSessionSupported?: (mode: 'immersive-vr') => Promise<boolean>;
+    requestSession: (
+      mode: 'immersive-vr',
+      options?: { optionalFeatures?: string[] },
+    ) => Promise<Parameters<THREE.WebXRManager['setSession']>[0]>;
+  };
+}
+
+export interface TilingCanvasHandle {
+  enterWebXR: () => Promise<void>;
+  isWebXRSupported: () => Promise<boolean>;
+}
+
+export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   tilingType,
   rows,
   cols,
@@ -498,9 +545,9 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   mode = '2d' as '2d' | '3d',
   radialType = 'Prism' as RadialPolyType,
   radialSides = 5,
-  finalization = 'planarize',
+  finalization = 'planarize' as MeshFinalizationMode,
   fitRequestKey = 0,
-}) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitAnimationRef = useRef<FitAnimationState | null>(null);
   const lastHandledFitRequestKeyRef = useRef(0);
@@ -513,7 +560,39 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     meshGroup: THREE.Group;
     ambientLight: THREE.AmbientLight;
     directLight: THREE.DirectionalLight;
+    xrRig: THREE.Group;
   } | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    enterWebXR: async () => {
+      if (!sceneRef.current) {
+        throw new Error('Renderer is not ready yet.');
+      }
+
+      const xr = (navigator as XRNavigator).xr;
+      if (!xr?.requestSession) {
+        throw new Error('WebXR is not available in this browser.');
+      }
+
+      const supported = xr.isSessionSupported
+        ? await xr.isSessionSupported('immersive-vr')
+        : true;
+      if (!supported) {
+        throw new Error('Immersive VR sessions are not supported on this device.');
+      }
+
+      const session = await xr.requestSession('immersive-vr', {
+        optionalFeatures: ['local-floor', 'bounded-floor'],
+      });
+      await sceneRef.current.renderer.xr.setSession(session);
+    },
+    isWebXRSupported: async () => {
+      const xr = (navigator as XRNavigator).xr;
+      if (!xr?.requestSession) return false;
+      if (!xr.isSessionSupported) return true;
+      return xr.isSessionSupported('immersive-vr');
+    },
+  }), []);
 
   const fitCameraToBounds = (bounds: MeshBounds) => {
     if (!sceneRef.current) return;
@@ -597,6 +676,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     camera.position.z = 10;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.xr.enabled = true;
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     containerRef.current.appendChild(renderer.domElement);
@@ -621,28 +701,85 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     const meshGroup = new THREE.Group();
     scene.add(meshGroup);
 
-    sceneRef.current = { scene, camera, renderer, controls, meshGroup, ambientLight, directLight };
+    const xrRig = new THREE.Group();
+    xrRig.add(camera);
+    scene.add(xrRig);
+
+    sceneRef.current = { scene, camera, renderer, controls, meshGroup, ambientLight, directLight, xrRig };
 
     const animate = () => {
-      requestAnimationFrame(animate);
-      const fitAnimation = fitAnimationRef.current;
-      if (fitAnimation?.active) {
-        camera.position.lerp(fitAnimation.targetPosition, FIT_LERP_ALPHA);
-        controls.target.lerp(fitAnimation.targetTarget, FIT_LERP_ALPHA);
+      if (renderer.xr.isPresenting) {
+        const session = renderer.xr.getSession();
+        if (session) {
+          let moveX = 0;
+          let moveZ = 0;
+          let moveY = 0;
 
-        const positionSettled = camera.position.distanceToSquared(fitAnimation.targetPosition) <= FIT_EPSILON;
-        const targetSettled = controls.target.distanceToSquared(fitAnimation.targetTarget) <= FIT_EPSILON;
+          for (const source of session.inputSources) {
+            if (source.gamepad) {
+              const axes = source.gamepad.axes;
+              const buttons = source.gamepad.buttons;
 
-        if (positionSettled && targetSettled) {
-          camera.position.copy(fitAnimation.targetPosition);
-          controls.target.copy(fitAnimation.targetTarget);
-          fitAnimation.active = false;
+              // Only use left controller for horizontal movement
+              if (source.handedness === 'left') {
+                const x = (axes[0] || 0) + (axes[2] || 0);
+                const z = (axes[1] || 0) + (axes[3] || 0);
+
+                if (Math.abs(x) > 0.1) moveX += x;
+                if (Math.abs(z) > 0.1) moveZ += z;
+              }
+
+              if (buttons[1] && buttons[1].pressed) {
+                if (source.handedness === 'left') moveY -= 1;
+                if (source.handedness === 'right') moveY += 1;
+              }
+            }
+          }
+
+          if (moveX !== 0 || moveZ !== 0 || moveY !== 0) {
+            const speed = 0.02; // Reduced speed slightly for comfort
+            
+            const xrCamera = renderer.xr.getCamera(camera);
+            
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyQuaternion(xrCamera.quaternion);
+            direction.y = 0;
+            if (direction.lengthSq() > 0) direction.normalize();
+            
+            const right = new THREE.Vector3(1, 0, 0);
+            right.applyQuaternion(xrCamera.quaternion);
+            right.y = 0;
+            if (right.lengthSq() > 0) right.normalize();
+
+            xrRig.position.addScaledVector(right, moveX * speed);
+            // Thumbstick forward is negative Z, so subtract to move forward along 'direction'
+            xrRig.position.addScaledVector(direction, -moveZ * speed);
+            xrRig.position.y += moveY * speed;
+          }
         }
       }
-      controls.update();
+
+      if (!renderer.xr.isPresenting) {
+        const fitAnimation = fitAnimationRef.current;
+        if (fitAnimation?.active) {
+          camera.position.lerp(fitAnimation.targetPosition, FIT_LERP_ALPHA);
+          controls.target.lerp(fitAnimation.targetTarget, FIT_LERP_ALPHA);
+
+          const positionSettled = camera.position.distanceToSquared(fitAnimation.targetPosition) <= FIT_EPSILON;
+          const targetSettled = controls.target.distanceToSquared(fitAnimation.targetTarget) <= FIT_EPSILON;
+
+          if (positionSettled && targetSettled) {
+            camera.position.copy(fitAnimation.targetPosition);
+            controls.target.copy(fitAnimation.targetTarget);
+            fitAnimation.active = false;
+          }
+        }
+        controls.update();
+      }
+
       renderer.render(scene, camera);
     };
-    animate();
+    renderer.setAnimationLoop(animate);
 
     const handleResize = () => {
       if (!containerRef.current || !sceneRef.current) return;
@@ -657,6 +794,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       window.removeEventListener('resize', handleResize);
       controls.removeEventListener('start', handleControlsStart);
       fitAnimationRef.current = null;
+      renderer.setAnimationLoop(null);
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -737,7 +875,14 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
     let faceMesh: THREE.Mesh | null = null;
     const triangleToFaceIndex: number[] = [];
     let embossTimeoutId: number | null = null;
-    const shouldRenderEmbossImmediately = hadEmbossedFaces && embossEnabled && !wireframe && renderer.capabilities.isWebGL2;
+    // Two render paths: transparent+flat (cheap, no emboss) vs opaque+emboss.
+    // Emboss requires opacity so opaque early-Z can skip the per-pixel edge loop
+    // on occluded fragments. 3D solids are consistently wound outward, so they
+    // can backface-cull (FrontSide); 2D tilings are viewed from both sides.
+    const isOpaqueFaces = faceOpacity >= 0.999;
+    const faceSide = mode === '3d' ? THREE.FrontSide : THREE.DoubleSide;
+    const useEmboss = embossEnabled && !wireframe && renderer.capabilities.isWebGL2 && isOpaqueFaces;
+    const shouldRenderEmbossImmediately = hadEmbossedFaces && useEmboss;
 
     if (showFaces) {
       if (shouldRenderEmbossImmediately) {
@@ -758,6 +903,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
           embossSmoothness,
           faceRoughness,
           faceOpacity,
+          faceSide,
         );
         faceMesh = new THREE.Mesh(embossedFace.geometry, embossedFace.material);
         faceMesh.renderOrder = 0;
@@ -787,10 +933,10 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
 
       const material = new THREE.MeshStandardMaterial({
         vertexColors: true,
-        side: THREE.DoubleSide,
+        side: faceSide,
         flatShading: true,
         wireframe: wireframe,
-        transparent: true,
+        transparent: !isOpaqueFaces,
         opacity: faceOpacity,
         roughness: faceRoughness,
         metalness: 0,
@@ -802,7 +948,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
       faceMesh.renderOrder = 0;
       meshGroup.add(faceMesh);
 
-      if (embossEnabled && !wireframe && renderer.capabilities.isWebGL2) {
+      if (useEmboss) {
         embossTimeoutId = window.setTimeout(() => {
           if (!faceMesh || !sceneRef.current) return;
 
@@ -816,6 +962,7 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
             embossSmoothness,
             faceRoughness,
             faceOpacity,
+            faceSide,
           );
 
           const previousGeometry = faceMesh.geometry;
@@ -994,4 +1141,6 @@ export const TilingCanvas: React.FC<TilingCanvasProps> = ({
   }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
-};
+});
+
+TilingCanvas.displayName = 'TilingCanvas';

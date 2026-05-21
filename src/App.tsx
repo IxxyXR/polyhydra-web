@@ -25,9 +25,10 @@ import {
   Plus,
   Github,
   Link2,
-  Check
+  Check,
+  Headset
 } from 'lucide-react';
-import { TilingCanvas } from './components/TilingCanvas';
+import { TilingCanvas, TilingCanvasHandle } from './components/TilingCanvas';
 import {
   MULTIGRID_DEFAULTS,
   MultiGridSettings,
@@ -96,7 +97,7 @@ const APP_DEFAULTS = {
   keyLightAzimuth: 45,
   keyLightElevation: 35,
   faceRoughness: 0.66,
-  faceOpacity: 0.9,
+  faceOpacity: 1,
 };
 
 const NO_PRESET_VALUE = '';
@@ -660,6 +661,9 @@ export default function App() {
   const [newPresetName, setNewPresetName] = useState('');
   const [savePresetInputVisible, setSavePresetInputVisible] = useState(false);
   const [fitRequestKey, setFitRequestKey] = useState(0);
+  const [webXrSupported, setWebXrSupported] = useState<boolean | null>(null);
+  const [webXrError, setWebXrError] = useState<string | null>(null);
+  const tilingCanvasRef = useRef<TilingCanvasHandle | null>(null);
   const selectedShapeButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedTilingButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -695,6 +699,15 @@ export default function App() {
     setFitRequestKey((current) => current + 1);
   };
 
+  const enterWebXR = async () => {
+    setWebXrError(null);
+    try {
+      await tilingCanvasRef.current?.enterWebXR();
+    } catch (error) {
+      setWebXrError(error instanceof Error ? error.message : 'Unable to start WebXR.');
+    }
+  };
+
   const setModeAndFit = (nextMode: '2d' | '3d') => {
     setMode(nextMode);
     requestFitToExtents();
@@ -717,6 +730,23 @@ export default function App() {
     check();
     const id = setInterval(check, 5000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const checkWebXR = async () => {
+      const supported = await tilingCanvasRef.current?.isWebXRSupported();
+      if (active) {
+        setWebXrSupported(supported ?? false);
+      }
+    };
+
+    window.setTimeout(checkWebXR, 0);
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const applyParamsFromUrl = useCallback((search: string) => {
@@ -2809,6 +2839,7 @@ export default function App() {
       <main className="flex-1 relative flex flex-col min-w-0">
         <div className="w-full h-full">
           <TilingCanvas
+            ref={tilingCanvasRef}
             tilingType={tilingType}
             rows={rows}
             cols={cols}
@@ -2927,6 +2958,15 @@ export default function App() {
           >
             <Search className="h-3.5 w-3.5" />
             <span>Zoom to Extents</span>
+          </button>
+          <button
+            onClick={enterWebXR}
+            disabled={webXrSupported === false}
+            className="flex items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-neutral-700/80 disabled:hover:bg-neutral-800/70 disabled:hover:text-neutral-300"
+            title={webXrSupported === false ? 'WebXR is not available in this browser or device' : webXrError ?? 'Enter WebXR mode'}
+          >
+            <Headset className="h-3.5 w-3.5" />
+            <span>WebXR</span>
           </button>
           <div className="w-px h-4 bg-neutral-800" />
           <div className="flex gap-4">

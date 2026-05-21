@@ -27,6 +27,8 @@ export const EXAMPLE_PRESETS: AppPreset[] = [
   { name: 'Maltese Floor', params: 'p=girih&po=52716034&rf=0.6666666666666667&o=4ni8'},
   { name: 'Frutti', params: 't=15&po=23560714&cm=s&rf=0.6666666666666667&o=4zthc.1q1p24'},
   { name: 'Wakha', params: 't=y&p=alhambra&rf=0.6666666666666667&o=kd8g.1e0j0w'},
+  { name: 'Ewe', params: 'm=3&rt=3&t=p&r=4&po=32457016&cm=s&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&fo=1&o=1brbc.1o131e%3B2hwdc.1f1n1e'},
+  { name: 'Cake', params: 'm=3&rs=12&t=p&s=4&po=32457016&cm=s&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&o=2i48w%3B1cglc'},
 ];
 
 export function getUserPresets(): AppPreset[] {
