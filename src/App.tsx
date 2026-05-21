@@ -5,7 +5,6 @@ import {
   Layers,
   Grid2X2,
   Maximize,
-  Info,
   ChevronRight,
   Circle,
   Eye,
@@ -1122,6 +1121,7 @@ export default function App() {
   const selectedTiling = UNIFORM_TILINGS[tilingType];
   const selectedPalette = PALETTES[palette];
   const radialTypeUsesSides = RADIAL_TYPES_WITH_SIDES.has(radialType);
+  const hasBaseSettings = mode !== '3d' || radialTypeUsesSides;
 
   const selectedOperatorHasCrossings = useMemo(() => {
     if (!selectedOperatorId) return false;
@@ -1554,35 +1554,28 @@ export default function App() {
               </div>
             </section>}
 
-            <section>
-              <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Settings className="w-3 h-3" />
-                Settings
-              </h2>
-              <div className="space-y-4 bg-neutral-800/20 p-4 rounded-2xl border border-neutral-800">
-                {mode === '3d' ? (
-                  <div className="space-y-2">
-                    {radialTypeUsesSides ? (
-                      <>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-neutral-400">Sides</span>
-                          <span className="text-blue-400 font-mono">{radialSides}</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="3"
-                          max="16"
-                          value={radialSides}
-                          onChange={e => setRadialSides(parseInt(e.target.value, 10))}
-                          className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                        />
-                      </>
-                    ) : (
-                      <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                        Fixed Solid
+            {hasBaseSettings && (
+              <section>
+                <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Settings className="w-3 h-3" />
+                  Settings
+                </h2>
+                <div className="space-y-4 bg-neutral-800/20 p-4 rounded-2xl border border-neutral-800">
+                  {mode === '3d' ? (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-neutral-400">Sides</span>
+                        <span className="text-blue-400 font-mono">{radialSides}</span>
                       </div>
-                    )}
-                  </div>
+                      <input
+                        type="range"
+                        min="3"
+                        max="16"
+                        value={radialSides}
+                        onChange={e => setRadialSides(parseInt(e.target.value, 10))}
+                        className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
                 ) : isMultigrid ? (
                   <>
                     <div className="space-y-2">
@@ -1690,6 +1683,7 @@ export default function App() {
                 )}
               </div>
             </section>
+            )}
 
             <section>
               <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
@@ -2045,16 +2039,8 @@ export default function App() {
                   )}
                 </AnimatePresence>
 
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-[10px] font-semibold text-neutral-500 uppercase tracking-widest">Omni Operators</h3>
+                <div className="mb-3 flex justify-end">
                   <div className="flex items-center gap-2">
-                        <button
-                          onClick={addBlankOperator}
-                          className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors uppercase font-bold"
-                        >
-                          <Plus className="w-3 h-3" />
-                          Add Operator
-                        </button>
                         {operators.length > 0 && (
                           <button
                             onClick={() => {
@@ -2651,6 +2637,13 @@ export default function App() {
                         ))}
                       </Reorder.Group>
                     )}
+                    <button
+                      onClick={addBlankOperator}
+                      className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors uppercase font-bold"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Operator
+                    </button>
                   </div>
             </section>
 
@@ -2825,17 +2818,20 @@ export default function App() {
         </div>
 
         <div className="p-6 border-t border-neutral-800 bg-neutral-900/80">
-          <div className="flex items-center gap-3 text-neutral-500">
-            <Info className="w-4 h-4" />
-            <p className="text-[10px] leading-relaxed uppercase tracking-tight">
-              Interactive 2D tiling visualization using half-edge topological data structures.
-            </p>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-3 font-mono text-[10px] text-neutral-500">
-            <span title="Vertices">V <span id="stat-vertices">-</span></span>
-            <span title="Faces">F <span id="stat-faces">-</span></span>
-            <span title="Edges">E <span id="stat-edges">-</span></span>
-            <span title="Colours Used" className="text-blue-400">C <span id="stat-colors">-</span></span>
+          <div className="flex flex-wrap gap-3 font-mono text-[10px] text-neutral-500">
+            {[
+              ['V', 'stat-vertices', 'Vertex count: unique corner points in the generated mesh.'],
+              ['F', 'stat-faces', 'Face count: polygon faces after applying the operator stack.'],
+              ['E', 'stat-edges', 'Edge count: unique mesh edges between neighbouring vertices.'],
+              ['C', 'stat-colors', 'Colour count: distinct face colours currently in use.'],
+            ].map(([label, id, tooltip]) => (
+              <span key={id} className={`group relative cursor-help ${label === 'C' ? 'text-blue-400' : ''}`} tabIndex={0}>
+                {label} <span id={id}>-</span>
+                <span className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden w-48 rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-2 font-sans text-[10px] leading-snug text-neutral-300 shadow-xl group-hover:block group-focus:block">
+                  {tooltip}
+                </span>
+              </span>
+            ))}
           </div>
         </div>
         </aside>
@@ -2886,7 +2882,7 @@ export default function App() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 16 }}
-              className="absolute bottom-20 right-6 z-20 w-60 rounded-2xl border border-neutral-700/60 bg-neutral-900/90 p-4 shadow-2xl backdrop-blur-md"
+              className="absolute bottom-20 left-6 z-20 w-60 rounded-2xl border border-neutral-700/60 bg-neutral-900/90 p-4 shadow-2xl backdrop-blur-md"
             >
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-300">Getting Started</span>
@@ -2953,15 +2949,13 @@ export default function App() {
         </AnimatePresence>
 
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-4 py-2 backdrop-blur-md">
-          {isGeometryGenerating && (
-            <>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
-                <span className="font-mono text-[10px] uppercase tracking-widest text-amber-200">Generating Geometry</span>
-              </div>
-              <div className="h-4 w-px bg-neutral-800" />
-            </>
-          )}
+          <div className="flex w-48 items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${isGeometryGenerating ? 'animate-pulse bg-amber-400' : 'bg-emerald-500'}`} />
+            <span className={`font-mono text-[10px] uppercase tracking-widest ${isGeometryGenerating ? 'text-amber-200' : 'text-neutral-400'}`}>
+              {isGeometryGenerating ? 'Rendering Geometry' : 'Ready'}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-neutral-800" />
           <button
             onClick={requestFitToExtents}
             className="flex items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white"

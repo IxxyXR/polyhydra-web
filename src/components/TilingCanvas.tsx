@@ -819,7 +819,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     let cancelled = false;
     onGeometryGenerationChange?.(true);
 
-    const generationTimeoutId = window.setTimeout(() => {
+    let generationTimeoutId: number | null = null;
+    const generationFrameId = window.requestAnimationFrame(() => {
+      generationTimeoutId = window.setTimeout(() => {
       if (cancelled || !sceneRef.current) return;
 
       try {
@@ -1030,11 +1032,15 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
           onGeometryGenerationChange?.(false);
         }
       }
-    }, 50);
+      }, 0);
+    });
 
     return () => {
       cancelled = true;
-      window.clearTimeout(generationTimeoutId);
+      window.cancelAnimationFrame(generationFrameId);
+      if (generationTimeoutId !== null) {
+        window.clearTimeout(generationTimeoutId);
+      }
       if (embossTimeoutId !== null) {
         window.clearTimeout(embossTimeoutId);
       }
