@@ -42,25 +42,21 @@ interface FaceProjectionData {
   basisU: THREE.Vector3;
   basisV: THREE.Vector3;
   normal: THREE.Vector3;
+  centroid: THREE.Vector3;
   localPointByVertex: Map<number, [number, number]>;
   orderedLocalPoints: Array<[number, number]>;
 }
 
 function disposeMaterialResources(material: THREE.Material | THREE.Material[]) {
   const materials = Array.isArray(material) ? material : [material];
-
   materials.forEach((entry) => {
-    const faceEdgeTexture = entry.userData?.faceEdgeTexture as THREE.Texture | undefined;
-    if (faceEdgeTexture) {
-      faceEdgeTexture.dispose();
-    }
     entry.dispose();
   });
 }
 
 function isEmbossMaterial(material: THREE.Material | THREE.Material[]) {
   const materials = Array.isArray(material) ? material : [material];
-  return materials.some((entry) => Boolean(entry.userData?.faceEdgeTexture));
+  return materials.some((entry) => Boolean(entry.userData?.isEmbossMaterial));
 }
 
 function computeFaceProjection(face: number[], vertices: number[]): FaceProjectionData {
@@ -165,6 +161,7 @@ function computeFaceProjection(face: number[], vertices: number[]): FaceProjecti
       basisU,
       basisV,
       normal,
+      centroid,
       localPointByVertex: flipped,
       orderedLocalPoints,
     };
@@ -174,27 +171,39 @@ function computeFaceProjection(face: number[], vertices: number[]): FaceProjecti
     basisU,
     basisV,
     normal,
+    centroid,
     localPointByVertex,
     orderedLocalPoints,
   };
 }
 
-function createFaceEdgeTexture(edgeData: Float32Array, width: number, height: number) {
-  const texture = new THREE.DataTexture(edgeData, width, height, THREE.RGBAFormat, THREE.FloatType);
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.generateMipmaps = false;
-  texture.needsUpdate = true;
-  return texture;
+// The centroid maps to the origin in the local 2D frame, so a face is fan-triangulable
+// from its centroid iff the origin is strictly inside every edge's inward half-plane
+// (the centroid is in the polygon's kernel). Inward normal for the CCW frame is (-dy, dx).
+function isCentroidInKernel(orderedLocalPoints: Array<[number, number]>): boolean {
+  const n = orderedLocalPoints.length;
+  if (n < 3) return false;
+
+  const KERNEL_EPSILON = 1e-6;
+  for (let index = 0; index < n; index++) {
+    const a = orderedLocalPoints[index];
+    const b = orderedLocalPoints[(index + 1) % n];
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-12) {
+      return false;
+    }
+    // Signed distance of the origin from the edge line, positive toward the interior.
+    const inwardDistance = -(a[0] * (-dy) + a[1] * dx) / length;
+    if (inwardDistance <= KERNEL_EPSILON) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function createEmbossedFaceMaterial(
-  edgeTexture: THREE.DataTexture,
-  textureWidth: number,
-  textureHeight: number,
-  maxFaceEdges: number,
   embossWidth: number,
   embossDepth: number,
   embossSmoothness: number,
@@ -203,7 +212,7 @@ function createEmbossedFaceMaterial(
   side: THREE.Side,
 ) {
   // Emboss is the opaque path: opaque rendering restores early-Z so the
-  // expensive per-pixel edge loop only runs on visible fragments.
+  // per-pixel edge work only runs on visible fragments.
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
     side,
@@ -217,11 +226,9 @@ function createEmbossedFaceMaterial(
     polygonOffsetUnits: 1,
   });
 
-  material.userData.faceEdgeTexture = edgeTexture;
-  material.customProgramCacheKey = () => `face-emboss-${maxFaceEdges}`;
+  material.userData.isEmbossMaterial = true;
+  material.customProgramCacheKey = () => 'face-emboss-fan';
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.faceEdgeTexture = { value: edgeTexture };
-    shader.uniforms.faceEdgeTextureSize = { value: new THREE.Vector2(textureWidth, textureHeight) };
     shader.uniforms.embossWidth = { value: embossWidth };
     shader.uniforms.embossDepth = { value: embossDepth };
     shader.uniforms.embossSmoothness = { value: embossSmoothness };
@@ -234,13 +241,19 @@ function createEmbossedFaceMaterial(
 attribute vec2 faceLocalPos;
 attribute vec3 faceBasisU;
 attribute vec3 faceBasisV;
-attribute float faceEdgeStart;
-attribute float faceEdgeCount;
+attribute vec2 faceEdgeP0;
+attribute vec2 faceEdgeP1;
+attribute vec2 faceEdgeP2;
+attribute vec2 faceEdgeP3;
+attribute float faceEmbossEnabled;
 varying vec2 vFaceLocalPos;
 varying vec3 vFaceBasisUView;
 varying vec3 vFaceBasisVView;
-varying float vFaceEdgeStart;
-varying float vFaceEdgeCount;`
+varying vec2 vFaceEdgeP0;
+varying vec2 vFaceEdgeP1;
+varying vec2 vFaceEdgeP2;
+varying vec2 vFaceEdgeP3;
+varying float vFaceEmbossEnabled;`
       )
       .replace(
         '#include <begin_vertex>',
@@ -248,16 +261,17 @@ varying float vFaceEdgeCount;`
 vFaceLocalPos = faceLocalPos;
 vFaceBasisUView = normalize( normalMatrix * faceBasisU );
 vFaceBasisVView = normalize( normalMatrix * faceBasisV );
-vFaceEdgeStart = faceEdgeStart;
-vFaceEdgeCount = faceEdgeCount;`
+vFaceEdgeP0 = faceEdgeP0;
+vFaceEdgeP1 = faceEdgeP1;
+vFaceEdgeP2 = faceEdgeP2;
+vFaceEdgeP3 = faceEdgeP3;
+vFaceEmbossEnabled = faceEmbossEnabled;`
       );
 
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
-uniform sampler2D faceEdgeTexture;
-uniform vec2 faceEdgeTextureSize;
 uniform float embossWidth;
 uniform float embossDepth;
 uniform float embossSmoothness;
@@ -265,14 +279,23 @@ uniform float embossBlendSharpness;
 varying vec2 vFaceLocalPos;
 varying vec3 vFaceBasisUView;
 varying vec3 vFaceBasisVView;
-varying float vFaceEdgeStart;
-varying float vFaceEdgeCount;
+varying vec2 vFaceEdgeP0;
+varying vec2 vFaceEdgeP1;
+varying vec2 vFaceEdgeP2;
+varying vec2 vFaceEdgeP3;
+varying float vFaceEmbossEnabled;
 
-vec4 sampleFaceEdgeTexel( int index ) {
-  int width = int(faceEdgeTextureSize.x);
-  int x = index % width;
-  int y = index / width;
-  return texelFetch( faceEdgeTexture, ivec2(x, y), 0 );
+// Distance from p to segment [a,b]; also accumulates the inward-normal blend.
+float embossEdge( vec2 p, vec2 a, vec2 b, inout vec2 dirSum, inout float weightSum ) {
+  vec2 ab = b - a;
+  float invLenSq = 1.0 / max( dot( ab, ab ), 1.0e-12 );
+  float t = clamp( dot( p - a, ab ) * invLenSq, 0.0, 1.0 );
+  float d = distance( p, a + ab * t );
+  vec2 inward = normalize( vec2( -ab.y, ab.x ) );
+  float w = exp( - d * embossBlendSharpness );
+  dirSum += inward * w;
+  weightSum += w;
+  return d;
 }`
       )
       .replace(
@@ -284,40 +307,17 @@ vec3 normal = normalize( vNormal );
 normal *= faceDirection;
 #endif
 
-// These per-face varyings carry integer indices but are smooth-interpolated,
-// so perspective interpolation drifts them by a fraction across the triangle.
-// Round before truncating, or int() reads the wrong face's texels -> shimmering ghost edges.
-int faceEdgeCount = int( vFaceEdgeCount + 0.5 );
-if ( faceEdgeCount > 0 ) {
-  int faceEdgeStart = int( vFaceEdgeStart + 0.5 );
-  float minDistance = 1.0e20;
+if ( vFaceEmbossEnabled > 0.5 ) {
   vec2 directionSum = vec2( 0.0 );
   float directionWeight = 0.0;
+  // In a centroid fan wedge the middle edge (P1->P2) is the nearest polygon edge,
+  // so its distance is the min distance; the neighbours only refine the corner blend.
+  float minDistance = embossEdge( vFaceLocalPos, vFaceEdgeP1, vFaceEdgeP2, directionSum, directionWeight );
 
-  for ( int edgeIndex = 0; edgeIndex < ${Math.max(maxFaceEdges, 1)}; edgeIndex ++ ) {
-    if ( edgeIndex >= faceEdgeCount ) break;
+  if ( minDistance < embossWidth ) {
+    embossEdge( vFaceLocalPos, vFaceEdgeP0, vFaceEdgeP1, directionSum, directionWeight );
+    embossEdge( vFaceLocalPos, vFaceEdgeP2, vFaceEdgeP3, directionSum, directionWeight );
 
-    int baseIndex = faceEdgeStart * 2 + edgeIndex * 2;
-    vec4 texel0 = sampleFaceEdgeTexel( baseIndex );
-    vec4 texel1 = sampleFaceEdgeTexel( baseIndex + 1 );
-    
-    vec2 edgeA = texel0.xy;
-    vec2 edgeVector = texel0.zw;
-    vec2 inwardNormal = texel1.xy;
-    float invEdgeLengthSq = texel1.z;
-
-    float t = clamp( dot( vFaceLocalPos - edgeA, edgeVector ) * invEdgeLengthSq, 0.0, 1.0 );
-    vec2 closestPoint = edgeA + edgeVector * t;
-    float distanceToEdge = distance( vFaceLocalPos, closestPoint );
-
-    minDistance = min( minDistance, distanceToEdge );
-
-    float weight = exp( - distanceToEdge * embossBlendSharpness );
-    directionSum += inwardNormal * weight;
-    directionWeight += weight;
-  }
-
-  if ( directionWeight > 0.0 && minDistance < embossWidth ) {
     vec2 inwardDirection = normalize( directionSum / directionWeight );
     float x = clamp( minDistance / embossWidth, 0.0, 1.0 );
     float linearSlope = 1.0;
@@ -358,77 +358,80 @@ function buildEmbossedFaceGeometry(
   const localPosAttr: number[] = [];
   const basisUAttr: number[] = [];
   const basisVAttr: number[] = [];
-  const faceEdgeStartAttr: number[] = [];
-  const faceEdgeCountAttr: number[] = [];
+  const edgeP0Attr: number[] = [];
+  const edgeP1Attr: number[] = [];
+  const edgeP2Attr: number[] = [];
+  const edgeP3Attr: number[] = [];
+  const embossEnabledAttr: number[] = [];
 
-  const totalEdges = faces.reduce((sum, face) => sum + face.length, 0);
-  // We need 2 texels per edge, so we double the total elements needed
-  const totalTexels = totalEdges * 2;
-  const textureWidth = Math.max(1, Math.ceil(Math.sqrt(totalTexels)));
-  const textureHeight = Math.max(1, Math.ceil(totalTexels / textureWidth));
-  const edgeData = new Float32Array(textureWidth * textureHeight * 4);
-
-  let edgeCursor = 0;
-  let maxFaceEdges = 0;
   const faceColor = new THREE.Color();
+  const zero: [number, number] = [0, 0];
 
   faces.forEach((face, faceIndex) => {
     const projection = computeFaceProjection(face, vertices);
-    const edgeStart = edgeCursor;
-    const edgeCount = face.length;
-    maxFaceEdges = Math.max(maxFaceEdges, edgeCount);
-
-    for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex++) {
-      const current = projection.orderedLocalPoints[edgeIndex];
-      const next = projection.orderedLocalPoints[(edgeIndex + 1) % edgeCount];
-      
-      const dx = next[0] - current[0];
-      const dy = next[1] - current[1];
-      const lenSq = dx * dx + dy * dy;
-      const invLenSq = lenSq > 1e-10 ? 1.0 / lenSq : 0.0;
-      const len = Math.sqrt(lenSq);
-      // Inward normal is (-dy, dx) normalized
-      const nx = len > 1e-10 ? -dy / len : 0.0;
-      const ny = len > 1e-10 ? dx / len : 0.0;
-
-      // 2 texels (8 floats) per edge
-      const textureOffset = edgeCursor * 8; 
-      
-      // Texel 0: A.x, A.y, dx, dy
-      edgeData[textureOffset] = current[0];
-      edgeData[textureOffset + 1] = current[1];
-      edgeData[textureOffset + 2] = dx;
-      edgeData[textureOffset + 3] = dy;
-      
-      // Texel 1: inward.x, inward.y, invEdgeLengthSq, 0
-      edgeData[textureOffset + 4] = nx;
-      edgeData[textureOffset + 5] = ny;
-      edgeData[textureOffset + 6] = invLenSq;
-      edgeData[textureOffset + 7] = 0.0;
-      
-      edgeCursor += 1;
-    }
-
+    const n = face.length;
     faceColor.set(computedFaceColors[faceIndex] || '#ffffff');
-    const triIndices = faceTriangulations[faceIndex];
 
-    for (let triIndex = 0; triIndex < triIndices.length; triIndex++) {
-      const vertexIndex = triIndices[triIndex];
-      const localPoint = projection.localPointByVertex.get(vertexIndex);
-      if (!localPoint) continue;
-
-      positionAttr.push(
-        vertices[vertexIndex * 3],
-        vertices[vertexIndex * 3 + 1],
-        vertices[vertexIndex * 3 + 2],
-      );
+    const pushVertex = (
+      px: number,
+      py: number,
+      pz: number,
+      localX: number,
+      localY: number,
+      p0: [number, number],
+      p1: [number, number],
+      p2: [number, number],
+      p3: [number, number],
+      embossOn: number,
+    ) => {
+      positionAttr.push(px, py, pz);
       colorAttr.push(faceColor.r, faceColor.g, faceColor.b);
       normalAttr.push(projection.normal.x, projection.normal.y, projection.normal.z);
-      localPosAttr.push(localPoint[0], localPoint[1]);
+      localPosAttr.push(localX, localY);
       basisUAttr.push(projection.basisU.x, projection.basisU.y, projection.basisU.z);
       basisVAttr.push(projection.basisV.x, projection.basisV.y, projection.basisV.z);
-      faceEdgeStartAttr.push(edgeStart);
-      faceEdgeCountAttr.push(edgeCount);
+      edgeP0Attr.push(p0[0], p0[1]);
+      edgeP1Attr.push(p1[0], p1[1]);
+      edgeP2Attr.push(p2[0], p2[1]);
+      edgeP3Attr.push(p3[0], p3[1]);
+      embossEnabledAttr.push(embossOn);
+    };
+
+    if (n >= 3 && isCentroidInKernel(projection.orderedLocalPoints)) {
+      // Fan-triangulate from the centroid. Each wedge [C, v_i, v_{i+1}] owns one
+      // polygon edge (P1->P2); the shader needs only that edge and its two neighbours
+      // (P0->P1, P2->P3) for the bevel, so the four points ride along as attributes.
+      const c = projection.centroid;
+      for (let i = 0; i < n; i++) {
+        const p0 = projection.orderedLocalPoints[(i - 1 + n) % n];
+        const p1 = projection.orderedLocalPoints[i];
+        const p2 = projection.orderedLocalPoints[(i + 1) % n];
+        const p3 = projection.orderedLocalPoints[(i + 2) % n];
+        const viCur = face[i];
+        const viNext = face[(i + 1) % n];
+
+        pushVertex(c.x, c.y, c.z, 0, 0, p0, p1, p2, p3, 1);
+        pushVertex(
+          vertices[viCur * 3], vertices[viCur * 3 + 1], vertices[viCur * 3 + 2],
+          p1[0], p1[1], p0, p1, p2, p3, 1,
+        );
+        pushVertex(
+          vertices[viNext * 3], vertices[viNext * 3 + 1], vertices[viNext * 3 + 2],
+          p2[0], p2[1], p0, p1, p2, p3, 1,
+        );
+      }
+    } else {
+      // Fallback: centroid is not in the kernel, so a centroid fan would be invalid.
+      // Render flat with emboss disabled, via the robust ear-clip triangulation.
+      const triIndices = faceTriangulations[faceIndex];
+      for (let triIndex = 0; triIndex < triIndices.length; triIndex++) {
+        const vertexIndex = triIndices[triIndex];
+        const localPoint = projection.localPointByVertex.get(vertexIndex) ?? zero;
+        pushVertex(
+          vertices[vertexIndex * 3], vertices[vertexIndex * 3 + 1], vertices[vertexIndex * 3 + 2],
+          localPoint[0], localPoint[1], zero, zero, zero, zero, 0,
+        );
+      }
     }
   });
 
@@ -439,15 +442,13 @@ function buildEmbossedFaceGeometry(
   geometry.setAttribute('faceLocalPos', new THREE.Float32BufferAttribute(localPosAttr, 2));
   geometry.setAttribute('faceBasisU', new THREE.Float32BufferAttribute(basisUAttr, 3));
   geometry.setAttribute('faceBasisV', new THREE.Float32BufferAttribute(basisVAttr, 3));
-  geometry.setAttribute('faceEdgeStart', new THREE.Float32BufferAttribute(faceEdgeStartAttr, 1));
-  geometry.setAttribute('faceEdgeCount', new THREE.Float32BufferAttribute(faceEdgeCountAttr, 1));
+  geometry.setAttribute('faceEdgeP0', new THREE.Float32BufferAttribute(edgeP0Attr, 2));
+  geometry.setAttribute('faceEdgeP1', new THREE.Float32BufferAttribute(edgeP1Attr, 2));
+  geometry.setAttribute('faceEdgeP2', new THREE.Float32BufferAttribute(edgeP2Attr, 2));
+  geometry.setAttribute('faceEdgeP3', new THREE.Float32BufferAttribute(edgeP3Attr, 2));
+  geometry.setAttribute('faceEmbossEnabled', new THREE.Float32BufferAttribute(embossEnabledAttr, 1));
 
-  const edgeTexture = createFaceEdgeTexture(edgeData, textureWidth, textureHeight);
   const material = createEmbossedFaceMaterial(
-    edgeTexture,
-    textureWidth,
-    textureHeight,
-    maxFaceEdges,
     embossWidth,
     embossDepth,
     embossSmoothness,
@@ -478,7 +479,6 @@ interface TilingCanvasProps {
   showVertices: boolean;
   showFaces: boolean;
   wireframe: boolean;
-  faceHighlight: boolean;
   operators: OperatorSpec[];
   palette: PaletteKey;
   paletteColors?: string[];
@@ -525,7 +525,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   showVertices,
   showFaces,
   wireframe,
-  faceHighlight,
   operators,
   palette,
   paletteColors,
@@ -811,7 +810,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
   useEffect(() => {
     if (!sceneRef.current) return;
-    const { meshGroup, camera, renderer } = sceneRef.current;
+    const { meshGroup, renderer } = sceneRef.current;
     const hadEmbossedFaces = meshGroup.children.some((child) => {
       const material = (child as any).material as THREE.Material | THREE.Material[] | undefined;
       return material ? isEmbossMaterial(material) : false;
@@ -873,7 +872,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     updateStat(['stat-edges'], uniqueEdges.size.toString());
 
     let faceMesh: THREE.Mesh | null = null;
-    const triangleToFaceIndex: number[] = [];
     let embossTimeoutId: number | null = null;
     // Two render paths: transparent+flat (cheap, no emboss) vs opaque+emboss.
     // Emboss requires opacity so opaque early-Z can skip the per-pixel edge loop
@@ -886,13 +884,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     if (showFaces) {
       if (shouldRenderEmbossImmediately) {
-        faces.forEach((face, fIdx) => {
-          const triIndices = faceTriangulations[fIdx];
-          for (let t = 0; t < triIndices.length; t += 3) {
-            triangleToFaceIndex.push(fIdx);
-          }
-        });
-
         const embossedFace = buildEmbossedFaceGeometry(
           faces,
           faceTriangulations,
@@ -917,7 +908,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         tmpColor.set(computedFaceColors[fIdx] || '#ffffff');
         const triIndices = faceTriangulations[fIdx];
         for (let t = 0; t < triIndices.length; t += 3) {
-          triangleToFaceIndex.push(fIdx);
           for (let k = 0; k < 3; k++) {
             const vIdx = triIndices[t + k];
             posAttr.push(vertices[vIdx * 3], vertices[vIdx * 3 + 1], vertices[vIdx * 3 + 2]);
@@ -1029,116 +1019,12 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       fitCameraToBounds(meshBoundsRef.current);
     }
 
-    // Highlight line objects — always created so the mousemove handler can clear them
-    const makeLines = (color: string, order: number): THREE.LineSegments => {
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
-      const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
-      const lines = new THREE.LineSegments(geom, mat);
-      lines.renderOrder = order;
-      meshGroup.add(lines);
-      return lines;
-    };
-    const outlineLines = faceHighlight ? makeLines('#ffffff', 10) : null;
-    const diagLines = faceHighlight ? makeLines('#ff8800', 9) : null;
-
-    // Raycasting
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-
-    const getMouseNDC = (event: MouseEvent) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / containerRef.current.clientWidth) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / containerRef.current.clientHeight) * 2 + 1;
-    };
-
-    const onClick = (event: MouseEvent) => {
-      if (!faceMesh) return;
-      getMouseNDC(event);
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObject(faceMesh);
-      if (intersects.length > 0 && intersects[0].faceIndex !== undefined) {
-        console.log('face index:', triangleToFaceIndex[intersects[0].faceIndex]);
-      }
-    };
-
-    const onMouseMove = (event: MouseEvent) => {
-      if (!faceHighlight || !outlineLines || !diagLines) return;
-
-      const clearHighlight = () => {
-        outlineLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
-        diagLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
-      };
-
-      if (!faceMesh) { clearHighlight(); return; }
-
-      getMouseNDC(event);
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObject(faceMesh);
-
-      if (intersects.length === 0 || intersects[0].faceIndex === undefined) {
-        clearHighlight();
-        return;
-      }
-
-      const faceIdx = triangleToFaceIndex[intersects[0].faceIndex];
-      if (faceIdx === undefined) { clearHighlight(); return; }
-
-      const face = faces[faceIdx];
-
-      // Face outline
-      const outlinePos: number[] = [];
-      for (let i = 0; i < face.length; i++) {
-        const a = face[i];
-        const b = face[(i + 1) % face.length];
-        outlinePos.push(
-          vertices[a * 3], vertices[a * 3 + 1], vertices[a * 3 + 2],
-          vertices[b * 3], vertices[b * 3 + 1], vertices[b * 3 + 2],
-        );
-      }
-      outlineLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute(outlinePos, 3));
-
-      // Interior triangulation edges (diagonals only)
-      const diagPos: number[] = [];
-      if (face.length > 3) {
-        const faceEdgeSet = new Set<string>();
-        for (let i = 0; i < face.length; i++) {
-          const a = face[i];
-          const b = face[(i + 1) % face.length];
-          faceEdgeSet.add(a < b ? `${a}_${b}` : `${b}_${a}`);
-        }
-        const triIndices = triangulateFaces([face], vertices);
-        const seen = new Set<string>();
-        for (let t = 0; t < triIndices.length; t += 3) {
-          for (let e = 0; e < 3; e++) {
-            const a = triIndices[t + e];
-            const b = triIndices[t + (e + 1) % 3];
-            const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-            if (!faceEdgeSet.has(key) && !seen.has(key)) {
-              seen.add(key);
-              diagPos.push(
-                vertices[a * 3], vertices[a * 3 + 1], vertices[a * 3 + 2],
-                vertices[b * 3], vertices[b * 3 + 1], vertices[b * 3 + 2],
-              );
-            }
-          }
-        }
-      }
-      diagLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute(diagPos, 3));
-    };
-
-    containerRef.current!.addEventListener('click', onClick);
-    containerRef.current!.addEventListener('mousemove', onMouseMove);
-
     return () => {
       if (embossTimeoutId !== null) {
         window.clearTimeout(embossTimeoutId);
       }
-      containerRef.current?.removeEventListener('click', onClick);
-      containerRef.current?.removeEventListener('mousemove', onMouseMove);
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, faceHighlight, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 });

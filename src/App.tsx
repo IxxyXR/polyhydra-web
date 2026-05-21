@@ -83,7 +83,6 @@ const APP_DEFAULTS = {
   showVertices: false,
   showFaces: true,
   wireframe: false,
-  faceHighlight: false,
   finalization: 'planarize' as MeshFinalizationMode,
   palette: 'vibrant' as PaletteKey,
   colorMode: 'role' as ColorMode,
@@ -622,7 +621,6 @@ export default function App() {
   const [showVertices, setShowVertices] = useState(APP_DEFAULTS.showVertices);
   const [showFaces, setShowFaces] = useState(APP_DEFAULTS.showFaces);
   const [wireframe, setWireframe] = useState(APP_DEFAULTS.wireframe);
-  const [faceHighlight, setFaceHighlight] = useState(APP_DEFAULTS.faceHighlight);
   const [finalization, setFinalization] = useState<MeshFinalizationMode>(APP_DEFAULTS.finalization);
   const [isReady, setIsReady] = useState(false);
   const isPopStateRef = useRef(false);
@@ -2006,10 +2004,6 @@ export default function App() {
                             <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Wireframe</span>
                             <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
                           </label>
-                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
-                            <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Face Highlight</span>
-                            <input type="checkbox" checked={faceHighlight} onChange={(e) => setFaceHighlight(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
-                          </label>
                         </div>
                       </div>
                     </motion.div>
@@ -2847,7 +2841,6 @@ export default function App() {
             showVertices={showVertices}
             showFaces={showFaces}
             wireframe={wireframe}
-            faceHighlight={faceHighlight}
             operators={activeOperators}
             palette={palette}
             paletteColors={shuffledColors ?? undefined}
