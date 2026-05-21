@@ -211,13 +211,12 @@ function createEmbossedFaceMaterial(
   faceOpacity: number,
   side: THREE.Side,
 ) {
-  // Emboss is the opaque path: opaque rendering restores early-Z so the
-  // per-pixel edge work only runs on visible fragments.
+  const isOpaqueFaces = faceOpacity >= 0.999;
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
     side,
     flatShading: false,
-    transparent: false,
+    transparent: !isOpaqueFaces,
     opacity: faceOpacity,
     roughness: faceRoughness,
     metalness: 0,
@@ -873,13 +872,11 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     let faceMesh: THREE.Mesh | null = null;
     let embossTimeoutId: number | null = null;
-    // Two render paths: transparent+flat (cheap, no emboss) vs opaque+emboss.
-    // Emboss requires opacity so opaque early-Z can skip the per-pixel edge loop
-    // on occluded fragments. 3D solids are consistently wound outward, so they
-    // can backface-cull (FrontSide); 2D tilings are viewed from both sides.
+    // 3D solids are consistently wound outward, so opaque solids can backface-cull.
+    // Transparent shapes and 2D tilings need both sides visible.
     const isOpaqueFaces = faceOpacity >= 0.999;
-    const faceSide = mode === '3d' ? THREE.FrontSide : THREE.DoubleSide;
-    const useEmboss = embossEnabled && !wireframe && renderer.capabilities.isWebGL2 && isOpaqueFaces;
+    const faceSide = mode === '3d' && isOpaqueFaces ? THREE.FrontSide : THREE.DoubleSide;
+    const useEmboss = embossEnabled && !wireframe && renderer.capabilities.isWebGL2;
     const shouldRenderEmbossImmediately = hadEmbossedFaces && useEmboss;
 
     if (showFaces) {
