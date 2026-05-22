@@ -1,6 +1,9 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { createRoot, Root } from 'react-dom/client';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { installHtmlInCanvasPolyfill } from 'three-html-render/polyfill';
 import { TilingGenerationOptions, triangulateFaces } from '../lib/tiling-geometries';
 import { PaletteKey } from '../lib/palettes';
 import { RadialPolyType } from '../lib/radial-solids';
@@ -24,6 +27,50 @@ const DEFAULT_KEY_LIGHT_ELEVATION = 35;
 const DEFAULT_FACE_ROUGHNESS = 0.66;
 const DEFAULT_FACE_OPACITY = 1;
 const KEY_LIGHT_DISTANCE = 8.660254037844387;
+const XR_PANEL_WIDTH_PX = 960;
+const XR_PANEL_HEIGHT_PX = 720;
+const XR_PANEL_WORLD_WIDTH = 1.25;
+const XR_PANEL_WORLD_HEIGHT = XR_PANEL_WORLD_WIDTH * (XR_PANEL_HEIGHT_PX / XR_PANEL_WIDTH_PX);
+const XR_POINTER_LENGTH = 1.6;
+const XR_POINTER_LINE_NAME = 'xr-controller-pointer-line';
+
+if (typeof window !== 'undefined') {
+  installHtmlInCanvasPolyfill();
+}
+
+type OperatorParamKey = 'tVe' | 'tVf' | 'tFe';
+
+export interface XRPanelOperator {
+  id: string;
+  label: string;
+  notation: string;
+  enabled: boolean;
+  tVe: number;
+  tVf: number;
+  tFe: number;
+}
+
+export interface XRPanelControls {
+  mode: '2d' | '3d';
+  showFaces: boolean;
+  showEdges: boolean;
+  colorMode: ColorMode;
+  paletteName: string;
+  paletteColors: string[];
+  selectedOperator: XRPanelOperator | null;
+  operatorCount: number;
+  onModeChange: (mode: '2d' | '3d') => void;
+  onToggleFaces: () => void;
+  onToggleEdges: () => void;
+  onCycleColorMode: () => void;
+  onShufflePalette: () => void;
+  onAddRandomOperator: () => void;
+  onRandomizeSelectedOperator: () => void;
+  onToggleSelectedOperator: () => void;
+  onDeleteSelectedOperator: () => void;
+  onOperatorParamChange: (field: OperatorParamKey, value: number) => void;
+  onFitToExtents: () => void;
+}
 
 interface FitAnimationState {
   active: boolean;
@@ -45,6 +92,21 @@ interface FaceProjectionData {
   centroid: THREE.Vector3;
   localPointByVertex: Map<number, [number, number]>;
   orderedLocalPoints: Array<[number, number]>;
+}
+
+interface XRPanelPointerState {
+  pressed: boolean;
+  pointerId: number;
+  lastTarget: HTMLElement | null;
+  lastPoint: { x: number; y: number } | null;
+}
+
+interface XRInputSourceLike {
+  handedness?: string;
+  gamepad?: {
+    axes: readonly number[];
+    buttons: ReadonlyArray<{ pressed: boolean }>;
+  };
 }
 
 function disposeMaterialResources(material: THREE.Material | THREE.Material[]) {
@@ -470,6 +532,311 @@ function updateKeyLightPosition(light: THREE.DirectionalLight, azimuthDegrees: n
   );
 }
 
+function clamp01(value: number) {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function getOperatorParamLabel(field: OperatorParamKey) {
+  if (field === 'tVe') return 'Vertex-edge';
+  if (field === 'tVf') return 'Vertex-face';
+  return 'Face-edge';
+}
+
+function createXRControllerFallback() {
+  const group = new THREE.Group();
+  group.name = 'xr-controller-fallback-model';
+
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x1f2937,
+    roughness: 0.45,
+    metalness: 0.15,
+  });
+  const accentMaterial = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    roughness: 0.5,
+    metalness: 0,
+  });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.12, 0.18), bodyMaterial);
+  body.position.set(0, -0.02, -0.035);
+  body.rotation.x = -0.18;
+  group.add(body);
+
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.04, 0.035), accentMaterial);
+  trigger.position.set(0, -0.035, -0.13);
+  group.add(trigger);
+
+  return group;
+}
+
+function createXRControllerRay(color: number) {
+  const geometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -XR_POINTER_LENGTH),
+  ]);
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.82,
+  });
+  const line = new THREE.Line(geometry, material);
+  line.name = XR_POINTER_LINE_NAME;
+  return line;
+}
+
+function findLocalElementAt(root: HTMLElement, x: number, y: number) {
+  let best: HTMLElement | null = null;
+
+  const visit = (element: HTMLElement, originX: number, originY: number) => {
+    const left = originX + element.offsetLeft - element.scrollLeft;
+    const top = originY + element.offsetTop - element.scrollTop;
+    const width = element.offsetWidth;
+    const height = element.offsetHeight;
+
+    if (width > 0 && height > 0 && x >= left && x <= left + width && y >= top && y <= top + height) {
+      const style = window.getComputedStyle(element);
+      if (style.pointerEvents !== 'none' && style.visibility !== 'hidden' && style.display !== 'none') {
+        best = element;
+      }
+
+      Array.from(element.children).forEach((child) => {
+        if (child instanceof HTMLElement) {
+          visit(child, left, top);
+        }
+      });
+    }
+  };
+
+  Array.from(root.children).forEach((child) => {
+    if (child instanceof HTMLElement) {
+      visit(child, 0, 0);
+    }
+  });
+
+  return best;
+}
+
+function setInputNativeValue(input: HTMLInputElement, value: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+  descriptor?.set?.call(input, value);
+}
+
+function updateRangeInputFromLocalPoint(panelElement: HTMLElement, input: HTMLInputElement, localX: number) {
+  const min = Number.parseFloat(input.min || '0');
+  const max = Number.parseFloat(input.max || '100');
+  const step = Number.parseFloat(input.step || '1');
+  const left = getElementLocalOffset(input, panelElement).x;
+  const normalized = clamp01((localX - left) / Math.max(input.offsetWidth, 1));
+  const rawValue = min + (max - min) * normalized;
+  const stepped = Number.isFinite(step) && step > 0
+    ? Math.round(rawValue / step) * step
+    : rawValue;
+  const clamped = Math.min(Math.max(stepped, min), max);
+  setInputNativeValue(input, String(clamped));
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function getElementLocalOffset(element: HTMLElement, stopAt: HTMLElement) {
+  let x = 0;
+  let y = 0;
+  let current: HTMLElement | null = element;
+
+  while (current && current !== stopAt) {
+    x += current.offsetLeft - current.scrollLeft;
+    y += current.offsetTop - current.scrollTop;
+    current = current.offsetParent as HTMLElement | null;
+  }
+
+  return { x, y };
+}
+
+function dispatchLocalPointerEvent(
+  panelElement: HTMLElement,
+  pointerState: XRPanelPointerState,
+  type: 'pointermove' | 'pointerdown' | 'pointerup' | 'click',
+  point: { x: number; y: number },
+) {
+  const target = findLocalElementAt(panelElement, point.x, point.y) ?? panelElement;
+  const targetElement = target instanceof HTMLInputElement && target.type === 'range'
+    ? target
+    : target.closest('button, input, select, textarea, [role="button"]') as HTMLElement | null ?? target;
+
+  if (targetElement instanceof HTMLInputElement && targetElement.type === 'range' && (type === 'pointerdown' || type === 'pointermove')) {
+    updateRangeInputFromLocalPoint(panelElement, targetElement, point.x);
+  }
+
+  const eventInit = {
+    bubbles: true,
+    cancelable: true,
+    clientX: point.x,
+    clientY: point.y,
+    pointerId: pointerState.pointerId,
+    pointerType: 'xr',
+    isPrimary: true,
+  };
+  targetElement.dispatchEvent(new PointerEvent(type, eventInit));
+
+  if (type === 'click') {
+    targetElement.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      clientX: point.x,
+      clientY: point.y,
+    }));
+  }
+
+  pointerState.lastTarget = targetElement;
+  pointerState.lastPoint = point;
+}
+
+function XRControlPanel({ controls }: { controls: XRPanelControls }) {
+  const selected = controls.selectedOperator;
+  const panelStyle: React.CSSProperties = {
+    width: XR_PANEL_WIDTH_PX,
+    height: XR_PANEL_HEIGHT_PX,
+    boxSizing: 'border-box',
+    padding: 32,
+    color: '#f5f5f5',
+    background: 'rgba(10, 10, 10, 0.92)',
+    border: '2px solid rgba(82, 82, 91, 0.85)',
+    borderRadius: 28,
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    overflow: 'hidden',
+  };
+  const sectionStyle: React.CSSProperties = {
+    border: '1px solid rgba(63, 63, 70, 0.9)',
+    borderRadius: 18,
+    background: 'rgba(24, 24, 27, 0.78)',
+    padding: 20,
+  };
+  const buttonStyle: React.CSSProperties = {
+    minHeight: 64,
+    border: '1px solid rgba(82, 82, 91, 0.95)',
+    borderRadius: 16,
+    background: 'rgba(39, 39, 42, 0.94)',
+    color: '#f5f5f5',
+    fontSize: 22,
+    fontWeight: 700,
+    padding: '14px 18px',
+  };
+  const activeButtonStyle: React.CSSProperties = {
+    ...buttonStyle,
+    borderColor: 'rgba(59, 130, 246, 0.95)',
+    background: 'rgba(37, 99, 235, 0.82)',
+  };
+  const mutedText: React.CSSProperties = {
+    color: '#a1a1aa',
+    fontSize: 20,
+    lineHeight: 1.35,
+  };
+  const labelStyle: React.CSSProperties = {
+    color: '#a1a1aa',
+    fontSize: 17,
+    fontWeight: 800,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  };
+
+  const paramSlider = (field: OperatorParamKey) => {
+    const value = selected?.[field] ?? 0;
+    return (
+      <label key={field} style={{ display: 'grid', gridTemplateColumns: '190px 1fr 74px', alignItems: 'center', gap: 16 }}>
+        <span style={{ ...mutedText, fontWeight: 700 }}>{getOperatorParamLabel(field)}</span>
+        <input
+          data-xr-param={field}
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={value}
+          disabled={!selected}
+          onChange={(event) => controls.onOperatorParamChange(field, Number.parseFloat(event.currentTarget.value))}
+          style={{ width: '100%', height: 42, accentColor: '#3b82f6' }}
+        />
+        <span style={{ fontSize: 22, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', color: '#93c5fd', textAlign: 'right' }}>
+          {formatPercent(value)}
+        </span>
+      </label>
+    );
+  };
+
+  return (
+    <div data-polyhydra-xr-panel="root" style={panelStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, marginBottom: 22 }}>
+        <div>
+          <div style={labelStyle}>Polyhydra XR</div>
+          <div style={{ fontSize: 40, fontWeight: 850, marginTop: 6 }}>Live Controls</div>
+        </div>
+        <div style={{ ...mutedText, textAlign: 'right' }}>
+          Trigger selects<br />
+          Point at sliders to drag
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Scene</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
+            <button data-xr-action="mode-2d" type="button" onClick={() => controls.onModeChange('2d')} style={controls.mode === '2d' ? activeButtonStyle : buttonStyle}>2D</button>
+            <button data-xr-action="mode-3d" type="button" onClick={() => controls.onModeChange('3d')} style={controls.mode === '3d' ? activeButtonStyle : buttonStyle}>3D</button>
+            <button data-xr-action="toggle-faces" type="button" onClick={controls.onToggleFaces} style={controls.showFaces ? activeButtonStyle : buttonStyle}>Faces</button>
+            <button data-xr-action="toggle-edges" type="button" onClick={controls.onToggleEdges} style={controls.showEdges ? activeButtonStyle : buttonStyle}>Edges</button>
+            <button data-xr-action="cycle-color-mode" type="button" onClick={controls.onCycleColorMode} style={buttonStyle}>Color: {controls.colorMode}</button>
+            <button data-xr-action="fit-view" type="button" onClick={controls.onFitToExtents} style={buttonStyle}>Fit View</button>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={labelStyle}>Palette</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 18, alignItems: 'center', marginTop: 18 }}>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>{controls.paletteName}</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                {controls.paletteColors.slice(0, 6).map((color, index) => (
+                  <span key={`${color}-${index}`} style={{ width: 34, height: 34, borderRadius: 18, background: color, border: '2px solid rgba(0,0,0,0.45)' }} />
+                ))}
+              </div>
+            </div>
+            <button data-xr-action="shuffle-palette" type="button" onClick={controls.onShufflePalette} style={{ ...buttonStyle, width: 170 }}>Shuffle</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ ...sectionStyle, marginTop: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 18 }}>
+          <div>
+            <div style={labelStyle}>Operator</div>
+            <div style={{ fontSize: 30, fontWeight: 850, marginTop: 6 }}>
+              {selected ? selected.label : 'No operator selected'}
+            </div>
+            <div style={{ ...mutedText, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 580, marginTop: 6 }}>
+              {selected?.notation || `${controls.operatorCount} operators in stack`}
+            </div>
+          </div>
+          <button data-xr-action="add-random-operator" type="button" onClick={controls.onAddRandomOperator} style={{ ...activeButtonStyle, width: 220 }}>Add Random</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 18 }}>
+          <button data-xr-action="randomize-selected-operator" type="button" onClick={controls.onRandomizeSelectedOperator} disabled={!selected} style={buttonStyle}>Randomize</button>
+          <button data-xr-action="toggle-selected-operator" type="button" onClick={controls.onToggleSelectedOperator} disabled={!selected} style={selected?.enabled ? activeButtonStyle : buttonStyle}>
+            {selected?.enabled ? 'Enabled' : 'Disabled'}
+          </button>
+          <button data-xr-action="delete-selected-operator" type="button" onClick={controls.onDeleteSelectedOperator} disabled={!selected} style={{ ...buttonStyle, color: selected ? '#fca5a5' : '#71717a' }}>Delete</button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 12, marginTop: 22 }}>
+          {(['tVe', 'tVf', 'tFe'] as OperatorParamKey[]).map(paramSlider)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface TilingCanvasProps {
   tilingType: string;
   rows: number;
@@ -500,6 +867,7 @@ interface TilingCanvasProps {
   finalization?: MeshFinalizationMode;
   fitRequestKey?: number;
   onGeometryGenerationChange?: (isGenerating: boolean) => void;
+  xrPanel?: XRPanelControls;
 }
 
 interface XRNavigator extends Navigator {
@@ -547,8 +915,11 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   finalization = 'planarize' as MeshFinalizationMode,
   fitRequestKey = 0,
   onGeometryGenerationChange,
+  xrPanel,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const xrPanelRootRef = useRef<Root | null>(null);
+  const xrPanelContainerRef = useRef<HTMLDivElement | null>(null);
   const fitAnimationRef = useRef<FitAnimationState | null>(null);
   const lastHandledFitRequestKeyRef = useRef(0);
   const meshBoundsRef = useRef<MeshBounds | null>(null);
@@ -561,6 +932,11 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     ambientLight: THREE.AmbientLight;
     directLight: THREE.DirectionalLight;
     xrRig: THREE.Group;
+    xrPanelMesh: THREE.Mesh;
+    xrPanelElement: HTMLElement;
+    xrPanelTexture: THREE.Texture;
+    raycaster: THREE.Raycaster;
+    controllerPointerStates: XRPanelPointerState[];
   } | null>(null);
 
   useImperativeHandle(ref, () => ({
@@ -593,6 +969,13 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       return xr.isSessionSupported('immersive-vr');
     },
   }), []);
+
+  useEffect(() => {
+    const root = xrPanelRootRef.current;
+    if (!root || !xrPanel) return;
+    root.render(<XRControlPanel controls={xrPanel} />);
+    (sceneRef.current?.renderer.domElement as any)?.requestPaint?.();
+  }, [xrPanel]);
 
   const fitCameraToBounds = (bounds: MeshBounds) => {
     if (!sceneRef.current) return;
@@ -680,6 +1063,23 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     containerRef.current.appendChild(renderer.domElement);
+    renderer.domElement.setAttribute('layoutsubtree', '');
+
+    const xrPanelElement = document.createElement('div');
+    xrPanelElement.setAttribute('aria-hidden', 'true');
+    xrPanelElement.style.width = `${XR_PANEL_WIDTH_PX}px`;
+    xrPanelElement.style.height = `${XR_PANEL_HEIGHT_PX}px`;
+    xrPanelElement.style.pointerEvents = 'none';
+    xrPanelElement.style.position = 'absolute';
+    xrPanelElement.style.left = '0';
+    xrPanelElement.style.top = '0';
+    xrPanelElement.style.overflow = 'auto';
+    renderer.domElement.appendChild(xrPanelElement);
+    xrPanelContainerRef.current = xrPanelElement;
+    xrPanelRootRef.current = createRoot(xrPanelElement);
+    if (xrPanel) {
+      xrPanelRootRef.current.render(<XRControlPanel controls={xrPanel} />);
+    }
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -705,34 +1105,169 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrRig.add(camera);
     scene.add(xrRig);
 
-    sceneRef.current = { scene, camera, renderer, controls, meshGroup, ambientLight, directLight, xrRig };
+    const xrPanelTexture = new THREE.HTMLTexture(xrPanelElement);
+    xrPanelTexture.colorSpace = THREE.SRGBColorSpace;
+    const xrPanelMaterial = new THREE.MeshBasicMaterial({
+      map: xrPanelTexture,
+      transparent: true,
+      side: THREE.FrontSide,
+      toneMapped: false,
+    });
+    const xrPanelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(XR_PANEL_WORLD_WIDTH, XR_PANEL_WORLD_HEIGHT),
+      xrPanelMaterial,
+    );
+    xrPanelMesh.name = 'polyhydra-xr-html-panel';
+    xrPanelMesh.position.set(0, 1.35, -1.35);
+    xrPanelMesh.visible = false;
+    xrRig.add(xrPanelMesh);
 
+    const controllerModelFactory = new XRControllerModelFactory();
+    const controllerEventCleanups: Array<() => void> = [];
+    for (let index = 0; index < 2; index++) {
+      const controller = renderer.xr.getController(index);
+      controller.name = `xr-controller-${index}`;
+      const ray = createXRControllerRay(index === 0 ? 0x38bdf8 : 0xf97316);
+      ray.visible = false;
+      controller.add(ray);
+      const handleConnected = (event: any) => {
+        const handedness = event.data?.handedness;
+        controller.userData.inputSource = event.data;
+        const color = handedness === 'right' ? 0xf97316 : 0x38bdf8;
+        const material = ray.material as THREE.LineBasicMaterial;
+        material.color.set(color);
+        ray.visible = true;
+      };
+      const handleDisconnected = () => {
+        delete controller.userData.inputSource;
+        ray.visible = false;
+      };
+      controller.addEventListener('connected', handleConnected);
+      controller.addEventListener('disconnected', handleDisconnected);
+      controllerEventCleanups.push(() => {
+        controller.removeEventListener('connected', handleConnected);
+        controller.removeEventListener('disconnected', handleDisconnected);
+      });
+      xrRig.add(controller);
+
+      const grip = renderer.xr.getControllerGrip(index);
+      grip.name = `xr-controller-grip-${index}`;
+      grip.add(controllerModelFactory.createControllerModel(grip));
+      grip.add(createXRControllerFallback());
+      xrRig.add(grip);
+    }
+
+    const raycaster = new THREE.Raycaster();
+    const controllerPointerStates: XRPanelPointerState[] = [
+      { pressed: false, pointerId: 101, lastTarget: null, lastPoint: null },
+      { pressed: false, pointerId: 102, lastTarget: null, lastPoint: null },
+    ];
+
+    sceneRef.current = {
+      scene,
+      camera,
+      renderer,
+      controls,
+      meshGroup,
+      ambientLight,
+      directLight,
+      xrRig,
+      xrPanelMesh,
+      xrPanelElement,
+      xrPanelTexture,
+      raycaster,
+      controllerPointerStates,
+    };
+
+    const tempMatrix = new THREE.Matrix4();
     const animate = () => {
+      xrPanelTexture.needsUpdate = true;
+      (renderer.domElement as any).requestPaint?.();
+
       if (renderer.xr.isPresenting) {
+        xrPanelMesh.visible = true;
         const session = renderer.xr.getSession();
         if (session) {
           let moveX = 0;
           let moveZ = 0;
           let moveY = 0;
 
+          const panelPointedByHand = new Set<string>();
+
+          for (let index = 0; index < 2; index++) {
+            const controller = renderer.xr.getController(index);
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            if (raycaster.intersectObject(xrPanelMesh, false).length > 0) {
+              const source = controller.userData.inputSource as XRInputSourceLike | undefined;
+              if (source?.handedness) {
+                panelPointedByHand.add(source.handedness);
+              }
+            }
+          }
+
           for (const source of session.inputSources) {
             if (source.gamepad) {
               const axes = source.gamepad.axes;
               const buttons = source.gamepad.buttons;
 
-              // Only use left controller for horizontal movement
               if (source.handedness === 'left') {
                 const x = (axes[0] || 0) + (axes[2] || 0);
                 const z = (axes[1] || 0) + (axes[3] || 0);
 
-                if (Math.abs(x) > 0.1) moveX += x;
-                if (Math.abs(z) > 0.1) moveZ += z;
+                if (panelPointedByHand.has(source.handedness)) {
+                  if (Math.abs(z) > 0.25) {
+                    xrPanelElement.scrollTop += z * 18;
+                    xrPanelTexture.needsUpdate = true;
+                  }
+                } else {
+                  if (Math.abs(x) > 0.1) moveX += x;
+                  if (Math.abs(z) > 0.1) moveZ += z;
+                }
               }
 
               if (buttons[1] && buttons[1].pressed) {
                 if (source.handedness === 'left') moveY -= 1;
                 if (source.handedness === 'right') moveY += 1;
               }
+            }
+          }
+
+          for (let index = 0; index < 2; index++) {
+            const controller = renderer.xr.getController(index);
+            const pointerState = controllerPointerStates[index];
+            const source = controller.userData.inputSource as XRInputSourceLike | undefined;
+            const pressed = Boolean(source?.gamepad?.buttons?.[0]?.pressed);
+
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            const [hit] = raycaster.intersectObject(xrPanelMesh, false);
+
+            if (hit?.uv) {
+              const point = {
+                x: hit.uv.x * XR_PANEL_WIDTH_PX,
+                y: (1 - hit.uv.y) * XR_PANEL_HEIGHT_PX,
+              };
+              dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointermove', point);
+
+              if (pressed && !pointerState.pressed) {
+                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerdown', point);
+              } else if (pressed && pointerState.pressed) {
+                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointermove', point);
+              } else if (!pressed && pointerState.pressed) {
+                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', point);
+                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'click', point);
+              }
+              pointerState.pressed = pressed;
+            } else if (!pressed && pointerState.pressed && pointerState.lastPoint) {
+              dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', pointerState.lastPoint);
+              pointerState.pressed = false;
+              pointerState.lastTarget = null;
+              pointerState.lastPoint = null;
+            } else {
+              pointerState.pressed = pressed;
             }
           }
 
@@ -757,6 +1292,13 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
             xrRig.position.y += moveY * speed;
           }
         }
+      } else {
+        xrPanelMesh.visible = false;
+        controllerPointerStates.forEach((pointerState) => {
+          pointerState.pressed = false;
+          pointerState.lastTarget = null;
+          pointerState.lastPoint = null;
+        });
       }
 
       if (!renderer.xr.isPresenting) {
@@ -793,7 +1335,14 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     return () => {
       window.removeEventListener('resize', handleResize);
       controls.removeEventListener('start', handleControlsStart);
+      controllerEventCleanups.forEach((cleanup) => cleanup());
       fitAnimationRef.current = null;
+      xrPanelRootRef.current?.unmount();
+      xrPanelRootRef.current = null;
+      xrPanelContainerRef.current = null;
+      xrPanelMesh.geometry.dispose();
+      disposeMaterialResources(xrPanelMesh.material);
+      xrPanelTexture.dispose();
       renderer.setAnimationLoop(null);
       renderer.dispose();
       renderer.domElement.remove();

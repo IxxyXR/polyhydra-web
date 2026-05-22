@@ -18,7 +18,8 @@
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "three-html-render": "^0.1.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

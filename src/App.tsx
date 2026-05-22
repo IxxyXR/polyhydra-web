@@ -1143,6 +1143,74 @@ export default function App() {
   const selectedPalette = PALETTES[palette];
   const radialTypeUsesSides = RADIAL_TYPES_WITH_SIDES.has(radialType);
   const hasBaseSettings = mode !== '3d' || radialTypeUsesSides;
+  const renderColorMode = getRenderColorMode(colorMode, tilingType);
+  const xrPanel = useMemo(() => ({
+    mode,
+    showFaces,
+    showEdges,
+    colorMode: renderColorMode,
+    paletteName: selectedPalette.name,
+    paletteColors: shuffledColors ?? selectedPalette.colors,
+    selectedOperator: selectedOperator
+      ? {
+          id: selectedOperator.id,
+          label: selectedMatchingPresetName ?? `Operator ${operators.findIndex((op) => op.id === selectedOperator.id) + 1}`,
+          notation: selectedOperatorNotation,
+          enabled: selectedOperator.enabled,
+          tVe: selectedOperator.tVe,
+          tVf: selectedOperator.tVf,
+          tFe: selectedOperator.tFe,
+        }
+      : null,
+    operatorCount: operators.length,
+    onModeChange: (nextMode: '2d' | '3d') => setModeAndFit(nextMode),
+    onToggleFaces: () => setShowFaces((current) => !current),
+    onToggleEdges: () => setShowEdges((current) => !current),
+    onCycleColorMode: () => setColorMode((current) => current === 'role' ? 'sides' : 'role'),
+    onShufflePalette: () => {
+      const colors = [...selectedPalette.colors];
+      for (let i = colors.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [colors[i], colors[j]] = [colors[j], colors[i]];
+      }
+      setShuffledColors(colors);
+    },
+    onAddRandomOperator: () => {
+      const randomIndex = Math.floor(Math.random() * OMNI_VALID_OPERATORS.length);
+      const randomAtoms = orderAtoms(OMNI_VALID_OPERATORS[randomIndex]);
+      addOperator(joinAtomList(randomAtoms));
+      setPresetOrRandomUsed(true);
+    },
+    onRandomizeSelectedOperator: () => {
+      randomizeSelectedOperator();
+      setPresetOrRandomUsed(true);
+    },
+    onToggleSelectedOperator: () => {
+      if (selectedOperatorId) toggleOperator(selectedOperatorId);
+    },
+    onDeleteSelectedOperator: () => {
+      if (selectedOperatorId) removeOperator(selectedOperatorId);
+    },
+    onOperatorParamChange: (field: 'tVe' | 'tVf' | 'tFe', value: number) => {
+      if (selectedOperatorId) {
+        updateOperatorParams(selectedOperatorId, field, String(value));
+        setSliderMoved(true);
+      }
+    },
+    onFitToExtents: requestFitToExtents,
+  }), [
+    mode,
+    showFaces,
+    showEdges,
+    renderColorMode,
+    selectedPalette,
+    shuffledColors,
+    selectedOperator,
+    selectedMatchingPresetName,
+    selectedOperatorNotation,
+    operators,
+    selectedOperatorId,
+  ]);
 
   const selectedOperatorHasCrossings = useMemo(() => {
     if (!selectedOperatorId) return false;
@@ -1163,7 +1231,6 @@ export default function App() {
     }
   }, [operators, tilingType, selectedOperatorId]);
   const isMultigrid = tilingType === 'multigrid';
-  const renderColorMode = getRenderColorMode(colorMode, tilingType);
   const generationOptions: TilingGenerationOptions = useMemo(() => ({
     multigrid: multigridSettings,
   }), [multigridSettings]);
@@ -2964,6 +3031,7 @@ export default function App() {
             finalization={finalization}
             fitRequestKey={fitRequestKey}
             onGeometryGenerationChange={handleGeometryGenerationChange}
+            xrPanel={xrPanel}
           />
         </div>
 
