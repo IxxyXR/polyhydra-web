@@ -15,9 +15,16 @@ export type RadialPolyType =
   | 'ElongatedPyramid' | 'ElongatedDipyramid'
   | 'GyroelongatedPyramid' | 'GyroelongatedDipyramid'
   | 'Cupola' | 'ElongatedCupola' | 'GyroelongatedCupola'
+  | 'Rotunda' | 'ElongatedRotunda' | 'GyroelongatedRotunda'
   | 'OrthoBicupola' | 'GyroBicupola'
   | 'ElongatedOrthoBicupola' | 'ElongatedGyroBicupola'
-  | 'GyroelongatedBicupola';
+  | 'GyroelongatedBicupola'
+  | 'OrthoBirotunda' | 'GyroBirotunda'
+  | 'ElongatedOrthoBirotunda' | 'ElongatedGyroBirotunda'
+  | 'GyroelongatedBirotunda'
+  | 'OrthoCupolaRotunda' | 'GyroCupolaRotunda'
+  | 'ElongatedOrthoCupolaRotunda' | 'ElongatedGyroCupolaRotunda'
+  | 'GyroelongatedCupolaRotunda';
 
 export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
   Tetrahedron: 'Tetrahedron',
@@ -63,11 +70,24 @@ export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
   Cupola: 'Cupola',
   ElongatedCupola: 'Elongated Cupola',
   GyroelongatedCupola: 'Gyroelongated Cupola',
+  Rotunda: 'Rotunda',
+  ElongatedRotunda: 'Elongated Rotunda',
+  GyroelongatedRotunda: 'Gyroelongated Rotunda',
   OrthoBicupola: 'Orthobicupola',
   GyroBicupola: 'Gyrobicupola',
   ElongatedOrthoBicupola: 'Elongated Orthobicupola',
   ElongatedGyroBicupola: 'Elongated Gyrobicupola',
   GyroelongatedBicupola: 'Gyroelongated Bicupola',
+  OrthoBirotunda: 'Orthobirotunda',
+  GyroBirotunda: 'Gyrobirotunda',
+  ElongatedOrthoBirotunda: 'Elongated Orthobirotunda',
+  ElongatedGyroBirotunda: 'Elongated Gyrobirotunda',
+  GyroelongatedBirotunda: 'Gyroelongated Birotunda',
+  OrthoCupolaRotunda: 'Orthocupolarotunda',
+  GyroCupolaRotunda: 'Gyrocupolarotunda',
+  ElongatedOrthoCupolaRotunda: 'Elongated Orthocupolarotunda',
+  ElongatedGyroCupolaRotunda: 'Elongated Gyrocupolarotunda',
+  GyroelongatedCupolaRotunda: 'Gyroelongated Cupolarotunda',
 };
 
 export const RADIAL_SHAPE_GROUPS: { name: string; types: RadialPolyType[] }[] = [
@@ -105,6 +125,8 @@ export const RADIAL_SHAPE_GROUPS: { name: string; types: RadialPolyType[] }[] = 
   { name: 'Prisms', types: ['Prism', 'Antiprism', 'Trapezohedron'] },
   { name: 'Pyramids', types: ['Pyramid', 'Dipyramid', 'ElongatedPyramid', 'ElongatedDipyramid', 'GyroelongatedPyramid', 'GyroelongatedDipyramid'] },
   { name: 'Cupolae', types: ['Cupola', 'ElongatedCupola', 'GyroelongatedCupola', 'OrthoBicupola', 'GyroBicupola', 'ElongatedOrthoBicupola', 'ElongatedGyroBicupola', 'GyroelongatedBicupola'] },
+  { name: 'Rotundae', types: ['Rotunda', 'ElongatedRotunda', 'GyroelongatedRotunda', 'OrthoBirotunda', 'GyroBirotunda', 'ElongatedOrthoBirotunda', 'ElongatedGyroBirotunda', 'GyroelongatedBirotunda'] },
+  { name: 'Cupola-Rotundae', types: ['OrthoCupolaRotunda', 'GyroCupolaRotunda', 'ElongatedOrthoCupolaRotunda', 'ElongatedGyroCupolaRotunda', 'GyroelongatedCupolaRotunda'] },
 ];
 
 export const RADIAL_TYPES_WITH_SIDES = new Set<RadialPolyType>([
@@ -120,17 +142,31 @@ export const RADIAL_TYPES_WITH_SIDES = new Set<RadialPolyType>([
   'Cupola',
   'ElongatedCupola',
   'GyroelongatedCupola',
+  'Rotunda',
+  'ElongatedRotunda',
+  'GyroelongatedRotunda',
   'OrthoBicupola',
   'GyroBicupola',
   'ElongatedOrthoBicupola',
   'ElongatedGyroBicupola',
   'GyroelongatedBicupola',
+  'OrthoBirotunda',
+  'GyroBirotunda',
+  'ElongatedOrthoBirotunda',
+  'ElongatedGyroBirotunda',
+  'GyroelongatedBirotunda',
+  'OrthoCupolaRotunda',
+  'GyroCupolaRotunda',
+  'ElongatedOrthoCupolaRotunda',
+  'ElongatedGyroCupolaRotunda',
+  'GyroelongatedCupolaRotunda',
 ]);
 
 const NAMED_UNIFORM_CANONICALIZE_MAX_ITERATIONS = 300;
 
 // --- vector helpers ---
 type V3 = [number, number, number];
+type Vec3 = V3;
 function v3(arr: number[], i: number): V3 { return [arr[i*3], arr[i*3+1], arr[i*3+2]]; }
 function add(a: V3, b: V3): V3 { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
 function sub(a: V3, b: V3): V3 { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
@@ -347,6 +383,88 @@ function cupolaR(n: number) {
   return bs / (Math.sin(Math.PI / n) * 2);
 }
 
+function solveRotundaParams(n: number) {
+  const side = sideLen(2*n);
+  const capR = cupolaR(n);
+  const delta = Math.PI / (2*n);
+  const alpha = Math.PI / n;
+  const baseX = Math.cos(delta);
+
+  const resolve = (waistR: number) => {
+    const baseToWaist2 = 1 + waistR * waistR - 2 * waistR * Math.cos(delta);
+    const waistToCap2 = waistR * waistR + capR * capR - 2 * waistR * capR * Math.cos(alpha);
+
+    if (baseToWaist2 > side * side) {
+      return null;
+    }
+
+    const lowerHeight = Math.sqrt(Math.max(0, side * side - baseToWaist2));
+    const waistX = waistR * Math.cos(alpha);
+    const denominator = waistX - baseX;
+    if (Math.abs(denominator) < 1e-9) {
+      return null;
+    }
+
+    const upperHeight = lowerHeight * (capR - waistX) / denominator;
+    if (upperHeight <= 0) {
+      return null;
+    }
+
+    const upperEdgeError = Math.sqrt(waistToCap2 + upperHeight * upperHeight) - side;
+    return {
+      error: upperEdgeError * upperEdgeError,
+      lowerHeight,
+      upperHeight,
+    };
+  };
+
+  let bestR = capR;
+  let bestError = Number.POSITIVE_INFINITY;
+  const maxR = 2;
+  const samples = 512;
+
+  for (let i = 0; i <= samples; i += 1) {
+    const waistR = (maxR * i) / samples;
+    const resolved = resolve(waistR);
+    const error = resolved?.error ?? Number.POSITIVE_INFINITY;
+    if (error < bestError) {
+      bestError = error;
+      bestR = waistR;
+    }
+  }
+
+  let lo = Math.max(0, bestR - maxR / samples);
+  let hi = Math.min(maxR, bestR + maxR / samples);
+  for (let i = 0; i < 60; i += 1) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    const e1 = resolve(m1)?.error ?? Number.POSITIVE_INFINITY;
+    const e2 = resolve(m2)?.error ?? Number.POSITIVE_INFINITY;
+    if (e1 < e2) {
+      hi = m2;
+    } else {
+      lo = m1;
+    }
+  }
+
+  const waistR = (lo + hi) / 2;
+  const resolved = resolve(waistR) ?? {
+    lowerHeight: side,
+    upperHeight: side,
+  };
+
+  return {
+    side,
+    waistR,
+    capR,
+    lowerHeight: resolved.lowerHeight,
+    upperHeight: resolved.upperHeight,
+    waistOffset: delta,
+    capOffset: -delta,
+    gyroOffset: 2 * delta,
+  };
+}
+
 // --- dual computation (for Trapezohedron) ---
 function computeDual(verts: number[], faces: number[][]): { vertices: number[]; faces: number[][] } {
   const nv = verts.length / 3;
@@ -457,6 +575,48 @@ function makeCupola(n: number, h?: number): { vertices: number[]; faces: number[
   return { vertices, faces };
 }
 
+function createRotundaFaces(
+  n: number,
+  base: (i: number) => number,
+  waist: (i: number) => number,
+  cap: (i: number) => number,
+) {
+  const faces: number[][] = [];
+
+  for (let k = 0; k < n; k += 1) {
+    faces.push(
+      [base(2*k), base(2*k+1), waist(k)],
+      [cap(k), cap(k+1), waist(k)],
+      [cap(k), waist(k-1), base(2*k-1), base(2*k), waist(k)],
+    );
+  }
+
+  return faces;
+}
+
+function makeRotunda(n: number, lowerH?: number, upperH?: number): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const lowerHeight = lowerH ?? params.lowerHeight;
+  const upperHeight = upperH ?? params.upperHeight;
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const capOff = params.waistOffset;
+  const topOff = params.capOffset;
+  const Bm = ring(2*n, 1, 0);
+  const Mm = ring(n, waistR, lowerHeight, capOff);
+  const Tm = ring(n, capR, lowerHeight + upperHeight, topOff);
+  const vertices = flatten([...Bm, ...Mm, ...Tm]);
+  const bm = (i: number) => mod(i, 2*n);
+  const mm = (i: number) => 2*n + mod(i, n);
+  const tm = (i: number) => 3*n + mod(i, n);
+  const faces: number[][] = [
+    Array.from({length: 2*n}, (_, k) => 2*n - 1 - k),
+    Array.from({length: n}, (_, k) => tm(k)),
+    ...createRotundaFaces(n, bm, mm, tm),
+  ];
+  return { vertices, faces };
+}
+
 function makeElongatedPyramid(n: number, h?: number, capH?: number): { vertices: number[]; faces: number[][] } {
   const height = h ?? sideLen(n);
   const capHeight = capH ?? pyramidH(n);
@@ -547,6 +707,33 @@ function makeElongatedCupola(n: number, h?: number, capH?: number): { vertices: 
   return { vertices, faces };
 }
 
+function makeElongatedRotunda(n: number, h?: number, lowerH?: number, upperH?: number): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const height = h ?? params.side;
+  const lowerHeight = lowerH ?? params.lowerHeight;
+  const upperHeight = upperH ?? params.upperHeight;
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const capOff = params.waistOffset;
+  const topOff = params.capOffset;
+  const Bm = ring(2*n, 1, 0);
+  const Mm = ring(2*n, 1, height);
+  const Sm = ring(n, waistR, height + lowerHeight, capOff);
+  const Tm = ring(n, capR, height + lowerHeight + upperHeight, topOff);
+  const vertices = flatten([...Bm, ...Mm, ...Sm, ...Tm]);
+  const bm = (i: number) => mod(i, 2*n);
+  const mm = (i: number) => 2*n + mod(i, 2*n);
+  const sm = (i: number) => 4*n + mod(i, n);
+  const tm = (i: number) => 5*n + mod(i, n);
+  const faces: number[][] = [
+    Array.from({length: 2*n}, (_, k) => 2*n - 1 - k),
+    Array.from({length: n}, (_, k) => tm(k)),
+    ...Array.from({length: 2*n}, (_, k) => [bm(k), bm(k+1), mm(k+1), mm(k)]),
+    ...createRotundaFaces(n, mm, sm, tm),
+  ];
+  return { vertices, faces };
+}
+
 function makeBicupola(n: number, capH: number, gyro: boolean): { vertices: number[]; faces: number[][] } {
   const capR = cupolaR(n);
   const topOff = Math.PI / (2*n);
@@ -576,6 +763,82 @@ function makeBicupola(n: number, capH: number, gyro: boolean): { vertices: numbe
     Array.from({length: n}, (_, k) => bm(k)),
     ...topFaces,
     ...botFaces,
+  ];
+  return { vertices, faces };
+}
+
+function makeBirotunda(n: number, capH: number, gyro: boolean): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const lowerHeight = params.lowerHeight;
+  const upperHeight = params.upperHeight;
+  const topOff = params.waistOffset;
+  const capTopOff = params.capOffset;
+  const botOff = gyro ? params.waistOffset + params.gyroOffset : params.waistOffset;
+  const capBotOff = gyro ? params.capOffset + params.gyroOffset : params.capOffset;
+  const Mm = ring(2*n, 1, 0);
+  const Us = ring(n, waistR, lowerHeight, topOff);
+  const Ts = ring(n, capR, lowerHeight + upperHeight, capTopOff);
+  const Ls = ring(n, waistR, -lowerHeight, botOff);
+  const Bs = ring(n, capR, -lowerHeight - upperHeight, capBotOff);
+  const vertices = flatten([...Mm, ...Us, ...Ts, ...Ls, ...Bs]);
+  const mm = (i: number) => mod(i, 2*n);
+  const us = (i: number) => 2*n + mod(i, n);
+  const ts = (i: number) => 3*n + mod(i, n);
+  const ls = (i: number) => 4*n + mod(i, n);
+  const bs = (i: number) => 5*n + mod(i, n);
+  const bottomBase = gyro ? (i: number) => mm(i + 1) : mm;
+  const bottomFaces = createRotundaFaces(n, bottomBase, ls, bs).map((face) => [...face].reverse());
+  const faces: number[][] = [
+    Array.from({length: n}, (_, k) => ts(k)),
+    Array.from({length: n}, (_, k) => bs(k)),
+    ...createRotundaFaces(n, mm, us, ts),
+    ...bottomFaces,
+  ];
+  return { vertices, faces };
+}
+
+function createCupolaFaces(
+  n: number,
+  base: (i: number) => number,
+  cap: (i: number) => number,
+  gyro: boolean,
+) {
+  return gyro
+    ? Array.from({length: n}, (_, k) => [
+        [base(2*k+1), base(2*k+2), cap(k)],
+        [base(2*k+2), base(2*k+3), cap(k+1), cap(k)],
+      ]).flat()
+    : Array.from({length: n}, (_, k) => [
+        [base(2*k), base(2*k+1), cap(k)],
+        [base(2*k+1), base(2*k+2), cap(k+1), cap(k)],
+      ]).flat();
+}
+
+function makeCupolaRotunda(n: number, capH: number, gyro: boolean): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const lowerHeight = params.lowerHeight;
+  const upperHeight = params.upperHeight;
+  const topOff = params.waistOffset;
+  const capTopOff = params.capOffset;
+  const botOff = gyro ? 3 * Math.PI / (2*n) : Math.PI / (2*n);
+  const Mm = ring(2*n, 1, 0);
+  const Us = ring(n, waistR, lowerHeight, topOff);
+  const Ts = ring(n, capR, lowerHeight + upperHeight, capTopOff);
+  const Bs = ring(n, capR, -capH, botOff);
+  const vertices = flatten([...Mm, ...Us, ...Ts, ...Bs]);
+  const mm = (i: number) => mod(i, 2*n);
+  const us = (i: number) => 2*n + mod(i, n);
+  const ts = (i: number) => 3*n + mod(i, n);
+  const bs = (i: number) => 4*n + mod(i, n);
+  const faces: number[][] = [
+    Array.from({length: n}, (_, k) => ts(k)),
+    Array.from({length: n}, (_, k) => bs(k)),
+    ...createRotundaFaces(n, mm, us, ts),
+    ...createCupolaFaces(n, mm, bs, gyro),
   ];
   return { vertices, faces };
 }
@@ -616,6 +879,72 @@ function makeElongatedBicupola(n: number, h: number, capH: number, gyro: boolean
   return { vertices, faces };
 }
 
+function makeElongatedBirotunda(n: number, h: number, capH: number, gyro: boolean): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const height = h ?? params.side;
+  const lowerHeight = params.lowerHeight;
+  const upperHeight = params.upperHeight;
+  const topOff = params.waistOffset;
+  const capTopOff = params.capOffset;
+  const botOff = gyro ? params.waistOffset + params.gyroOffset : params.waistOffset;
+  const capBotOff = gyro ? params.capOffset + params.gyroOffset : params.capOffset;
+  const Bm = ring(2*n, 1, 0);
+  const Um = ring(2*n, 1, height);
+  const Us = ring(n, waistR, height + lowerHeight, topOff);
+  const Ts = ring(n, capR, height + lowerHeight + upperHeight, capTopOff);
+  const Ls = ring(n, waistR, -lowerHeight, botOff);
+  const Bs = ring(n, capR, -lowerHeight - upperHeight, capBotOff);
+  const vertices = flatten([...Bm, ...Um, ...Us, ...Ts, ...Ls, ...Bs]);
+  const bm = (i: number) => mod(i, 2*n);
+  const um = (i: number) => 2*n + mod(i, 2*n);
+  const us = (i: number) => 4*n + mod(i, n);
+  const ts = (i: number) => 5*n + mod(i, n);
+  const ls = (i: number) => 6*n + mod(i, n);
+  const bs = (i: number) => 7*n + mod(i, n);
+  const bottomBase = gyro ? (i: number) => bm(i + 1) : bm;
+  const faces: number[][] = [
+    Array.from({length: n}, (_, k) => ts(k)),
+    Array.from({length: n}, (_, k) => bs(k)),
+    ...Array.from({length: 2*n}, (_, k) => [bm(k), bm(k+1), um(k+1), um(k)]),
+    ...createRotundaFaces(n, um, us, ts),
+    ...createRotundaFaces(n, bottomBase, ls, bs).map((face) => [...face].reverse()),
+  ];
+  return { vertices, faces };
+}
+
+function makeElongatedCupolaRotunda(n: number, h: number, capH: number, gyro: boolean): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const height = h ?? params.side;
+  const lowerHeight = params.lowerHeight;
+  const upperHeight = params.upperHeight;
+  const topOff = params.waistOffset;
+  const capTopOff = params.capOffset;
+  const botOff = gyro ? 3 * Math.PI / (2*n) : Math.PI / (2*n);
+  const Bm = ring(2*n, 1, 0);
+  const Um = ring(2*n, 1, height);
+  const Us = ring(n, waistR, height + lowerHeight, topOff);
+  const Ts = ring(n, capR, height + lowerHeight + upperHeight, capTopOff);
+  const Bs = ring(n, capR, -capH, botOff);
+  const vertices = flatten([...Bm, ...Um, ...Us, ...Ts, ...Bs]);
+  const bm = (i: number) => mod(i, 2*n);
+  const um = (i: number) => 2*n + mod(i, 2*n);
+  const us = (i: number) => 4*n + mod(i, n);
+  const ts = (i: number) => 5*n + mod(i, n);
+  const bs = (i: number) => 6*n + mod(i, n);
+  const faces: number[][] = [
+    Array.from({length: n}, (_, k) => ts(k)),
+    Array.from({length: n}, (_, k) => bs(k)),
+    ...Array.from({length: 2*n}, (_, k) => [bm(k), bm(k+1), um(k+1), um(k)]),
+    ...createRotundaFaces(n, um, us, ts),
+    ...createCupolaFaces(n, bm, bs, gyro),
+  ];
+  return { vertices, faces };
+}
+
 function makeGyroelongatedCupola(n: number, h?: number, capH?: number): { vertices: number[]; faces: number[][] } {
   const height = h ?? antiprismH(2*n);
   const capHeight = capH ?? cupolaH(n);
@@ -639,6 +968,37 @@ function makeGyroelongatedCupola(n: number, h?: number, capH?: number): { vertic
       [tm(2*k-1), tm(2*k), cm(k)],
       [tm(2*k), tm(2*k+1), cm(k+1), cm(k)],
     ]).flat(),
+  ];
+  return { vertices, faces };
+}
+
+function makeGyroelongatedRotunda(n: number, h?: number, lowerH?: number, upperH?: number): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const height = h ?? antiprismH(2*n);
+  const lowerHeight = lowerH ?? params.lowerHeight;
+  const upperHeight = upperH ?? params.upperHeight;
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const antiOff = Math.PI / (2*n);
+  const waistOff = antiOff + params.waistOffset;
+  const capOff = antiOff + params.capOffset;
+  const Bm = ring(2*n, 1, 0);
+  const Mm = ring(2*n, 1, height, antiOff);
+  const Sm = ring(n, waistR, height + lowerHeight, waistOff);
+  const Tm = ring(n, capR, height + lowerHeight + upperHeight, capOff);
+  const vertices = flatten([...Bm, ...Mm, ...Sm, ...Tm]);
+  const bm = (i: number) => mod(i, 2*n);
+  const mm = (i: number) => 2*n + mod(i, 2*n);
+  const sm = (i: number) => 4*n + mod(i, n);
+  const tm = (i: number) => 5*n + mod(i, n);
+  const faces: number[][] = [
+    Array.from({length: 2*n}, (_, k) => 2*n - 1 - k),
+    Array.from({length: n}, (_, k) => tm(k)),
+    ...Array.from({length: 2*n}, (_, k) => [
+      [bm(k), bm(k+1), mm(k)],
+      [mm(k), bm(k+1), mm(k+1)],
+    ]).flat(),
+    ...createRotundaFaces(n, mm, sm, tm),
   ];
   return { vertices, faces };
 }
@@ -679,6 +1039,80 @@ function makeGyroelongatedBicupola(n: number, h?: number, capH?: number, capGyro
       [tm(2*k), tm(2*k+1), cm(k+1), cm(k)],
     ]).flat(),
     ...botFaces,
+  ];
+  return { vertices, faces };
+}
+
+function makeGyroelongatedBirotunda(n: number, h?: number, capH?: number, capGyro = false): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const height = h ?? antiprismH(2*n);
+  const capHeight = params.upperHeight;
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const lowerHeight = params.lowerHeight;
+  const antiOff = Math.PI / (2*n);
+  const topOff = antiOff + params.waistOffset;
+  const capTopOff = antiOff + params.capOffset;
+  const botOff = capGyro ? params.waistOffset + params.gyroOffset : params.waistOffset;
+  const capBotOff = capGyro ? params.capOffset + params.gyroOffset : params.capOffset;
+  const Bm = ring(2*n, 1, 0);
+  const Tm = ring(2*n, 1, height, antiOff);
+  const Us = ring(n, waistR, height + lowerHeight, topOff);
+  const Cs = ring(n, capR, height + lowerHeight + capHeight, capTopOff);
+  const Ls = ring(n, waistR, -lowerHeight, botOff);
+  const Ds = ring(n, capR, -lowerHeight - capHeight, capBotOff);
+  const vertices = flatten([...Bm, ...Tm, ...Us, ...Cs, ...Ls, ...Ds]);
+  const bm = (i: number) => mod(i, 2*n);
+  const tm = (i: number) => 2*n + mod(i, 2*n);
+  const us = (i: number) => 4*n + mod(i, n);
+  const cs = (i: number) => 5*n + mod(i, n);
+  const ls = (i: number) => 6*n + mod(i, n);
+  const ds = (i: number) => 7*n + mod(i, n);
+  const bottomBase = capGyro ? (i: number) => bm(i + 1) : bm;
+  const faces: number[][] = [
+    Array.from({length: n}, (_, k) => cs(k)),
+    Array.from({length: n}, (_, k) => ds(k)),
+    ...Array.from({length: 2*n}, (_, k) => [
+      [bm(k), bm(k+1), tm(k)],
+      [tm(k), bm(k+1), tm(k+1)],
+    ]).flat(),
+    ...createRotundaFaces(n, tm, us, cs),
+    ...createRotundaFaces(n, bottomBase, ls, ds).map((face) => [...face].reverse()),
+  ];
+  return { vertices, faces };
+}
+
+function makeGyroelongatedCupolaRotunda(n: number, h?: number, capH?: number, capGyro = false): { vertices: number[]; faces: number[][] } {
+  const params = solveRotundaParams(n);
+  const height = h ?? antiprismH(2*n);
+  const capHeight = params.upperHeight;
+  const waistR = params.waistR;
+  const capR = params.capR;
+  const lowerHeight = params.lowerHeight;
+  const antiOff = Math.PI / (2*n);
+  const topOff = antiOff + params.waistOffset;
+  const capTopOff = antiOff + params.capOffset;
+  const botOff = capGyro ? 3 * Math.PI / (2*n) : Math.PI / (2*n);
+  const Bm = ring(2*n, 1, 0);
+  const Tm = ring(2*n, 1, height, antiOff);
+  const Us = ring(n, waistR, height + lowerHeight, topOff);
+  const Cs = ring(n, capR, height + lowerHeight + capHeight, capTopOff);
+  const Ds = ring(n, capR, -capHeight, botOff);
+  const vertices = flatten([...Bm, ...Tm, ...Us, ...Cs, ...Ds]);
+  const bm = (i: number) => mod(i, 2*n);
+  const tm = (i: number) => 2*n + mod(i, 2*n);
+  const us = (i: number) => 4*n + mod(i, n);
+  const cs = (i: number) => 5*n + mod(i, n);
+  const ds = (i: number) => 6*n + mod(i, n);
+  const faces: number[][] = [
+    Array.from({length: n}, (_, k) => cs(k)),
+    Array.from({length: n}, (_, k) => ds(k)),
+    ...Array.from({length: 2*n}, (_, k) => [
+      [bm(k), bm(k+1), tm(k)],
+      [tm(k), bm(k+1), tm(k+1)],
+    ]).flat(),
+    ...createRotundaFaces(n, tm, us, cs),
+    ...createCupolaFaces(n, bm, ds, capGyro),
   ];
   return { vertices, faces };
 }
@@ -820,11 +1254,32 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
     case 'Cupola':                 result = makeCupola(n); break;
     case 'ElongatedCupola':        result = makeElongatedCupola(n); break;
     case 'GyroelongatedCupola':    result = makeGyroelongatedCupola(n); break;
+    case 'Rotunda':                result = makeRotunda(n); break;
+    case 'ElongatedRotunda':       result = makeElongatedRotunda(n); break;
+    case 'GyroelongatedRotunda':   result = makeGyroelongatedRotunda(n); break;
     case 'OrthoBicupola':          result = makeBicupola(n, cupolaH(n), false); break;
     case 'GyroBicupola':           result = makeBicupola(n, cupolaH(n), true); break;
     case 'ElongatedOrthoBicupola': result = makeElongatedBicupola(n, sideLen(2*n), cupolaH(n), false); break;
     case 'ElongatedGyroBicupola':  result = makeElongatedBicupola(n, sideLen(2*n), cupolaH(n), true); break;
     case 'GyroelongatedBicupola':  result = makeGyroelongatedBicupola(n); break;
+    case 'OrthoBirotunda':         result = makeBirotunda(n, cupolaH(n), false); break;
+    case 'GyroBirotunda':          result = makeBirotunda(n, cupolaH(n), true); break;
+    case 'ElongatedOrthoBirotunda':
+      result = makeElongatedBirotunda(n, sideLen(2*n), cupolaH(n), false);
+      break;
+    case 'ElongatedGyroBirotunda':
+      result = makeElongatedBirotunda(n, sideLen(2*n), cupolaH(n), true);
+      break;
+    case 'GyroelongatedBirotunda': result = makeGyroelongatedBirotunda(n); break;
+    case 'OrthoCupolaRotunda':     result = makeCupolaRotunda(n, cupolaH(n), false); break;
+    case 'GyroCupolaRotunda':      result = makeCupolaRotunda(n, cupolaH(n), true); break;
+    case 'ElongatedOrthoCupolaRotunda':
+      result = makeElongatedCupolaRotunda(n, sideLen(2*n), cupolaH(n), false);
+      break;
+    case 'ElongatedGyroCupolaRotunda':
+      result = makeElongatedCupolaRotunda(n, sideLen(2*n), cupolaH(n), true);
+      break;
+    case 'GyroelongatedCupolaRotunda': result = makeGyroelongatedCupolaRotunda(n); break;
   }
   return { vertices: result.vertices, faces: fixNormals(result.vertices, result.faces) };
 }
