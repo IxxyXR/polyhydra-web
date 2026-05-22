@@ -4,9 +4,8 @@ export interface Mesh {
   vertices: number[];
   faces: number[][];
   faceValues?: number[];
-  // Optional explicit role per mesh face, used by base tilings/solids that
-  // have known symmetric color classes. Omni-generated meshes usually omit
-  // this so role coloring is assigned by computeFaceColors graph coloring.
+  // Optional explicit role per mesh face, used by base tilings/solids and
+  // assigned by Omni from each output n-gon's construction signature.
   roleValues?: number[];
 }
 
@@ -71,6 +70,10 @@ interface OEdge {
   b: OVertex;
   atom: string;
   sourceEdgeKey: string | null;
+}
+
+interface SourceFaceRoleContext {
+  sideCount: number;
 }
 
 interface OperatorConnection {
@@ -1408,6 +1411,7 @@ function tryRewriteTwoBundleVfStarOrder(vertex: OVertex, outgoing: number[], edg
 
 function pruneUniqueLongestPositiveOrientationLoop(
   faceLoops: OVertex[][],
+  faceHalfedgeLoops: number[][],
   positiveOrientationIndices: number[]
 ) {
   if (positiveOrientationIndices.length === 0) {
@@ -1440,9 +1444,89 @@ function pruneUniqueLongestPositiveOrientationLoop(
   }
 
   faceLoops.splice(longest[0].index, 1);
+  faceHalfedgeLoops.splice(longest[0].index, 1);
 }
 
-function buildMeshFromEdges(edges: OEdge[]): Mesh {
+function canonicalCyclicSignature(parts: string[]): string {
+  if (parts.length === 0) {
+    return '';
+  }
+
+  const rotations = parts.map((_, index) => [
+    ...parts.slice(index),
+    ...parts.slice(0, index),
+  ].join('|'));
+  const reversed = [...parts].reverse();
+  rotations.push(...reversed.map((_, index) => [
+    ...reversed.slice(index),
+    ...reversed.slice(0, index),
+  ].join('|')));
+  rotations.sort();
+  return rotations[0];
+}
+
+function getSourceKeysByType(vertex: OVertex, prefix: 'f' | 'e' | 'v'): string[] {
+  const keyPrefix = `${prefix}:`;
+  return [...vertex.sourceKeys]
+    .filter((sourceKey) => sourceKey.startsWith(keyPrefix))
+    .map((sourceKey) => sourceKey.slice(keyPrefix.length));
+}
+
+function quantizeRoleNumber(value: number): string {
+  return (Math.round(value * 1000) / 1000).toFixed(3);
+}
+
+function getGeometricFaceRoleSignature(loop: OVertex[]): string {
+  const edgeLengths = loop.map((vertex, index) => (
+    vertex.position.distanceTo(loop[(index + 1) % loop.length].position)
+  ));
+  const meanLength = edgeLengths.reduce((sum, length) => sum + length, 0) / edgeLengths.length;
+  const parts = loop.map((vertex, index) => {
+    const previous = loop[(index + loop.length - 1) % loop.length].position.clone().sub(vertex.position).normalize();
+    const next = loop[(index + 1) % loop.length].position.clone().sub(vertex.position).normalize();
+    const angle = previous.angleTo(next);
+    const normalizedLength = meanLength < EPSILON ? 0 : edgeLengths[index] / meanLength;
+    return `l${quantizeRoleNumber(normalizedLength)}:a${quantizeRoleNumber(angle)}`;
+  });
+
+  return `${loop.length}:${canonicalCyclicSignature(parts)}`;
+}
+
+function getOmniFaceRoleSignature(
+  loop: OVertex[],
+  halfedgeLoop: number[],
+  edges: OEdge[],
+  sourceFaceContexts: Map<number, SourceFaceRoleContext>
+): string {
+  const geometricSignature = getGeometricFaceRoleSignature(loop);
+
+  const candidateFaceCounts = new Map<number, number>();
+  loop.forEach((vertex) => {
+    getSourceKeysByType(vertex, 'f').forEach((sourceFaceId) => {
+      const parsed = Number.parseInt(sourceFaceId, 10);
+      if (Number.isFinite(parsed)) {
+        candidateFaceCounts.set(parsed, (candidateFaceCounts.get(parsed) ?? 0) + 1);
+      }
+    });
+  });
+
+  const sourceFaceId = [...candidateFaceCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0];
+  const sourceFaceVertexCount = sourceFaceId === undefined ? 0 : candidateFaceCounts.get(sourceFaceId) ?? 0;
+  const sourceContext = sourceFaceId === undefined || sourceFaceVertexCount < loop.length
+    ? undefined
+    : sourceFaceContexts.get(sourceFaceId);
+  if (!sourceContext) {
+    return `free:${geometricSignature}`;
+  }
+
+  // Omni role coloring is based on final n-gon geometry, not source face ids
+  // or patch coordinates. Congruent child faces therefore stay congruent in
+  // color under rotations/reflections/translations of the input tiling.
+  return `face:${sourceContext.sideCount}:${geometricSignature}`;
+}
+
+function buildMeshFromEdges(edges: OEdge[], sourceFaceContexts: Map<number, SourceFaceRoleContext>): Mesh {
   if (edges.length === 0) {
     throw new Error('Omni operator produced no edges');
   }
@@ -1481,6 +1565,7 @@ function buildMeshFromEdges(edges: OEdge[]): Mesh {
 
   const visited = new Array<boolean>(halfedgeCount).fill(false);
   const faceLoops: OVertex[][] = [];
+  const faceHalfedgeLoops: number[][] = [];
   const positiveOrientationIndices: number[] = [];
 
   for (let start = 0; start < halfedgeCount; start++) {
@@ -1489,10 +1574,12 @@ function buildMeshFromEdges(edges: OEdge[]): Mesh {
     }
 
     const loop: OVertex[] = [];
+    const halfedgeLoop: number[] = [];
     let current = start;
     while (!visited[current]) {
       visited[current] = true;
       loop.push(halfedgeOrigins[current]);
+      halfedgeLoop.push(current);
       current = halfedgeNext[current];
       if (current < 0) {
         break;
@@ -1520,22 +1607,26 @@ function buildMeshFromEdges(edges: OEdge[]): Mesh {
 
     if (dot < 0) {
       loop.reverse();
+      halfedgeLoop.reverse();
     }
 
     const faceIndex = faceLoops.length;
     faceLoops.push(loop);
+    faceHalfedgeLoops.push(halfedgeLoop);
     if (dot >= 0) {
       positiveOrientationIndices.push(faceIndex);
     }
   }
 
-  pruneUniqueLongestPositiveOrientationLoop(faceLoops, positiveOrientationIndices);
+  pruneUniqueLongestPositiveOrientationLoop(faceLoops, faceHalfedgeLoops, positiveOrientationIndices);
 
   const vertices: number[] = [];
   const vertexIndices = new Map<OVertex, number>();
   const faces: number[][] = [];
+  const roleBySignature = new Map<string, number>();
+  const roleValues: number[] = [];
 
-  faceLoops.forEach((loop) => {
+  faceLoops.forEach((loop, faceIndex) => {
     const indices = loop.map((vertex) => {
       const existingIndex = vertexIndices.get(vertex);
       if (existingIndex !== undefined) {
@@ -1548,11 +1639,19 @@ function buildMeshFromEdges(edges: OEdge[]): Mesh {
       return nextIndex;
     });
     faces.push(indices);
+
+    const signature = getOmniFaceRoleSignature(loop, faceHalfedgeLoops[faceIndex], edges, sourceFaceContexts);
+    const existingRole = roleBySignature.get(signature);
+    if (existingRole !== undefined) {
+      roleValues.push(existingRole);
+    } else {
+      const nextRole = roleBySignature.size;
+      roleBySignature.set(signature, nextRole);
+      roleValues.push(nextRole);
+    }
   });
 
-  // Do not invent roleValues here. Omni output roles are assigned from the
-  // output n-gon adjacency graph in computeFaceColors when colorMode='role'.
-  return { vertices, faces };
+  return { vertices, faces, roleValues };
 }
 
 export function applyOmni(
@@ -1574,6 +1673,13 @@ export function applyOmni(
   if (Math.abs(resolvedTVf - resolvedTFe) < EPSILON) resolvedTFe += EPSILON;
 
   const sourceMesh = buildHalfedgeMesh(mesh);
+  const sourceFaceContexts = new Map<number, SourceFaceRoleContext>();
+  sourceMesh.faces.forEach((face) => {
+    const halfedges = sourceFaceHalfedges(face);
+    sourceFaceContexts.set(face.id, {
+      sideCount: halfedges.length,
+    });
+  });
   const atoms = parseOperatorNotation(operatorNotation);
   if (atoms.length === 0) {
     return cloneMesh(mesh);
@@ -1616,7 +1722,7 @@ export function applyOmni(
     });
   });
 
-  return buildMeshFromEdges(edges);
+  return buildMeshFromEdges(edges, sourceFaceContexts);
 }
 
 export function createOperatorSpec(notation: string, overrides: Partial<OperatorSpec> = {}): OperatorSpec {

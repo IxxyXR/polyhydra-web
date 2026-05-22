@@ -37,13 +37,9 @@ export function computeFaceColors(mesh: Mesh, palette: PaletteKey | string[], co
     }
   }
 
-  // Role mode for Omni output:
-  // Omni operators emit a new set of n-gon faces without explicit roleValues.
-  // In that case, the role assignment is this face-adjacency graph coloring:
-  // one role/color per output n-gon, and Three.js triangulation later inherits
-  // that face color for all triangles produced from the n-gon.
-  //
-  // This is intentional role-coloring behavior, not a generic visual fallback.
+  // Last-resort role assignment for meshes that do not carry explicit roles.
+  // Normal base tilings provide roleValues directly, and Omni-generated meshes
+  // assign roleValues from their output n-gon construction signatures.
   const { faces } = mesh;
   const edgeMap = new Map<string, number[]>();
 
