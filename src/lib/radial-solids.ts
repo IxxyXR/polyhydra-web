@@ -232,6 +232,7 @@ function centerAndNormalize(mesh: Mesh, targetRadius = 1.5): Mesh {
     vertices: centered,
     faces: mesh.faces.map((face) => [...face]),
     faceValues: mesh.faceValues ? [...mesh.faceValues] : undefined,
+    roleValues: mesh.roleValues ? [...mesh.roleValues] : undefined,
   };
 }
 

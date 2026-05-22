@@ -4,6 +4,10 @@ export interface Mesh {
   vertices: number[];
   faces: number[][];
   faceValues?: number[];
+  // Optional explicit role per mesh face, used by base tilings/solids that
+  // have known symmetric color classes. Omni-generated meshes usually omit
+  // this so role coloring is assigned by computeFaceColors graph coloring.
+  roleValues?: number[];
 }
 
 export interface OperatorSpec {
@@ -560,6 +564,8 @@ function cloneMesh(mesh: Mesh): Mesh {
   return {
     vertices: [...mesh.vertices],
     faces: mesh.faces.map((face) => [...face]),
+    faceValues: mesh.faceValues ? [...mesh.faceValues] : undefined,
+    roleValues: mesh.roleValues ? [...mesh.roleValues] : undefined,
   };
 }
 
@@ -1544,6 +1550,8 @@ function buildMeshFromEdges(edges: OEdge[]): Mesh {
     faces.push(indices);
   });
 
+  // Do not invent roleValues here. Omni output roles are assigned from the
+  // output n-gon adjacency graph in computeFaceColors when colorMode='role'.
   return { vertices, faces };
 }
 

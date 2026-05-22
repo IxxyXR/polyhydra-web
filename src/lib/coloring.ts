@@ -1,5 +1,5 @@
-import { Mesh } from './conway-operators';
 import { PALETTES, PaletteKey } from './palettes';
+import { Mesh } from './conway-operators';
 
 export type ColorMode = 'role' | 'sides' | 'value';
 
@@ -31,6 +31,19 @@ export function computeFaceColors(mesh: Mesh, palette: PaletteKey | string[], co
     });
   }
 
+  if (colorMode === 'role') {
+    if (mesh.roleValues && mesh.roleValues.length === mesh.faces.length) {
+      return mesh.roleValues.map((idx) => paletteColors[idx % paletteColors.length]);
+    }
+  }
+
+  // Role mode for Omni output:
+  // Omni operators emit a new set of n-gon faces without explicit roleValues.
+  // In that case, the role assignment is this face-adjacency graph coloring:
+  // one role/color per output n-gon, and Three.js triangulation later inherits
+  // that face color for all triangles produced from the n-gon.
+  //
+  // This is intentional role-coloring behavior, not a generic visual fallback.
   const { faces } = mesh;
   const edgeMap = new Map<string, number[]>();
 
@@ -56,7 +69,6 @@ export function computeFaceColors(mesh: Mesh, palette: PaletteKey | string[], co
     }
   }
 
-  // Welsh-Powell: Sort by degree descending
   const faceIndices = Array.from({ length: faces.length }, (_, i) => i);
   faceIndices.sort((a, b) => faceAdjacency[b].length - faceAdjacency[a].length);
 

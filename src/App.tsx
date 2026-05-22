@@ -212,6 +212,14 @@ const COLOR_MODE_TO_URL: Record<ColorMode, string> = {
   value: 'v',
 };
 
+function normalizeColorModeForTiling(colorMode: ColorMode, tilingType: string): ColorMode {
+  return colorMode === 'value' ? 'role' : colorMode;
+}
+
+function getRenderColorMode(colorMode: ColorMode, tilingType: string): ColorMode {
+  return tilingType === 'multigrid' && colorMode === 'role' ? 'value' : colorMode;
+}
+
 const TILING_URL_VALUES = [
   '3.3.3.3.3.3',
   '4.4.4.4',
@@ -663,7 +671,7 @@ export default function App() {
   const sendToBlenderNow = async () => {
     setBlenderStatus('sending');
     setBlenderError(null);
-    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization);
+    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), radialType, radialSides, generationOptions, finalization);
     if (result.ok) {
       setBlenderStatus('ok');
       setTimeout(() => setBlenderStatus('idle'), 3000);
@@ -810,7 +818,8 @@ export default function App() {
       getUrlParam(params, URL_KEYS.tiling, 'tiling'),
       TILING_ALIAS_TO_KEY
     );
-    setTilingType(urlTiling && UNIFORM_TILINGS[urlTiling] ? urlTiling : APP_DEFAULTS.tilingType);
+    const resolvedTilingType = urlTiling && UNIFORM_TILINGS[urlTiling] ? urlTiling : APP_DEFAULTS.tilingType;
+    setTilingType(resolvedTilingType);
 
     const urlSize = params.get(URL_KEYS.size);
     const urlRows = getUrlParam(params, URL_KEYS.rows, 'rows');
@@ -846,17 +855,16 @@ export default function App() {
     setShuffledColors(decodePaletteOrder(resolvedPalette, params.get(URL_KEYS.paletteOrder)));
 
     const urlColorMode = getUrlParam(params, URL_KEYS.colorMode, 'colorMode');
-    setColorMode(
-      urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value'
-        ? urlColorMode
-        : urlColorMode === COLOR_MODE_TO_URL.role
-          ? 'role'
-          : urlColorMode === COLOR_MODE_TO_URL.sides
-            ? 'sides'
-            : urlColorMode === COLOR_MODE_TO_URL.value
-              ? 'value'
-        : APP_DEFAULTS.colorMode
-    );
+    const resolvedColorMode: ColorMode = urlColorMode === 'role' || urlColorMode === 'sides' || urlColorMode === 'value'
+      ? urlColorMode
+      : urlColorMode === COLOR_MODE_TO_URL.role
+        ? 'role'
+        : urlColorMode === COLOR_MODE_TO_URL.sides
+          ? 'sides'
+          : urlColorMode === COLOR_MODE_TO_URL.value
+            ? 'value'
+            : APP_DEFAULTS.colorMode;
+    setColorMode(normalizeColorModeForTiling(resolvedColorMode, resolvedTilingType));
 
     const urlEdgeColor = getUrlParam(params, URL_KEYS.edgeColor, 'edgeColor');
     setEdgeColor(urlEdgeColor ?? APP_DEFAULTS.edgeColor);
@@ -1155,6 +1163,7 @@ export default function App() {
     }
   }, [operators, tilingType, selectedOperatorId]);
   const isMultigrid = tilingType === 'multigrid';
+  const renderColorMode = getRenderColorMode(colorMode, tilingType);
   const generationOptions: TilingGenerationOptions = useMemo(() => ({
     multigrid: multigridSettings,
   }), [multigridSettings]);
@@ -1173,7 +1182,7 @@ export default function App() {
     activeOperators,
     palette,
     shuffledColors,
-    colorMode,
+    renderColorMode,
     edgeColor,
     embossEnabled,
     embossWidth,
@@ -1229,9 +1238,7 @@ export default function App() {
 
   const selectTilingType = (key: string, closeMenu = true) => {
     setTilingType(key);
-    if (key === 'multigrid') {
-      setColorMode((current) => current === 'role' ? 'value' : current);
-    }
+    setColorMode((current) => normalizeColorModeForTiling(current, key));
     requestFitToExtents();
     if (closeMenu) {
       setTilingMenuOpen(false);
@@ -1802,18 +1809,18 @@ export default function App() {
                         <div className="space-y-2.5">
                           <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Faces</div>
                           <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
-                            <button
-                              onClick={() => setPaletteMenuOpen(!paletteMenuOpen)}
-                              className="w-full p-3 text-left transition-colors hover:bg-neutral-800/40"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-1">
-                                    Face Palette
-                                  </div>
-                                  <div className="text-xs font-semibold text-white truncate">{selectedPalette.name}</div>
-                                  <div className="flex items-center gap-2 mt-2">
-                                    <div className="flex -space-x-1">
+                            <div className="flex items-stretch">
+                              <button
+                                onClick={() => setPaletteMenuOpen(!paletteMenuOpen)}
+                                className="min-w-0 flex-1 p-3 text-left transition-colors hover:bg-neutral-800/40"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-1">
+                                      Face Palette
+                                    </div>
+                                    <div className="text-xs font-semibold text-white truncate">{selectedPalette.name}</div>
+                                    <div className="flex -space-x-1 mt-2">
                                       {(shuffledColors ?? selectedPalette.colors).slice(0, 5).map((c, i) => (
                                         <div
                                           key={i}
@@ -1822,28 +1829,27 @@ export default function App() {
                                         />
                                       ))}
                                     </div>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const colors = [...selectedPalette.colors];
-                                        for (let i = colors.length - 1; i > 0; i--) {
-                                          const j = Math.floor(Math.random() * (i + 1));
-                                          [colors[i], colors[j]] = [colors[j], colors[i]];
-                                        }
-                                        setShuffledColors(colors);
-                                      }}
-                                      className="p-0.5 text-neutral-500 hover:text-white transition-colors"
-                                      title="Shuffle palette order"
-                                    >
-                                      <Shuffle className="w-3 h-3" />
-                                    </button>
+                                  </div>
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                                    <ChevronRight className={`w-4 h-4 transition-transform ${paletteMenuOpen ? 'rotate-90 text-white' : ''}`} />
                                   </div>
                                 </div>
-                                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
-                                  <ChevronRight className={`w-4 h-4 transition-transform ${paletteMenuOpen ? 'rotate-90 text-white' : ''}`} />
-                                </div>
-                              </div>
-                            </button>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const colors = [...selectedPalette.colors];
+                                  for (let i = colors.length - 1; i > 0; i--) {
+                                    const j = Math.floor(Math.random() * (i + 1));
+                                    [colors[i], colors[j]] = [colors[j], colors[i]];
+                                  }
+                                  setShuffledColors(colors);
+                                }}
+                                className="flex w-10 shrink-0 items-center justify-center border-l border-neutral-800 text-neutral-500 transition-colors hover:bg-neutral-800/40 hover:text-white"
+                                title="Shuffle palette order"
+                              >
+                                <Shuffle className="w-3 h-3" />
+                              </button>
+                            </div>
 
                             <AnimatePresence initial={false}>
                               {paletteMenuOpen && (
@@ -2796,20 +2802,20 @@ export default function App() {
               <div className={`grid gap-2 ${mode === '3d' ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 {mode === '2d' && (
                 <button
-                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, colorMode, edgeColor, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, edgeColor, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   SVG
                 </button>
                 )}
                 <button
-                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OBJ+MTL
                 </button>
                 <button
-                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, colorMode, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OFF
@@ -2939,7 +2945,7 @@ export default function App() {
             operators={activeOperators}
             palette={palette}
             paletteColors={shuffledColors ?? undefined}
-            colorMode={colorMode}
+            colorMode={renderColorMode}
             edgeColor={edgeColor}
             embossEnabled={embossEnabled}
             embossWidth={embossWidth}

@@ -858,7 +858,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       faces = mesh.faces;
       meshBoundsRef.current = computeMeshBounds(vertices);
 
-      const computedFaceColors = computeFaceColors({ vertices, faces }, paletteColors ?? palette, colorMode);
+      const computedFaceColors = computeFaceColors(mesh, paletteColors ?? palette, colorMode);
       const faceTriangulations = faces.map((face) => triangulateFaces([face], vertices));
       const uniqueColorsUsed = new Set(computedFaceColors);
       const uniqueEdges = new Set<string>();

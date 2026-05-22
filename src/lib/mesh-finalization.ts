@@ -37,6 +37,7 @@ function cloneMesh(mesh: Mesh): Mesh {
     vertices: [...mesh.vertices],
     faces: mesh.faces.map((face) => [...face]),
     faceValues: mesh.faceValues ? [...mesh.faceValues] : undefined,
+    roleValues: mesh.roleValues ? [...mesh.roleValues] : undefined,
   };
 }
 

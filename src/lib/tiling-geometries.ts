@@ -6,6 +6,7 @@ export interface GeneratedTilingMesh {
   indices: number[];
   faces: number[][];
   faceValues?: number[];
+  roleValues?: number[];
 }
 
 export interface MultiGridSettings {
@@ -218,6 +219,97 @@ const buildPolygonMesh = (
     : { vertices, indices, faces };
 };
 
+const withRoleValuesByFaceSides = <T extends GeneratedTilingMesh>(mesh: T): T => {
+  const sideCounts = [...new Set(mesh.faces.map((face) => face.length))].sort((a, b) => a - b);
+  const roleBySideCount = new Map(sideCounts.map((sideCount, index) => [sideCount, index]));
+  return {
+    ...mesh,
+    roleValues: mesh.faces.map((face) => roleBySideCount.get(face.length) ?? 0),
+  };
+};
+
+const getFaceCentroid2D = (mesh: GeneratedTilingMesh, face: number[]) => {
+  const centroid = face.reduce(
+    (sum, vertexIndex) => {
+      sum.x += mesh.vertices[vertexIndex * 3];
+      sum.y += mesh.vertices[vertexIndex * 3 + 1];
+      return sum;
+    },
+    { x: 0, y: 0 },
+  );
+  return {
+    x: centroid.x / face.length,
+    y: centroid.y / face.length,
+  };
+};
+
+const withPeriodicRoleValues = <T extends GeneratedTilingMesh>(mesh: T, roleCount = 3): T => {
+  const centroids = mesh.faces.map((face, faceIndex) => ({
+    faceIndex,
+    ...getFaceCentroid2D(mesh, face),
+  }));
+  const sorted = [...centroids].sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows: typeof centroids[] = [];
+  const yTolerance = Math.max(
+    1e-6,
+    sorted.reduce((minDistance, centroid, index) => {
+      if (index === 0) return minDistance;
+      const distance = Math.abs(centroid.y - sorted[index - 1].y);
+      return distance > 1e-6 ? Math.min(minDistance, distance) : minDistance;
+    }, Number.POSITIVE_INFINITY) * 0.25,
+  );
+
+  sorted.forEach((centroid) => {
+    const row = rows.find((candidate) => Math.abs(candidate[0].y - centroid.y) <= yTolerance);
+    if (row) {
+      row.push(centroid);
+    } else {
+      rows.push([centroid]);
+    }
+  });
+
+  const roleValues = new Array(mesh.faces.length).fill(0);
+  rows.forEach((row, rowIndex) => {
+    row.sort((a, b) => a.x - b.x);
+    row.forEach((centroid, colIndex) => {
+      roleValues[centroid.faceIndex] = (rowIndex + colIndex) % roleCount;
+    });
+  });
+
+  return { ...mesh, roleValues };
+};
+
+const getFaceOrientationSignature = (mesh: GeneratedTilingMesh, face: number[]) => {
+  const angles = face.map((vertexIndex, index) => {
+    const nextIndex = face[(index + 1) % face.length];
+    const dx = mesh.vertices[nextIndex * 3] - mesh.vertices[vertexIndex * 3];
+    const dy = mesh.vertices[nextIndex * 3 + 1] - mesh.vertices[vertexIndex * 3 + 1];
+    const angle = Math.atan2(dy, dx);
+    return ((angle % Math.PI) + Math.PI) % Math.PI;
+  });
+
+  angles.sort((a, b) => a - b);
+  const normalized = angles.map((angle) => Math.round((angle / Math.PI) * 12) % 12);
+  return [...new Set(normalized)].join(',');
+};
+
+const withRoleValuesByFaceOrientation = <T extends GeneratedTilingMesh>(mesh: T): T => {
+  const roleBySignature = new Map<string, number>();
+  const roleValues = mesh.faces.map((face) => {
+    const signature = getFaceOrientationSignature(mesh, face);
+    const existingRole = roleBySignature.get(signature);
+    if (existingRole !== undefined) {
+      return existingRole;
+    }
+
+    const nextRole = roleBySignature.size;
+    roleBySignature.set(signature, nextRole);
+    return nextRole;
+  });
+
+  return { ...mesh, roleValues };
+};
+
 const getPolygonSignedArea = (polygon: THREE.Vector2[]): number => {
   let area = 0;
 
@@ -297,6 +389,7 @@ interface RepeatedTilePattern {
   tile: TileMesh2D;
   xOffset: THREE.Vector2;
   yOffset: THREE.Vector2;
+  roleValues?: number[];
 }
 
 interface MultiGridRhomb {
@@ -535,17 +628,48 @@ const normalizePattern = (pattern: RepeatedTilePattern): RepeatedTilePattern => 
   return pattern;
 };
 
+const getTileFaceOrientationSignature = (tile: TileMesh2D, face: number[]) => {
+  const angles = face.map((vertexIndex, index) => {
+    const nextIndex = face[(index + 1) % face.length];
+    const current = tile.vertices[vertexIndex];
+    const next = tile.vertices[nextIndex];
+    const angle = Math.atan2(next.y - current.y, next.x - current.x);
+    return Math.round(((((angle % Math.PI) + Math.PI) % Math.PI) / Math.PI) * 12) % 12;
+  });
+  angles.sort((a, b) => a - b);
+  return `${face.length}:${[...new Set(angles)].join(',')}`;
+};
+
+const getTileRoleValues = (tile: TileMesh2D) => {
+  const roleBySignature = new Map<string, number>();
+  return tile.faces.map((face) => {
+    const signature = getTileFaceOrientationSignature(tile, face);
+    const existingRole = roleBySignature.get(signature);
+    if (existingRole !== undefined) {
+      return existingRole;
+    }
+
+    const nextRole = roleBySignature.size;
+    roleBySignature.set(signature, nextRole);
+    return nextRole;
+  });
+};
+
 const createPattern = (
   tile: TileMesh2D,
   xOffsetA: number,
   xOffsetB: number,
   yOffsetA: number,
   yOffsetB: number,
-): RepeatedTilePattern => normalizePattern({
-  tile,
-  xOffset: tile.vertexDelta(xOffsetA, xOffsetB),
-  yOffset: tile.vertexDelta(yOffsetA, yOffsetB),
-});
+): RepeatedTilePattern => {
+  const roleValues = getTileRoleValues(tile);
+  return normalizePattern({
+    tile,
+    xOffset: tile.vertexDelta(xOffsetA, xOffsetB),
+    yOffset: tile.vertexDelta(yOffsetA, yOffsetB),
+    roleValues,
+  });
+};
 
 const buildRepeatedTile = (
   pattern: RepeatedTilePattern,
@@ -553,6 +677,7 @@ const buildRepeatedTile = (
   cols: number,
 ) : GeneratedTilingMesh => {
   const builder = new TilingMeshBuilder();
+  const roleValues: number[] = [];
   const xCentering = pattern.xOffset.clone().multiplyScalar((cols - 1) / 2);
   const yCentering = pattern.yOffset.clone().multiplyScalar((rows - 1) / 2);
 
@@ -561,16 +686,17 @@ const buildRepeatedTile = (
       const tileOffset = pattern.xOffset.clone().multiplyScalar(col).sub(xCentering)
         .add(pattern.yOffset.clone().multiplyScalar(row).sub(yCentering));
 
-      for (const face of pattern.tile.faces) {
+      pattern.tile.faces.forEach((face, faceIndex) => {
         builder.addFace(face.map((vertexIndex) => {
           const vertex = pattern.tile.vertices[vertexIndex].clone().add(tileOffset);
           return [vertex.x, vertex.y] as [number, number];
         }));
-      }
+        roleValues.push(pattern.roleValues?.[faceIndex] ?? face.length - 3);
+      });
     }
   }
 
-  return builder.build();
+  return { ...builder.build(), roleValues };
 };
 
 export const triangulateFaces = (faces: number[][], vertices: number[]): number[] => {
@@ -920,6 +1046,7 @@ const createDerivedTiling = (
   description: string,
   baseKey: string,
   operators: OperatorSpec[],
+  roleStrategy: 'periodic' | 'orientation' = 'periodic',
 ): TilingDefinition => ({
   name,
   config,
@@ -931,11 +1058,14 @@ const createDerivedTiling = (
       { vertices: base.vertices, faces: base.faces },
     );
 
-    return {
+    const mesh = {
       vertices: derived.vertices,
       faces: derived.faces,
       indices: triangulateFaces(derived.faces, derived.vertices),
     };
+    return roleStrategy === 'orientation'
+      ? withRoleValuesByFaceOrientation(mesh)
+      : withPeriodicRoleValues(mesh);
   },
 });
 
@@ -1031,7 +1161,11 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
           builder.addFace([[x + s, y], [x + 1.5 * s, y + h], [x + s / 2, y + h]]);
         }
       }
-      return builder.build();
+      const mesh = builder.build();
+      return {
+        ...mesh,
+        roleValues: mesh.faces.map((_, index) => index % 2),
+      };
     }
   },
 
@@ -1048,7 +1182,15 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
           builder.addFace([[c, r], [c+1, r], [c+1, r+1], [c, r+1]]);
         }
       }
-      return builder.build();
+      const mesh = builder.build();
+      return {
+        ...mesh,
+        roleValues: mesh.faces.map((_, index) => {
+          const row = Math.floor(index / cols);
+          const col = index % cols;
+          return (row + col) % 3;
+        }),
+      };
     }
   },
 
@@ -1070,7 +1212,15 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
           builder.addFace(regPoly(cx, cy, s, 6, Math.PI / 6));
         }
       }
-      return builder.build();
+      const mesh = builder.build();
+      return {
+        ...mesh,
+        roleValues: mesh.faces.map((_, index) => {
+          const row = Math.floor(index / cols);
+          const col = index % cols;
+          return (row + col) % 3;
+        }),
+      };
     }
   },
 
@@ -1097,7 +1247,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
         }
       }
       builder.fillTriangles();
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
@@ -1120,7 +1270,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
           builder.addFace(regPoly((c + 0.5) * D, (r + 0.5) * D, rSq, 4, 0));
         }
       }
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
@@ -1146,7 +1296,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
         }
       }
       builder.fillTriangles();
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
@@ -1182,7 +1332,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
         }
       }
       builder.fillTriangles();
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
@@ -1223,7 +1373,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
           builder.addFace(regPoly(cx, cy + (2 * h / 3), rHex, 6, 0));
         }
       }
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
@@ -1255,7 +1405,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
       }
       
       builder.fillTriangles();
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
@@ -1281,7 +1431,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
         }
       }
       builder.fillTriangles();
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
@@ -1312,17 +1462,44 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
       }
       
       builder.fillTriangles();
-      return builder.build();
+      return withRoleValuesByFaceSides(builder.build());
     }
   },
 
-  'tetrakis-square': createDerivedTiling(
-    'Tetrakis Square',
-    '3.3.4',
-    'Catalan tiling dual to the truncated square tiling.',
-    '4.4.4.4',
-    [createOperatorSpec('kis')],
-  ),
+  'tetrakis-square': {
+    name: 'Tetrakis Square',
+    config: '3.3.4',
+    description: 'Catalan tiling dual to the truncated square tiling.',
+    generate: (rows, cols) => {
+      const builder = new TilingMeshBuilder();
+      const roleValues: number[] = [];
+
+      for (let rowIndex = 0; rowIndex < rows; rowIndex++) {
+        const r = gridOffset(rowIndex, rows);
+        for (let colIndex = 0; colIndex < cols; colIndex++) {
+          const c = gridOffset(colIndex, cols);
+          const x = c;
+          const y = r;
+          const center: [number, number] = [x + 0.5, y + 0.5];
+          const bottomLeft: [number, number] = [x, y];
+          const bottomRight: [number, number] = [x + 1, y];
+          const topRight: [number, number] = [x + 1, y + 1];
+          const topLeft: [number, number] = [x, y + 1];
+
+          builder.addFace([bottomLeft, bottomRight, center]);
+          roleValues.push(0);
+          builder.addFace([bottomRight, topRight, center]);
+          roleValues.push(1);
+          builder.addFace([topRight, topLeft, center]);
+          roleValues.push(2);
+          builder.addFace([topLeft, bottomLeft, center]);
+          roleValues.push(3);
+        }
+      }
+
+      return { ...builder.build(), roleValues };
+    },
+  },
 
   'cairo-pentagonal': createDerivedTiling(
     'Cairo Pentagonal',
@@ -1330,6 +1507,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
     'Catalan tiling dual to the snub square tiling.',
     '3.3.4.3.4',
     [createOperatorSpec('dual')],
+    'orientation',
   ),
 
   'rhombille': createDerivedTiling(
@@ -1338,6 +1516,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
     'Catalan tiling dual to the trihexagonal tiling.',
     '3.6.3.6',
     [createOperatorSpec('dual')],
+    'orientation',
   ),
 
   'triakis-triangular': createDerivedTiling(
@@ -1354,6 +1533,7 @@ export const UNIFORM_TILINGS: Record<string, TilingDefinition> = {
     'Catalan tiling dual to the rhombitrihexagonal tiling.',
     '3.4.6.4',
     [createOperatorSpec('dual')],
+    'orientation',
   ),
 
   'kisrhombille': createDerivedTiling(

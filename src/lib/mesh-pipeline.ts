@@ -26,22 +26,19 @@ export function generateFinalMesh({
   generationOptions,
   finalization = 'planarize',
 }: FinalMeshOptions): Mesh | null {
-  let vertices: number[];
-  let faces: number[][];
+  let mesh: Mesh;
 
   if (mode === '3d') {
     const solid = buildRadialSolid(radialType, radialSides);
-    vertices = solid.vertices;
-    faces = solid.faces;
+    mesh = solid;
   } else {
     const tiling = UNIFORM_TILINGS[tilingType];
     if (!tiling) {
       return null;
     }
-    ({ vertices, faces } = tiling.generate(rows, cols, generationOptions));
+    mesh = tiling.generate(rows, cols, generationOptions);
   }
 
-  let mesh: Mesh = { vertices, faces };
   for (const operator of operators) {
     mesh = applyOperator(mesh, operator);
   }
