@@ -1206,6 +1206,46 @@ export default function App() {
     groups[group].push([key, tiling]);
     return groups;
   }, {});
+  const radialTypeCycle = useMemo(
+    () => RADIAL_SHAPE_GROUPS.flatMap((group) => group.types),
+    [],
+  );
+  const tilingTypeCycle = useMemo(
+    () => TILING_GROUP_ORDER.flatMap((groupName) => (
+      tilingGroups[groupName]?.map(([key]) => key) ?? []
+    )),
+    [tilingGroups],
+  );
+
+  const cycleRadialType = (direction: -1 | 1) => {
+    const currentIndex = radialTypeCycle.indexOf(radialType);
+    const nextIndex = currentIndex === -1
+      ? 0
+      : (currentIndex + direction + radialTypeCycle.length) % radialTypeCycle.length;
+
+    setRadialType(radialTypeCycle[nextIndex]);
+    requestFitToExtents();
+  };
+
+  const selectTilingType = (key: string, closeMenu = true) => {
+    setTilingType(key);
+    if (key === 'multigrid') {
+      setColorMode((current) => current === 'role' ? 'value' : current);
+    }
+    requestFitToExtents();
+    if (closeMenu) {
+      setTilingMenuOpen(false);
+    }
+  };
+
+  const cycleTilingType = (direction: -1 | 1) => {
+    const currentIndex = tilingTypeCycle.indexOf(tilingType);
+    const nextIndex = currentIndex === -1
+      ? 0
+      : (currentIndex + direction + tilingTypeCycle.length) % tilingTypeCycle.length;
+
+    selectTilingType(tilingTypeCycle[nextIndex], false);
+  };
 
   useEffect(() => {
     if (!shapeMenuOpen) return;
@@ -1419,23 +1459,43 @@ export default function App() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                  <button
-                    onClick={() => {
-                      if (!shapeMenuOpen) setShapeEverOpened(true);
-                      setShapeMenuOpen(!shapeMenuOpen);
-                    }}
-                    className="w-full p-4 text-left transition-colors hover:bg-neutral-800/40"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-2">Active Shape</div>
-                        <div className="text-sm font-semibold text-white truncate">{RADIAL_SOLID_NAMES[radialType]}</div>
+                  <div className="flex items-stretch">
+                    <button
+                      onClick={() => {
+                        if (!shapeMenuOpen) setShapeEverOpened(true);
+                        setShapeMenuOpen(!shapeMenuOpen);
+                      }}
+                      className="min-w-0 flex-1 p-4 text-left transition-colors hover:bg-neutral-800/40"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-2">Active Shape</div>
+                          <div className="text-sm font-semibold text-white truncate">{RADIAL_SOLID_NAMES[radialType]}</div>
+                        </div>
+                        <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                          <ChevronRight className={`w-4 h-4 transition-transform ${shapeMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                        </div>
                       </div>
-                      <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
-                        <ChevronRight className={`w-4 h-4 transition-transform ${shapeMenuOpen ? 'rotate-90 text-white' : ''}`} />
-                      </div>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1 border-l border-neutral-800 px-3">
+                      <button
+                        onClick={() => cycleRadialType(-1)}
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400 transition-colors hover:border-blue-700/70 hover:text-white"
+                        title="Previous shape"
+                        aria-label="Previous shape"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => cycleRadialType(1)}
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400 transition-colors hover:border-blue-700/70 hover:text-white"
+                        title="Next shape"
+                        aria-label="Next shape"
+                      >
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                  </button>
+                  </div>
                   <AnimatePresence initial={false}>
                     {shapeMenuOpen && (
                       <motion.div
@@ -1491,25 +1551,45 @@ export default function App() {
                   )}
                 </AnimatePresence>
 
-                <button
-                  onClick={() => {
-                    if (!tilingMenuOpen) setTilingEverOpened(true);
-                    setTilingMenuOpen(!tilingMenuOpen);
-                  }}
-                  className="w-full p-4 text-left transition-colors hover:bg-neutral-800/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-2">
-                        Active Tiling
+                <div className="flex items-stretch">
+                  <button
+                    onClick={() => {
+                      if (!tilingMenuOpen) setTilingEverOpened(true);
+                      setTilingMenuOpen(!tilingMenuOpen);
+                    }}
+                    className="min-w-0 flex-1 p-4 text-left transition-colors hover:bg-neutral-800/40"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-2">
+                          Active Tiling
+                        </div>
+                        <div className="text-sm font-semibold text-white truncate">{selectedTiling?.name}</div>
                       </div>
-                      <div className="text-sm font-semibold text-white truncate">{selectedTiling?.name}</div>
+                      <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                        <ChevronRight className={`w-4 h-4 transition-transform ${tilingMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                      </div>
                     </div>
-                    <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
-                      <ChevronRight className={`w-4 h-4 transition-transform ${tilingMenuOpen ? 'rotate-90 text-white' : ''}`} />
-                    </div>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1 border-l border-neutral-800 px-3">
+                    <button
+                      onClick={() => cycleTilingType(-1)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400 transition-colors hover:border-blue-700/70 hover:text-white"
+                      title="Previous tiling"
+                      aria-label="Previous tiling"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => cycleTilingType(1)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400 transition-colors hover:border-blue-700/70 hover:text-white"
+                      title="Next tiling"
+                      aria-label="Next tiling"
+                    >
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                </button>
+                </div>
 
                 <AnimatePresence initial={false}>
                   {tilingMenuOpen && (
@@ -1535,14 +1615,7 @@ export default function App() {
                                 <button
                                   key={key}
                                   ref={tilingType === key ? selectedTilingButtonRef : null}
-                                  onClick={() => {
-                                    setTilingType(key);
-                                    if (key === 'multigrid') {
-                                      setColorMode((current) => current === 'role' ? 'value' : current);
-                                    }
-                                    requestFitToExtents();
-                                    setTilingMenuOpen(false);
-                                  }}
+                                  onClick={() => selectTilingType(key)}
                                   className={`w-full rounded-xl p-3 text-left transition-all ${
                                     tilingType === key
                                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
