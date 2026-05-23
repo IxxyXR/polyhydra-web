@@ -82,6 +82,8 @@ const APP_DEFAULTS = {
   finalization: 'planarize' as MeshFinalizationMode,
   palette: 'vibrant' as PaletteKey,
   colorMode: 'role' as ColorMode,
+  roleColorCount: 8,
+  roleGeometryDetail: 3,
   edgeColor: '#3b82f6',
   embossEnabled: true,
   embossWidth: 0.015,
@@ -170,6 +172,8 @@ const URL_KEYS = {
   palette: 'p',
   paletteOrder: 'po',
   colorMode: 'cm',
+  roleColorCount: 'rc',
+  roleGeometryDetail: 'rd',
   edgeColor: 'ec',
   embossEnabled: 'em',
   embossWidth: 'ew',
@@ -505,6 +509,8 @@ function buildAppSearchParams(state: {
   palette: PaletteKey;
   paletteColors: string[] | null;
   colorMode: ColorMode;
+  roleColorCount: number;
+  roleGeometryDetail: number;
   edgeColor: string;
   embossEnabled: boolean;
   embossWidth: number;
@@ -551,6 +557,8 @@ function buildAppSearchParams(state: {
     params.set(URL_KEYS.paletteOrder, encodedPaletteOrder);
   }
   setParamIfNeeded(params, URL_KEYS.colorMode, COLOR_MODE_TO_URL[state.colorMode], COLOR_MODE_TO_URL[APP_DEFAULTS.colorMode]);
+  setParamIfNeeded(params, URL_KEYS.roleColorCount, state.roleColorCount, APP_DEFAULTS.roleColorCount);
+  setParamIfNeeded(params, URL_KEYS.roleGeometryDetail, state.roleGeometryDetail, APP_DEFAULTS.roleGeometryDetail);
   setParamIfNeeded(params, URL_KEYS.edgeColor, state.edgeColor, APP_DEFAULTS.edgeColor);
   setParamIfNeeded(params, URL_KEYS.embossEnabled, Number(state.embossEnabled), Number(APP_DEFAULTS.embossEnabled));
   setParamIfNeeded(params, URL_KEYS.embossWidth, state.embossWidth, APP_DEFAULTS.embossWidth);
@@ -645,6 +653,8 @@ export default function App() {
   const [palette, setPalette] = useState<PaletteKey>(APP_DEFAULTS.palette);
   const [shuffledColors, setShuffledColors] = useState<string[] | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>(APP_DEFAULTS.colorMode);
+  const [roleColorCount, setRoleColorCount] = useState(APP_DEFAULTS.roleColorCount);
+  const [roleGeometryDetail, setRoleGeometryDetail] = useState(APP_DEFAULTS.roleGeometryDetail);
   const [edgeColor, setEdgeColor] = useState(APP_DEFAULTS.edgeColor);
   const [embossEnabled, setEmbossEnabled] = useState(APP_DEFAULTS.embossEnabled);
   const [embossWidth, setEmbossWidth] = useState(APP_DEFAULTS.embossWidth);
@@ -671,7 +681,7 @@ export default function App() {
   const sendToBlenderNow = async () => {
     setBlenderStatus('sending');
     setBlenderError(null);
-    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), radialType, radialSides, generationOptions, finalization);
+    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), roleColorCount, roleGeometryDetail, radialType, radialSides, generationOptions, finalization);
     if (result.ok) {
       setBlenderStatus('ok');
       setTimeout(() => setBlenderStatus('idle'), 3000);
@@ -866,6 +876,12 @@ export default function App() {
             : APP_DEFAULTS.colorMode;
     setColorMode(normalizeColorModeForTiling(resolvedColorMode, resolvedTilingType));
 
+    const parsedRoleColorCount = parseIntParam(getUrlParam(params, URL_KEYS.roleColorCount, 'roleColors'), APP_DEFAULTS.roleColorCount);
+    setRoleColorCount(Math.min(Math.max(parsedRoleColorCount, 2), 8));
+
+    const parsedRoleGeometryDetail = parseIntParam(getUrlParam(params, URL_KEYS.roleGeometryDetail, 'roleDetail'), APP_DEFAULTS.roleGeometryDetail);
+    setRoleGeometryDetail(Math.min(Math.max(parsedRoleGeometryDetail, 0), 5));
+
     const urlEdgeColor = getUrlParam(params, URL_KEYS.edgeColor, 'edgeColor');
     setEdgeColor(urlEdgeColor ?? APP_DEFAULTS.edgeColor);
 
@@ -971,6 +987,8 @@ export default function App() {
       palette,
       paletteColors: shuffledColors,
       colorMode,
+      roleColorCount,
+      roleGeometryDetail,
       edgeColor,
       embossEnabled,
       embossWidth,
@@ -994,7 +1012,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
+  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
 
 
   const applyPreset = (preset: AppPreset) => {
@@ -1007,7 +1025,7 @@ export default function App() {
 
   const saveCurrentPreset = () => {
     if (!newPresetName.trim()) return;
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
     setUserPresets(getUserPresets());
     setNewPresetName('');
@@ -1015,7 +1033,7 @@ export default function App() {
   };
 
   const copyCurrentAsExamplePreset = async () => {
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     const entry = `{ name: 'name', params: '${params.toString()}'},`;
     await navigator.clipboard.writeText(entry);
   };
@@ -1250,6 +1268,8 @@ export default function App() {
     palette,
     shuffledColors,
     renderColorMode,
+    roleColorCount,
+    roleGeometryDetail,
     edgeColor,
     embossEnabled,
     embossWidth,
@@ -1976,6 +1996,40 @@ export default function App() {
                               By Sides
                             </button>
                           </div>
+                          {colorMode === 'role' && (
+                            <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Role Colors</span>
+                                  <span className="font-mono text-neutral-300">{roleColorCount}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={2}
+                                  max={(shuffledColors ?? selectedPalette.colors).length}
+                                  step={1}
+                                  value={Math.min(roleColorCount, (shuffledColors ?? selectedPalette.colors).length)}
+                                  onChange={(e) => setRoleColorCount(Number(e.target.value))}
+                                  className="w-full accent-blue-500"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Role Detail</span>
+                                  <span className="font-mono text-neutral-300">{roleGeometryDetail}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={5}
+                                  step={1}
+                                  value={roleGeometryDetail}
+                                  onChange={(e) => setRoleGeometryDetail(Number(e.target.value))}
+                                  className="w-full accent-blue-500"
+                                />
+                              </div>
+                            </div>
+                          )}
                           <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
                             <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
                             <input type="checkbox" checked={showFaces} onChange={(e) => setShowFaces(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
@@ -2869,20 +2923,20 @@ export default function App() {
               <div className={`grid gap-2 ${mode === '3d' ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 {mode === '2d' && (
                 <button
-                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, edgeColor, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, edgeColor, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   SVG
                 </button>
                 )}
                 <button
-                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OBJ+MTL
                 </button>
                 <button
-                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OFF
@@ -2944,6 +2998,8 @@ export default function App() {
                     palette,
                     paletteColors: shuffledColors,
                     colorMode,
+                    roleColorCount,
+                    roleGeometryDetail,
                     edgeColor,
                     embossEnabled,
                     embossWidth,
@@ -3013,6 +3069,8 @@ export default function App() {
             palette={palette}
             paletteColors={shuffledColors ?? undefined}
             colorMode={renderColorMode}
+            roleColorCount={roleColorCount}
+            roleGeometryDetail={roleGeometryDetail}
             edgeColor={edgeColor}
             embossEnabled={embossEnabled}
             embossWidth={embossWidth}

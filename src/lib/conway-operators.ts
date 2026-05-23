@@ -14,6 +14,7 @@ export interface OperatorSpec {
   tVe: number;
   tVf: number;
   tFe: number;
+  roleGeometryDetail?: number;
 }
 
 export interface OmniParamVisibility {
@@ -1472,11 +1473,13 @@ function getSourceKeysByType(vertex: OVertex, prefix: 'f' | 'e' | 'v'): string[]
     .map((sourceKey) => sourceKey.slice(keyPrefix.length));
 }
 
-function quantizeRoleNumber(value: number): string {
-  return (Math.round(value * 1000) / 1000).toFixed(3);
+function quantizeRoleNumber(value: number, roleGeometryDetail: number): string {
+  const precision = Math.min(Math.max(Math.round(roleGeometryDetail), 0), 5);
+  const scale = 10 ** precision;
+  return (Math.round(value * scale) / scale).toFixed(precision);
 }
 
-function getGeometricFaceRoleSignature(loop: OVertex[]): string {
+function getGeometricFaceRoleSignature(loop: OVertex[], roleGeometryDetail: number): string {
   const edgeLengths = loop.map((vertex, index) => (
     vertex.position.distanceTo(loop[(index + 1) % loop.length].position)
   ));
@@ -1486,7 +1489,7 @@ function getGeometricFaceRoleSignature(loop: OVertex[]): string {
     const next = loop[(index + 1) % loop.length].position.clone().sub(vertex.position).normalize();
     const angle = previous.angleTo(next);
     const normalizedLength = meanLength < EPSILON ? 0 : edgeLengths[index] / meanLength;
-    return `l${quantizeRoleNumber(normalizedLength)}:a${quantizeRoleNumber(angle)}`;
+    return `l${quantizeRoleNumber(normalizedLength, roleGeometryDetail)}:a${quantizeRoleNumber(angle, roleGeometryDetail)}`;
   });
 
   return `${loop.length}:${canonicalCyclicSignature(parts)}`;
@@ -1496,9 +1499,10 @@ function getOmniFaceRoleSignature(
   loop: OVertex[],
   halfedgeLoop: number[],
   edges: OEdge[],
-  sourceFaceContexts: Map<number, SourceFaceRoleContext>
+  sourceFaceContexts: Map<number, SourceFaceRoleContext>,
+  roleGeometryDetail: number
 ): string {
-  const geometricSignature = getGeometricFaceRoleSignature(loop);
+  const geometricSignature = getGeometricFaceRoleSignature(loop, roleGeometryDetail);
 
   const candidateFaceCounts = new Map<number, number>();
   loop.forEach((vertex) => {
@@ -1526,7 +1530,11 @@ function getOmniFaceRoleSignature(
   return `face:${sourceContext.sideCount}:${geometricSignature}`;
 }
 
-function buildMeshFromEdges(edges: OEdge[], sourceFaceContexts: Map<number, SourceFaceRoleContext>): Mesh {
+function buildMeshFromEdges(
+  edges: OEdge[],
+  sourceFaceContexts: Map<number, SourceFaceRoleContext>,
+  roleGeometryDetail: number
+): Mesh {
   if (edges.length === 0) {
     throw new Error('Omni operator produced no edges');
   }
@@ -1640,7 +1648,13 @@ function buildMeshFromEdges(edges: OEdge[], sourceFaceContexts: Map<number, Sour
     });
     faces.push(indices);
 
-    const signature = getOmniFaceRoleSignature(loop, faceHalfedgeLoops[faceIndex], edges, sourceFaceContexts);
+    const signature = getOmniFaceRoleSignature(
+      loop,
+      faceHalfedgeLoops[faceIndex],
+      edges,
+      sourceFaceContexts,
+      roleGeometryDetail,
+    );
     const existingRole = roleBySignature.get(signature);
     if (existingRole !== undefined) {
       roleValues.push(existingRole);
@@ -1659,7 +1673,8 @@ export function applyOmni(
   operatorNotation: string,
   tVe = DEFAULT_OMNI_PARAMS.tVe,
   tVf = DEFAULT_OMNI_PARAMS.tVf,
-  tFe = DEFAULT_OMNI_PARAMS.tFe
+  tFe = DEFAULT_OMNI_PARAMS.tFe,
+  roleGeometryDetail = 3
 ): Mesh {
   if (!operatorNotation.trim()) {
     return cloneMesh(mesh);
@@ -1722,7 +1737,7 @@ export function applyOmni(
     });
   });
 
-  return buildMeshFromEdges(edges, sourceFaceContexts);
+  return buildMeshFromEdges(edges, sourceFaceContexts, roleGeometryDetail);
 }
 
 export function createOperatorSpec(notation: string, overrides: Partial<OperatorSpec> = {}): OperatorSpec {
@@ -1797,7 +1812,8 @@ export function applyOperator(mesh: Mesh, operator: string | OperatorSpec): Mesh
       resolveOperatorNotation(operator.notation),
       operator.tVe,
       operator.tVf,
-      operator.tFe
+      operator.tFe,
+      operator.roleGeometryDetail
     );
   }
 

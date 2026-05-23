@@ -849,6 +849,8 @@ interface TilingCanvasProps {
   palette: PaletteKey;
   paletteColors?: string[];
   colorMode: ColorMode;
+  roleColorCount?: number;
+  roleGeometryDetail?: number;
   edgeColor: string;
   embossEnabled?: boolean;
   embossWidth?: number;
@@ -897,6 +899,8 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   palette,
   paletteColors,
   colorMode,
+  roleColorCount,
+  roleGeometryDetail,
   edgeColor,
   embossEnabled = true,
   embossWidth = DEFAULT_EMBOSS_WIDTH,
@@ -1399,6 +1403,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         operators,
         radialType,
         radialSides,
+        roleGeometryDetail,
         generationOptions,
         finalization,
       });
@@ -1407,7 +1412,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       faces = mesh.faces;
       meshBoundsRef.current = computeMeshBounds(vertices);
 
-      const computedFaceColors = computeFaceColors(mesh, paletteColors ?? palette, colorMode);
+      const computedFaceColors = computeFaceColors(mesh, paletteColors ?? palette, colorMode, { roleColorCount });
       const faceTriangulations = faces.map((face) => triangulateFaces([face], vertices));
       const uniqueColorsUsed = new Set(computedFaceColors);
       const uniqueEdges = new Set<string>();
@@ -1594,7 +1599,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         window.clearTimeout(embossTimeoutId);
       }
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey, onGeometryGenerationChange]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey, onGeometryGenerationChange]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 });

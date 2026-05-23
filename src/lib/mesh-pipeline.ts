@@ -11,6 +11,7 @@ export interface FinalMeshOptions {
   operators: OperatorSpec[];
   radialType: RadialPolyType;
   radialSides: number;
+  roleGeometryDetail?: number;
   generationOptions?: TilingGenerationOptions;
   finalization?: MeshFinalizationMode;
 }
@@ -23,6 +24,7 @@ export function generateFinalMesh({
   operators,
   radialType,
   radialSides,
+  roleGeometryDetail,
   generationOptions,
   finalization = 'planarize',
 }: FinalMeshOptions): Mesh | null {
@@ -40,7 +42,7 @@ export function generateFinalMesh({
   }
 
   for (const operator of operators) {
-    mesh = applyOperator(mesh, operator);
+    mesh = applyOperator(mesh, { ...operator, roleGeometryDetail });
   }
 
   if (mode === '3d' && finalization !== 'none') {

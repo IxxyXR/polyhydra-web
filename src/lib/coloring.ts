@@ -3,7 +3,24 @@ import { Mesh } from './conway-operators';
 
 export type ColorMode = 'role' | 'sides' | 'value';
 
-export function computeFaceColors(mesh: Mesh, palette: PaletteKey | string[], colorMode: ColorMode = 'role'): string[] {
+export interface FaceColorOptions {
+  roleColorCount?: number;
+}
+
+function getRolePaletteColors(paletteColors: string[], options?: FaceColorOptions): string[] {
+  const roleColorCount = Math.min(
+    paletteColors.length,
+    Math.max(2, Math.round(options?.roleColorCount ?? paletteColors.length)),
+  );
+  return paletteColors.slice(0, roleColorCount);
+}
+
+export function computeFaceColors(
+  mesh: Mesh,
+  palette: PaletteKey | string[],
+  colorMode: ColorMode = 'role',
+  options?: FaceColorOptions,
+): string[] {
   const paletteColors = Array.isArray(palette) ? palette : PALETTES[palette].colors;
 
   if (colorMode === 'sides') {
@@ -33,7 +50,8 @@ export function computeFaceColors(mesh: Mesh, palette: PaletteKey | string[], co
 
   if (colorMode === 'role') {
     if (mesh.roleValues && mesh.roleValues.length === mesh.faces.length) {
-      return mesh.roleValues.map((idx) => paletteColors[idx % paletteColors.length]);
+      const rolePaletteColors = getRolePaletteColors(paletteColors, options);
+      return mesh.roleValues.map((idx) => rolePaletteColors[idx % rolePaletteColors.length]);
     }
   }
 
@@ -84,5 +102,6 @@ export function computeFaceColors(mesh: Mesh, palette: PaletteKey | string[], co
     colorIndices[i] = color;
   }
 
-  return Array.from(colorIndices).map(idx => paletteColors[idx % paletteColors.length]);
+  const rolePaletteColors = getRolePaletteColors(paletteColors, options);
+  return Array.from(colorIndices).map(idx => rolePaletteColors[idx % rolePaletteColors.length]);
 }
