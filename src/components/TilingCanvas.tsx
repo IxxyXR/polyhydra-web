@@ -8,7 +8,7 @@ import { TilingGenerationOptions, triangulateFaces } from '../lib/tiling-geometr
 import { PaletteKey } from '../lib/palettes';
 import { RadialPolyType } from '../lib/radial-solids';
 
-import { OperatorSpec } from '../lib/conway-operators';
+import { OperatorSpec, RoleShapeBasis } from '../lib/conway-operators';
 import { ColorMode, computeFaceColors } from '../lib/coloring';
 import { MeshFinalizationMode } from '../lib/mesh-finalization';
 import { generateFinalMesh } from '../lib/mesh-pipeline';
@@ -576,6 +576,7 @@ function createXRControllerFallback() {
     roughness: 0.5,
     metalness: 0,
   });
+  accentMaterial.userData.isControllerAccent = true;
 
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.12, 0.18), bodyMaterial);
   body.position.set(0, -0.02, -0.035);
@@ -587,6 +588,15 @@ function createXRControllerFallback() {
   group.add(trigger);
 
   return group;
+}
+
+function setXRControllerFallbackColor(group: THREE.Object3D, color: number) {
+  group.traverse((child) => {
+    const material = (child as THREE.Mesh).material;
+    if (material instanceof THREE.MeshStandardMaterial && material.userData.isControllerAccent) {
+      material.color.set(color);
+    }
+  });
 }
 
 function createXRControllerRay(color: number) {
@@ -867,6 +877,9 @@ interface TilingCanvasProps {
   colorMode: ColorMode;
   roleColorCount?: number;
   roleGeometryDetail?: number;
+  roleShapeBasis?: RoleShapeBasis;
+  sideModulo?: number;
+  sideOffset?: number;
   edgeColor: string;
   embossEnabled?: boolean;
   embossWidth?: number;
@@ -917,6 +930,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   colorMode,
   roleColorCount,
   roleGeometryDetail,
+  roleShapeBasis,
+  sideModulo,
+  sideOffset,
   edgeColor,
   embossEnabled = true,
   embossWidth = DEFAULT_EMBOSS_WIDTH,
@@ -1164,17 +1180,27 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       const ray = createXRControllerRay(index === 0 ? 0x38bdf8 : 0xf97316);
       ray.visible = false;
       controller.add(ray);
+      const aimFallback = createXRControllerFallback();
+      aimFallback.name = 'xr-controller-target-ray-fallback-model';
+      aimFallback.position.set(0, -0.035, -0.08);
+      aimFallback.rotation.x = -0.35;
+      aimFallback.scale.setScalar(0.72);
+      aimFallback.visible = false;
+      controller.add(aimFallback);
       const handleConnected = (event: any) => {
         const handedness = event.data?.handedness;
         controller.userData.inputSource = event.data;
         const color = handedness === 'right' ? 0xf97316 : 0x38bdf8;
         const material = ray.material as THREE.LineBasicMaterial;
         material.color.set(color);
+        setXRControllerFallbackColor(aimFallback, color);
         ray.visible = true;
+        aimFallback.visible = true;
       };
       const handleDisconnected = () => {
         delete controller.userData.inputSource;
         ray.visible = false;
+        aimFallback.visible = false;
       };
       controller.addEventListener('connected', handleConnected);
       controller.addEventListener('disconnected', handleDisconnected);
@@ -1187,7 +1213,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       const grip = renderer.xr.getControllerGrip(index);
       grip.name = `xr-controller-grip-${index}`;
       grip.add(controllerModelFactory.createControllerModel(grip));
-      grip.add(createXRControllerFallback());
+      const gripFallback = createXRControllerFallback();
+      setXRControllerFallbackColor(gripFallback, index === 0 ? 0x38bdf8 : 0xf97316);
+      grip.add(gripFallback);
       xrRig.add(grip);
     }
 
@@ -1436,6 +1464,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         radialType,
         radialSides,
         roleGeometryDetail,
+        roleShapeBasis,
         generationOptions,
         finalization,
       });
@@ -1444,7 +1473,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       faces = mesh.faces;
       meshBoundsRef.current = computeMeshBounds(vertices);
 
-      const computedFaceColors = computeFaceColors(mesh, paletteColors ?? palette, colorMode, { roleColorCount });
+      const computedFaceColors = computeFaceColors(mesh, paletteColors ?? palette, colorMode, { roleColorCount, sideModulo, sideOffset });
       const faceTriangulations = faces.map((face) => triangulateFaces([face], vertices));
       const uniqueColorsUsed = new Set(computedFaceColors);
       const uniqueEdges = new Set<string>();
@@ -1631,7 +1660,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         window.clearTimeout(embossTimeoutId);
       }
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey, onGeometryGenerationChange]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey, onGeometryGenerationChange]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 });

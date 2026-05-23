@@ -5,6 +5,8 @@ export type ColorMode = 'role' | 'sides' | 'value';
 
 export interface FaceColorOptions {
   roleColorCount?: number;
+  sideModulo?: number;
+  sideOffset?: number;
 }
 
 function getRolePaletteColors(paletteColors: string[], options?: FaceColorOptions): string[] {
@@ -24,8 +26,13 @@ export function computeFaceColors(
   const paletteColors = Array.isArray(palette) ? palette : PALETTES[palette].colors;
 
   if (colorMode === 'sides') {
+    const sideModulo = Math.min(
+      paletteColors.length,
+      Math.max(2, Math.round(options?.sideModulo ?? paletteColors.length)),
+    );
+    const sideOffset = Math.round(options?.sideOffset ?? 0);
     return mesh.faces.map((face) => {
-      const colorIndex = Math.max(0, face.length - 3);
+      const colorIndex = ((Math.max(0, face.length - 3) + sideOffset) % sideModulo + sideModulo) % sideModulo;
       return paletteColors[colorIndex % paletteColors.length];
     });
   }

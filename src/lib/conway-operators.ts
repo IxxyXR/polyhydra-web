@@ -15,7 +15,10 @@ export interface OperatorSpec {
   tVf: number;
   tFe: number;
   roleGeometryDetail?: number;
+  roleShapeBasis?: RoleShapeBasis;
 }
+
+export type RoleShapeBasis = 'sides' | 'angles' | 'lengths-angles';
 
 export interface OmniParamVisibility {
   showP1: boolean;
@@ -1479,7 +1482,15 @@ function quantizeRoleNumber(value: number, roleGeometryDetail: number): string {
   return (Math.round(value * scale) / scale).toFixed(precision);
 }
 
-function getGeometricFaceRoleSignature(loop: OVertex[], roleGeometryDetail: number): string {
+function getGeometricFaceRoleSignature(
+  loop: OVertex[],
+  roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis
+): string {
+  if (roleShapeBasis === 'sides') {
+    return `${loop.length}`;
+  }
+
   const edgeLengths = loop.map((vertex, index) => (
     vertex.position.distanceTo(loop[(index + 1) % loop.length].position)
   ));
@@ -1488,6 +1499,10 @@ function getGeometricFaceRoleSignature(loop: OVertex[], roleGeometryDetail: numb
     const previous = loop[(index + loop.length - 1) % loop.length].position.clone().sub(vertex.position).normalize();
     const next = loop[(index + 1) % loop.length].position.clone().sub(vertex.position).normalize();
     const angle = previous.angleTo(next);
+    if (roleShapeBasis === 'angles') {
+      return `a${quantizeRoleNumber(angle, roleGeometryDetail)}`;
+    }
+
     const normalizedLength = meanLength < EPSILON ? 0 : edgeLengths[index] / meanLength;
     return `l${quantizeRoleNumber(normalizedLength, roleGeometryDetail)}:a${quantizeRoleNumber(angle, roleGeometryDetail)}`;
   });
@@ -1500,9 +1515,10 @@ function getOmniFaceRoleSignature(
   halfedgeLoop: number[],
   edges: OEdge[],
   sourceFaceContexts: Map<number, SourceFaceRoleContext>,
-  roleGeometryDetail: number
+  roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis
 ): string {
-  const geometricSignature = getGeometricFaceRoleSignature(loop, roleGeometryDetail);
+  const geometricSignature = getGeometricFaceRoleSignature(loop, roleGeometryDetail, roleShapeBasis);
 
   const candidateFaceCounts = new Map<number, number>();
   loop.forEach((vertex) => {
@@ -1533,7 +1549,8 @@ function getOmniFaceRoleSignature(
 function buildMeshFromEdges(
   edges: OEdge[],
   sourceFaceContexts: Map<number, SourceFaceRoleContext>,
-  roleGeometryDetail: number
+  roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis
 ): Mesh {
   if (edges.length === 0) {
     throw new Error('Omni operator produced no edges');
@@ -1654,6 +1671,7 @@ function buildMeshFromEdges(
       edges,
       sourceFaceContexts,
       roleGeometryDetail,
+      roleShapeBasis,
     );
     const existingRole = roleBySignature.get(signature);
     if (existingRole !== undefined) {
@@ -1674,7 +1692,8 @@ export function applyOmni(
   tVe = DEFAULT_OMNI_PARAMS.tVe,
   tVf = DEFAULT_OMNI_PARAMS.tVf,
   tFe = DEFAULT_OMNI_PARAMS.tFe,
-  roleGeometryDetail = 3
+  roleGeometryDetail = 3,
+  roleShapeBasis: RoleShapeBasis = 'lengths-angles'
 ): Mesh {
   if (!operatorNotation.trim()) {
     return cloneMesh(mesh);
@@ -1737,7 +1756,7 @@ export function applyOmni(
     });
   });
 
-  return buildMeshFromEdges(edges, sourceFaceContexts, roleGeometryDetail);
+  return buildMeshFromEdges(edges, sourceFaceContexts, roleGeometryDetail, roleShapeBasis);
 }
 
 export function createOperatorSpec(notation: string, overrides: Partial<OperatorSpec> = {}): OperatorSpec {
@@ -1813,7 +1832,8 @@ export function applyOperator(mesh: Mesh, operator: string | OperatorSpec): Mesh
       operator.tVe,
       operator.tVf,
       operator.tFe,
-      operator.roleGeometryDetail
+      operator.roleGeometryDetail,
+      operator.roleShapeBasis
     );
   }
 

@@ -1,5 +1,5 @@
 import { TilingGenerationOptions } from './tiling-geometries';
-import { Mesh, OperatorSpec } from './conway-operators';
+import { Mesh, OperatorSpec, RoleShapeBasis } from './conway-operators';
 import { MeshFinalizationMode } from './mesh-finalization';
 import { PaletteKey } from './palettes';
 import { ColorMode, computeFaceColors } from './coloring';
@@ -22,15 +22,18 @@ export async function sendToBlender(
   colorMode: ColorMode,
   roleColorCount: number,
   roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis,
+  sideModulo: number,
+  sideOffset: number,
   radialType: RadialPolyType,
   radialSides: number,
   generationOptions?: TilingGenerationOptions,
   finalization: MeshFinalizationMode = 'planarize',
 ): Promise<{ ok: boolean; error?: string }> {
-  const mesh = generateFinalMesh({ mode, tilingType, rows, cols, operators, radialType, radialSides, roleGeometryDetail, generationOptions, finalization });
+  const mesh = generateFinalMesh({ mode, tilingType, rows, cols, operators, radialType, radialSides, roleGeometryDetail, roleShapeBasis, generationOptions, finalization });
   if (!mesh) return { ok: false, error: 'No mesh generated' };
 
-  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount });
+  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount, sideModulo, sideOffset });
   const payload = {
     vertices: Array.from(mesh.vertices),
     faces: mesh.faces,
@@ -60,6 +63,9 @@ export function exportObj(
   colorMode: ColorMode,
   roleColorCount: number,
   roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis,
+  sideModulo: number,
+  sideOffset: number,
   radialType: RadialPolyType,
   radialSides: number,
   generationOptions?: TilingGenerationOptions,
@@ -74,12 +80,13 @@ export function exportObj(
     radialType,
     radialSides,
     roleGeometryDetail,
+    roleShapeBasis,
     generationOptions,
     finalization,
   });
   if (!mesh) return;
 
-  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount });
+  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount, sideModulo, sideOffset });
   const { obj, mtl } = generateObjAndMtl(mesh, faceColors);
   const zipBlob = createZipBlob([
     { name: 'polyhydra-export.obj', content: obj },
@@ -98,6 +105,9 @@ export function exportOff(
   colorMode: ColorMode,
   roleColorCount: number,
   roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis,
+  sideModulo: number,
+  sideOffset: number,
   radialType: RadialPolyType,
   radialSides: number,
   generationOptions?: TilingGenerationOptions,
@@ -112,12 +122,13 @@ export function exportOff(
     radialType,
     radialSides,
     roleGeometryDetail,
+    roleShapeBasis,
     generationOptions,
     finalization,
   });
   if (!mesh) return;
 
-  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount });
+  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount, sideModulo, sideOffset });
 
   const numVertices = mesh.vertices.length / 3;
   const numFaces = mesh.faces.length;
@@ -302,6 +313,9 @@ export function exportSvg(
   colorMode: ColorMode,
   roleColorCount: number,
   roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis,
+  sideModulo: number,
+  sideOffset: number,
   edgeColor: string,
   radialType: RadialPolyType,
   radialSides: number,
@@ -317,12 +331,13 @@ export function exportSvg(
     radialType,
     radialSides,
     roleGeometryDetail,
+    roleShapeBasis,
     generationOptions,
     finalization,
   });
   if (!mesh) return;
 
-  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount });
+  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount, sideModulo, sideOffset });
 
   // Find bounds
   let minX = Infinity, maxX = -Infinity;

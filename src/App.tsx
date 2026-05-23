@@ -61,6 +61,7 @@ import {
   applyOperator,
   hasMeshEdgeCrossings,
   OperatorSpec,
+  RoleShapeBasis,
 } from './lib/conway-operators';
 
 interface OperatorState extends OperatorSpec {
@@ -84,6 +85,9 @@ const APP_DEFAULTS = {
   colorMode: 'role' as ColorMode,
   roleColorCount: 8,
   roleGeometryDetail: 3,
+  roleShapeBasis: 'lengths-angles' as RoleShapeBasis,
+  sideModulo: 8,
+  sideOffset: 0,
   edgeColor: '#3b82f6',
   embossEnabled: true,
   embossWidth: 0.015,
@@ -174,6 +178,9 @@ const URL_KEYS = {
   colorMode: 'cm',
   roleColorCount: 'rc',
   roleGeometryDetail: 'rd',
+  roleShapeBasis: 'rb',
+  sideModulo: 'sm',
+  sideOffset: 'so',
   edgeColor: 'ec',
   embossEnabled: 'em',
   embossWidth: 'ew',
@@ -511,6 +518,9 @@ function buildAppSearchParams(state: {
   colorMode: ColorMode;
   roleColorCount: number;
   roleGeometryDetail: number;
+  roleShapeBasis: RoleShapeBasis;
+  sideModulo: number;
+  sideOffset: number;
   edgeColor: string;
   embossEnabled: boolean;
   embossWidth: number;
@@ -559,6 +569,9 @@ function buildAppSearchParams(state: {
   setParamIfNeeded(params, URL_KEYS.colorMode, COLOR_MODE_TO_URL[state.colorMode], COLOR_MODE_TO_URL[APP_DEFAULTS.colorMode]);
   setParamIfNeeded(params, URL_KEYS.roleColorCount, state.roleColorCount, APP_DEFAULTS.roleColorCount);
   setParamIfNeeded(params, URL_KEYS.roleGeometryDetail, state.roleGeometryDetail, APP_DEFAULTS.roleGeometryDetail);
+  setParamIfNeeded(params, URL_KEYS.roleShapeBasis, state.roleShapeBasis, APP_DEFAULTS.roleShapeBasis);
+  setParamIfNeeded(params, URL_KEYS.sideModulo, state.sideModulo, APP_DEFAULTS.sideModulo);
+  setParamIfNeeded(params, URL_KEYS.sideOffset, state.sideOffset, APP_DEFAULTS.sideOffset);
   setParamIfNeeded(params, URL_KEYS.edgeColor, state.edgeColor, APP_DEFAULTS.edgeColor);
   setParamIfNeeded(params, URL_KEYS.embossEnabled, Number(state.embossEnabled), Number(APP_DEFAULTS.embossEnabled));
   setParamIfNeeded(params, URL_KEYS.embossWidth, state.embossWidth, APP_DEFAULTS.embossWidth);
@@ -655,6 +668,9 @@ export default function App() {
   const [colorMode, setColorMode] = useState<ColorMode>(APP_DEFAULTS.colorMode);
   const [roleColorCount, setRoleColorCount] = useState(APP_DEFAULTS.roleColorCount);
   const [roleGeometryDetail, setRoleGeometryDetail] = useState(APP_DEFAULTS.roleGeometryDetail);
+  const [roleShapeBasis, setRoleShapeBasis] = useState<RoleShapeBasis>(APP_DEFAULTS.roleShapeBasis);
+  const [sideModulo, setSideModulo] = useState(APP_DEFAULTS.sideModulo);
+  const [sideOffset, setSideOffset] = useState(APP_DEFAULTS.sideOffset);
   const [edgeColor, setEdgeColor] = useState(APP_DEFAULTS.edgeColor);
   const [embossEnabled, setEmbossEnabled] = useState(APP_DEFAULTS.embossEnabled);
   const [embossWidth, setEmbossWidth] = useState(APP_DEFAULTS.embossWidth);
@@ -670,6 +686,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [tilingMenuOpen, setTilingMenuOpen] = useState(false);
   const [displayMenuOpen, setDisplayMenuOpen] = useState(false);
+  const [lightingMenuOpen, setLightingMenuOpen] = useState(false);
   const [paletteMenuOpen, setPaletteMenuOpen] = useState(false);
   const [selectedOperatorId, setSelectedOperatorId] = useState<string | null>(null);
   const [rawEditorOpen, setRawEditorOpen] = useState(false);
@@ -681,7 +698,7 @@ export default function App() {
   const sendToBlenderNow = async () => {
     setBlenderStatus('sending');
     setBlenderError(null);
-    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), roleColorCount, roleGeometryDetail, radialType, radialSides, generationOptions, finalization);
+    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, generationOptions, finalization);
     if (result.ok) {
       setBlenderStatus('ok');
       setTimeout(() => setBlenderStatus('idle'), 3000);
@@ -882,6 +899,24 @@ export default function App() {
     const parsedRoleGeometryDetail = parseIntParam(getUrlParam(params, URL_KEYS.roleGeometryDetail, 'roleDetail'), APP_DEFAULTS.roleGeometryDetail);
     setRoleGeometryDetail(Math.min(Math.max(parsedRoleGeometryDetail, 0), 5));
 
+    const urlRoleShapeBasis = getUrlParam(params, URL_KEYS.roleShapeBasis, 'roleBasis');
+    setRoleShapeBasis(
+      urlRoleShapeBasis === 'sides' || urlRoleShapeBasis === 'angles' || urlRoleShapeBasis === 'lengths-angles'
+        ? urlRoleShapeBasis
+        : APP_DEFAULTS.roleShapeBasis
+    );
+
+    const parsedSideModulo = parseIntParam(getUrlParam(params, URL_KEYS.sideModulo, 'sideModulo'), APP_DEFAULTS.sideModulo);
+    const legacySideBasis = getUrlParam(params, 'sb', 'sideBasis');
+    const resolvedSideModulo =
+      legacySideBasis === 'modulo' && params.get(URL_KEYS.sideModulo) === null
+        ? APP_DEFAULTS.sideModulo
+        : Math.min(Math.max(parsedSideModulo, 2), APP_DEFAULTS.sideModulo);
+    setSideModulo(resolvedSideModulo);
+
+    const parsedSideOffset = parseIntParam(getUrlParam(params, URL_KEYS.sideOffset, 'sideOffset'), APP_DEFAULTS.sideOffset);
+    setSideOffset(((parsedSideOffset % resolvedSideModulo) + resolvedSideModulo) % resolvedSideModulo);
+
     const urlEdgeColor = getUrlParam(params, URL_KEYS.edgeColor, 'edgeColor');
     setEdgeColor(urlEdgeColor ?? APP_DEFAULTS.edgeColor);
 
@@ -989,6 +1024,9 @@ export default function App() {
       colorMode,
       roleColorCount,
       roleGeometryDetail,
+      roleShapeBasis,
+      sideModulo,
+      sideOffset,
       edgeColor,
       embossEnabled,
       embossWidth,
@@ -1012,7 +1050,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
+  }, [mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
 
 
   const applyPreset = (preset: AppPreset) => {
@@ -1025,7 +1063,7 @@ export default function App() {
 
   const saveCurrentPreset = () => {
     if (!newPresetName.trim()) return;
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
     setUserPresets(getUserPresets());
     setNewPresetName('');
@@ -1033,7 +1071,7 @@ export default function App() {
   };
 
   const copyCurrentAsExamplePreset = async () => {
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     const entry = `{ name: 'name', params: '${params.toString()}'},`;
     await navigator.clipboard.writeText(entry);
   };
@@ -1270,6 +1308,9 @@ export default function App() {
     renderColorMode,
     roleColorCount,
     roleGeometryDetail,
+    roleShapeBasis,
+    sideModulo,
+    sideOffset,
     edgeColor,
     embossEnabled,
     embossWidth,
@@ -1895,6 +1936,12 @@ export default function App() {
                       <div className="p-3 space-y-4">
                         <div className="space-y-2.5">
                           <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Faces</div>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
+                            <input type="checkbox" checked={showFaces} onChange={(e) => setShowFaces(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
+                          {showFaces && (
+                            <>
                           <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
                             <div className="flex items-stretch">
                               <button
@@ -2000,6 +2047,33 @@ export default function App() {
                             <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Shape Basis</span>
+                                  <span className="font-mono text-neutral-300">
+                                    {roleShapeBasis === 'lengths-angles' ? 'Both' : roleShapeBasis}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {[
+                                    ['sides', 'Sides'],
+                                    ['angles', 'Angles'],
+                                    ['lengths-angles', 'Both'],
+                                  ].map(([value, label]) => (
+                                    <button
+                                      key={value}
+                                      onClick={() => setRoleShapeBasis(value as RoleShapeBasis)}
+                                      className={`rounded-md border px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider transition-colors ${
+                                        roleShapeBasis === value
+                                          ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
+                                          : 'border-neutral-800 bg-neutral-950/40 text-neutral-500 hover:bg-neutral-800/60'
+                                      }`}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                                   <span>Role Colors</span>
                                   <span className="font-mono text-neutral-300">{roleColorCount}</span>
                                 </div>
@@ -2030,124 +2104,44 @@ export default function App() {
                               </div>
                             </div>
                           )}
-                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
-                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
-                            <input type="checkbox" checked={showFaces} onChange={(e) => setShowFaces(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                          </label>
-                          <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
-                            <div className="mb-3 text-sm text-neutral-300">Lighting</div>
-                            <div className="space-y-3">
+                          {colorMode === 'sides' && (
+                            <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Ambient</span>
-                                  <span className="font-mono text-neutral-300">{ambientLightIntensity.toFixed(2)}</span>
+                                  <span>Side Modulo</span>
+                                  <span className="font-mono text-neutral-300">{sideModulo}</span>
                                 </div>
                                 <input
                                   type="range"
-                                  min="0"
-                                  max="1.5"
-                                  step="0.05"
-                                  value={ambientLightIntensity}
-                                  onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                  min={2}
+                                  max={(shuffledColors ?? selectedPalette.colors).length}
+                                  step={1}
+                                  value={Math.min(sideModulo, (shuffledColors ?? selectedPalette.colors).length)}
+                                  onChange={(e) => {
+                                    const nextModulo = Number(e.target.value);
+                                    setSideModulo(nextModulo);
+                                    setSideOffset((current) => current % nextModulo);
+                                  }}
+                                  className="w-full accent-blue-500"
                                 />
                               </div>
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Key Light</span>
-                                  <span className="font-mono text-neutral-300">{keyLightIntensity.toFixed(2)}</span>
+                                  <span>Side Offset</span>
+                                  <span className="font-mono text-neutral-300">{sideOffset % sideModulo}</span>
                                 </div>
                                 <input
                                   type="range"
-                                  min="0"
-                                  max="2"
-                                  step="0.05"
-                                  value={keyLightIntensity}
-                                  onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Key Azimuth</span>
-                                  <span className="font-mono text-neutral-300">{keyLightAzimuth.toFixed(0)}°</span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="-180"
-                                  max="180"
-                                  step="1"
-                                  value={keyLightAzimuth}
-                                  onChange={(e) => setKeyLightAzimuth(parseFloat(e.target.value))}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Key Elevation</span>
-                                  <span className="font-mono text-neutral-300">{keyLightElevation.toFixed(0)}°</span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="-85"
-                                  max="85"
-                                  step="1"
-                                  value={keyLightElevation}
-                                  onChange={(e) => setKeyLightElevation(parseFloat(e.target.value))}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Roughness</span>
-                                  <span className="font-mono text-neutral-300">{faceRoughness.toFixed(2)}</span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="1"
-                                  step="0.02"
-                                  value={faceRoughness}
-                                  onChange={(e) => setFaceRoughness(parseFloat(e.target.value))}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Opacity</span>
-                                  <span className="font-mono text-neutral-300">{faceOpacity.toFixed(2)}</span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="1"
-                                  step="0.02"
-                                  value={faceOpacity}
-                                  onChange={(e) => setFaceOpacity(parseFloat(e.target.value))}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                                  min={0}
+                                  max={Math.max(0, sideModulo - 1)}
+                                  step={1}
+                                  value={Math.min(sideOffset, Math.max(0, sideModulo - 1))}
+                                  onChange={(e) => setSideOffset(Number(e.target.value))}
+                                  className="w-full accent-blue-500"
                                 />
                               </div>
                             </div>
-                          </div>
-                        </div>
-                        <div className="space-y-2.5 border-t border-neutral-800 pt-3">
-                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Edges</div>
-                          <div className="flex items-center justify-between gap-3 px-1 py-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Edge Colour</span>
-                            <label className="flex items-center gap-2">
-                              <span className="font-mono text-[10px] text-neutral-400">{edgeColor}</span>
-                              <input
-                                type="color"
-                                value={edgeColor}
-                                onChange={(e) => setEdgeColor(e.target.value)}
-                                className="h-8 w-10 cursor-pointer rounded border border-neutral-700 bg-transparent p-0"
-                              />
-                            </label>
-                          </div>
-                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
-                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Edges</span>
-                            <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                          </label>
+                          )}
                           <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
                             <div className="mb-3 text-sm text-neutral-300">Emboss</div>
                             <label className="flex items-center justify-between cursor-pointer group">
@@ -2210,9 +2204,27 @@ export default function App() {
                               </div>
                             </div>
                           </div>
+                            </>
+                          )}
                         </div>
                         <div className="space-y-2.5 border-t border-neutral-800 pt-3">
                           <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Debug</div>
+                          <div className="flex items-center justify-between gap-3 px-1 py-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Edge Colour</span>
+                            <label className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] text-neutral-400">{edgeColor}</span>
+                              <input
+                                type="color"
+                                value={edgeColor}
+                                onChange={(e) => setEdgeColor(e.target.value)}
+                                className="h-8 w-10 cursor-pointer rounded border border-neutral-700 bg-transparent p-0"
+                              />
+                            </label>
+                          </div>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Edges</span>
+                            <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
                           <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
                             <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Vertices</span>
                             <input type="checkbox" checked={showVertices} onChange={(e) => setShowVertices(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
@@ -2221,6 +2233,131 @@ export default function App() {
                             <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Wireframe</span>
                             <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
                           </label>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </section>
+
+            <section>
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
+                <button
+                  onClick={() => setLightingMenuOpen(!lightingMenuOpen)}
+                  className="w-full p-3 text-left transition-colors hover:bg-neutral-800/40"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                        <Settings className="w-3 h-3" />
+                        Lighting
+                      </div>
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                      <ChevronRight className={`w-4 h-4 transition-transform ${lightingMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                    </div>
+                  </div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {lightingMenuOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-neutral-800"
+                    >
+                      <div className="p-3 space-y-3">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Ambient</span>
+                            <span className="font-mono text-neutral-300">{ambientLightIntensity.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1.5"
+                            step="0.05"
+                            value={ambientLightIntensity}
+                            onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Key Light</span>
+                            <span className="font-mono text-neutral-300">{keyLightIntensity.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="2"
+                            step="0.05"
+                            value={keyLightIntensity}
+                            onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Key Azimuth</span>
+                            <span className="font-mono text-neutral-300">{keyLightAzimuth.toFixed(0)}°</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-180"
+                            max="180"
+                            step="1"
+                            value={keyLightAzimuth}
+                            onChange={(e) => setKeyLightAzimuth(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Key Elevation</span>
+                            <span className="font-mono text-neutral-300">{keyLightElevation.toFixed(0)}°</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-85"
+                            max="85"
+                            step="1"
+                            value={keyLightElevation}
+                            onChange={(e) => setKeyLightElevation(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Roughness</span>
+                            <span className="font-mono text-neutral-300">{faceRoughness.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.02"
+                            value={faceRoughness}
+                            onChange={(e) => setFaceRoughness(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Opacity</span>
+                            <span className="font-mono text-neutral-300">{faceOpacity.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.02"
+                            value={faceOpacity}
+                            onChange={(e) => setFaceOpacity(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
                         </div>
                       </div>
                     </motion.div>
@@ -2923,20 +3060,20 @@ export default function App() {
               <div className={`grid gap-2 ${mode === '3d' ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 {mode === '2d' && (
                 <button
-                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, edgeColor, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   SVG
                 </button>
                 )}
                 <button
-                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OBJ+MTL
                 </button>
                 <button
-                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, radialType, radialSides, generationOptions, finalization)}
+                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, generationOptions, finalization)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   OFF
@@ -3000,6 +3137,9 @@ export default function App() {
                     colorMode,
                     roleColorCount,
                     roleGeometryDetail,
+                    roleShapeBasis,
+                    sideModulo,
+                    sideOffset,
                     edgeColor,
                     embossEnabled,
                     embossWidth,
@@ -3071,6 +3211,9 @@ export default function App() {
             colorMode={renderColorMode}
             roleColorCount={roleColorCount}
             roleGeometryDetail={roleGeometryDetail}
+            roleShapeBasis={roleShapeBasis}
+            sideModulo={sideModulo}
+            sideOffset={sideOffset}
             edgeColor={edgeColor}
             embossEnabled={embossEnabled}
             embossWidth={embossWidth}
