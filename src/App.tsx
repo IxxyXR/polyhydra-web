@@ -1907,11 +1907,11 @@ export default function App() {
                                       Face Palette
                                     </div>
                                     <div className="text-xs font-semibold text-white truncate">{selectedPalette.name}</div>
-                                    <div className="flex -space-x-1 mt-2">
-                                      {(shuffledColors ?? selectedPalette.colors).slice(0, 5).map((c, i) => (
+                                    <div className="mt-2 flex flex-wrap gap-y-1 pl-1">
+                                      {(shuffledColors ?? selectedPalette.colors).map((c, i) => (
                                         <div
                                           key={i}
-                                          className="w-3 h-3 rounded-full border border-neutral-900"
+                                          className="-ml-1 h-3 w-3 rounded-full border border-neutral-900"
                                           style={{ backgroundColor: c }}
                                         />
                                       ))}

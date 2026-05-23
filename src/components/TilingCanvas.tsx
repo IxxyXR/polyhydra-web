@@ -33,6 +33,7 @@ const XR_PANEL_WORLD_WIDTH = 1.25;
 const XR_PANEL_WORLD_HEIGHT = XR_PANEL_WORLD_WIDTH * (XR_PANEL_HEIGHT_PX / XR_PANEL_WIDTH_PX);
 const XR_POINTER_LENGTH = 1.6;
 const XR_POINTER_LINE_NAME = 'xr-controller-pointer-line';
+const XR_PANEL_HOST_STYLE_ID = 'polyhydra-xr-html-panel-host-style';
 
 if (typeof window !== 'undefined') {
   installHtmlInCanvasPolyfill();
@@ -532,6 +533,21 @@ function updateKeyLightPosition(light: THREE.DirectionalLight, azimuthDegrees: n
   );
 }
 
+function ensureXRPanelHostStyle() {
+  if (document.getElementById(XR_PANEL_HOST_STYLE_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = XR_PANEL_HOST_STYLE_ID;
+  style.textContent = `
+canvas[layoutsubtree],
+[data-html-in-canvas-host],
+[data-polyhydra-xr-panel-host] {
+  pointer-events: none !important;
+}
+`;
+  document.head.appendChild(style);
+}
+
 function clamp01(value: number) {
   return Math.min(Math.max(value, 0), 1);
 }
@@ -938,6 +954,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrRig: THREE.Group;
     xrPanelMesh: THREE.Mesh;
     xrPanelElement: HTMLElement;
+    xrPanelHostCanvas: HTMLCanvasElement;
     xrPanelTexture: THREE.Texture;
     raycaster: THREE.Raycaster;
     controllerPointerStates: XRPanelPointerState[];
@@ -978,7 +995,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     const root = xrPanelRootRef.current;
     if (!root || !xrPanel) return;
     root.render(<XRControlPanel controls={xrPanel} />);
-    (sceneRef.current?.renderer.domElement as any)?.requestPaint?.();
+    (sceneRef.current?.xrPanelHostCanvas as any)?.requestPaint?.();
   }, [xrPanel]);
 
   const fitCameraToBounds = (bounds: MeshBounds) => {
@@ -1050,6 +1067,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
   useEffect(() => {
     if (!containerRef.current) return;
+    ensureXRPanelHostStyle();
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0a0a);
@@ -1067,18 +1085,30 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     containerRef.current.appendChild(renderer.domElement);
-    renderer.domElement.setAttribute('layoutsubtree', '');
 
+    const xrPanelHostCanvas = document.createElement('canvas');
+    xrPanelHostCanvas.setAttribute('layoutsubtree', '');
+    xrPanelHostCanvas.width = XR_PANEL_WIDTH_PX;
+    xrPanelHostCanvas.height = XR_PANEL_HEIGHT_PX;
+    xrPanelHostCanvas.style.position = 'absolute';
+    xrPanelHostCanvas.style.left = '-10000px';
+    xrPanelHostCanvas.style.top = '0';
+    xrPanelHostCanvas.style.width = `${XR_PANEL_WIDTH_PX}px`;
+    xrPanelHostCanvas.style.height = `${XR_PANEL_HEIGHT_PX}px`;
+    xrPanelHostCanvas.style.pointerEvents = 'none';
+    xrPanelHostCanvas.style.opacity = '0';
+    containerRef.current.appendChild(xrPanelHostCanvas);
     const xrPanelElement = document.createElement('div');
+    xrPanelElement.setAttribute('data-polyhydra-xr-panel-host', '');
     xrPanelElement.setAttribute('aria-hidden', 'true');
     xrPanelElement.style.width = `${XR_PANEL_WIDTH_PX}px`;
     xrPanelElement.style.height = `${XR_PANEL_HEIGHT_PX}px`;
-    xrPanelElement.style.pointerEvents = 'none';
+    xrPanelElement.style.setProperty('pointer-events', 'none', 'important');
     xrPanelElement.style.position = 'absolute';
     xrPanelElement.style.left = '0';
     xrPanelElement.style.top = '0';
     xrPanelElement.style.overflow = 'auto';
-    renderer.domElement.appendChild(xrPanelElement);
+    xrPanelHostCanvas.appendChild(xrPanelElement);
     xrPanelContainerRef.current = xrPanelElement;
     xrPanelRootRef.current = createRoot(xrPanelElement);
     if (xrPanel) {
@@ -1178,6 +1208,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       xrRig,
       xrPanelMesh,
       xrPanelElement,
+      xrPanelHostCanvas,
       xrPanelTexture,
       raycaster,
       controllerPointerStates,
@@ -1186,7 +1217,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     const tempMatrix = new THREE.Matrix4();
     const animate = () => {
       xrPanelTexture.needsUpdate = true;
-      (renderer.domElement as any).requestPaint?.();
+      (xrPanelHostCanvas as any).requestPaint?.();
 
       if (renderer.xr.isPresenting) {
         xrPanelMesh.visible = true;
@@ -1347,6 +1378,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       xrPanelMesh.geometry.dispose();
       disposeMaterialResources(xrPanelMesh.material);
       xrPanelTexture.dispose();
+      xrPanelHostCanvas.remove();
       renderer.setAnimationLoop(null);
       renderer.dispose();
       renderer.domElement.remove();
