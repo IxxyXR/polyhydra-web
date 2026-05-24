@@ -1365,6 +1365,7 @@ export default function App() {
   };
 
   const selectTilingType = (key: string, closeMenu = true) => {
+    setTilingEverOpened(true);
     setTilingType(key);
     setColorMode((current) => normalizeColorModeForTiling(current, key));
     requestFitToExtents();
@@ -1680,7 +1681,7 @@ export default function App() {
                     >
                       <div className="callout-animate mx-3 mt-3 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
                         <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">1</span>
-                        <span>Click below to browse and pick a tiling pattern</span>
+                        <span>Use the arrows or click below to pick a tiling pattern</span>
                       </div>
                     </motion.div>
                   )}
@@ -3061,22 +3062,22 @@ export default function App() {
                 {mode === '2d' && (
                 <button
                   onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, radialType, radialSides, generationOptions, finalization)}
-                  className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                  className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
-                  SVG
+                  .svg
                 </button>
                 )}
                 <button
                   onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, generationOptions, finalization)}
-                  className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                  className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
-                  OBJ+MTL
+                  .obj + .mtl
                 </button>
                 <button
                   onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, generationOptions, finalization)}
-                  className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                  className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
-                  OFF
+                  .off
                 </button>
               </div>
               <button
