@@ -16,9 +16,20 @@ export interface OperatorSpec {
   tFe: number;
   roleGeometryDetail?: number;
   roleShapeBasis?: RoleShapeBasis;
+  faceFilter?: FaceFilterSpec;
 }
 
 export type RoleShapeBasis = 'sides' | 'angles' | 'lengths-angles';
+export type FaceFilterProperty = 'sides';
+export type FaceFilterMeasure = 'equal' | 'less-than' | 'is-even';
+
+export interface FaceFilterSpec {
+  enabled: boolean;
+  property: FaceFilterProperty;
+  measure: FaceFilterMeasure;
+  negate: boolean;
+  value: number;
+}
 
 export interface OmniParamVisibility {
   showP1: boolean;
@@ -93,6 +104,14 @@ export const DEFAULT_OMNI_PARAMS = {
   tVe: 0.5,
   tVf: 0.5,
   tFe: 0.5,
+};
+
+export const DEFAULT_FACE_FILTER: FaceFilterSpec = {
+  enabled: false,
+  property: 'sides',
+  measure: 'equal',
+  negate: false,
+  value: 4,
 };
 
 export const OMNI_POINT_CLASSES: OmniPointClass[] = [
@@ -578,6 +597,54 @@ function cloneMesh(mesh: Mesh): Mesh {
 
 function actualMod(value: number, modulus: number): number {
   return ((value % modulus) + modulus) % modulus;
+}
+
+function clampFaceFilterValue(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_FACE_FILTER.value;
+  }
+  return Math.min(Math.max(Math.round(value), 3), 32);
+}
+
+export function normalizeFaceFilter(filter?: FaceFilterSpec): FaceFilterSpec {
+  return {
+    enabled: filter?.enabled ?? DEFAULT_FACE_FILTER.enabled,
+    property: DEFAULT_FACE_FILTER.property,
+    measure: filter?.measure === 'less-than' || filter?.measure === 'is-even' ? filter.measure : DEFAULT_FACE_FILTER.measure,
+    negate: filter?.negate ?? DEFAULT_FACE_FILTER.negate,
+    value: clampFaceFilterValue(filter?.value ?? DEFAULT_FACE_FILTER.value),
+  };
+}
+
+function evaluateFaceFilterValue(value: number, measure: FaceFilterMeasure, target: number, negate: boolean): boolean {
+  const roundedValue = Math.round(value);
+  const roundedTarget = Math.round(target);
+  if (measure === 'equal') {
+    return negate ? roundedValue !== roundedTarget : roundedValue === roundedTarget;
+  }
+  if (measure === 'less-than') {
+    return negate ? roundedValue > roundedTarget : roundedValue < roundedTarget;
+  }
+
+  const isEven = actualMod(roundedValue, 2) === 0;
+  return negate ? !isEven : isEven;
+}
+
+function getFaceFilterPropertyValue(mesh: Mesh, faceIndex: number, property: FaceFilterProperty): number | null {
+  if (property === 'sides') {
+    return mesh.faces[faceIndex]?.length ?? null;
+  }
+  return null;
+}
+
+export function testFaceFilter(mesh: Mesh, faceIndex: number, filter: FaceFilterSpec): boolean {
+  const normalized = normalizeFaceFilter(filter);
+  const value = getFaceFilterPropertyValue(mesh, faceIndex, normalized.property);
+  if (value === null || !Number.isFinite(value)) {
+    return false;
+  }
+
+  return evaluateFaceFilterValue(value, normalized.measure, normalized.value, normalized.negate);
 }
 
 function twin(index: number): number {
@@ -1476,6 +1543,21 @@ function getSourceKeysByType(vertex: OVertex, prefix: 'f' | 'e' | 'v'): string[]
     .map((sourceKey) => sourceKey.slice(keyPrefix.length));
 }
 
+function getPrimarySourceFaceId(loop: OVertex[]): number | undefined {
+  const candidateFaceCounts = new Map<number, number>();
+  loop.forEach((vertex) => {
+    getSourceKeysByType(vertex, 'f').forEach((sourceFaceId) => {
+      const parsed = Number.parseInt(sourceFaceId, 10);
+      if (Number.isFinite(parsed)) {
+        candidateFaceCounts.set(parsed, (candidateFaceCounts.get(parsed) ?? 0) + 1);
+      }
+    });
+  });
+
+  return [...candidateFaceCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0];
+}
+
 function quantizeRoleNumber(value: number, roleGeometryDetail: number): string {
   const precision = Math.min(Math.max(Math.round(roleGeometryDetail), 0), 5);
   const scale = 10 ** precision;
@@ -1520,19 +1602,10 @@ function getOmniFaceRoleSignature(
 ): string {
   const geometricSignature = getGeometricFaceRoleSignature(loop, roleGeometryDetail, roleShapeBasis);
 
-  const candidateFaceCounts = new Map<number, number>();
-  loop.forEach((vertex) => {
-    getSourceKeysByType(vertex, 'f').forEach((sourceFaceId) => {
-      const parsed = Number.parseInt(sourceFaceId, 10);
-      if (Number.isFinite(parsed)) {
-        candidateFaceCounts.set(parsed, (candidateFaceCounts.get(parsed) ?? 0) + 1);
-      }
-    });
-  });
-
-  const sourceFaceId = [...candidateFaceCounts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0];
-  const sourceFaceVertexCount = sourceFaceId === undefined ? 0 : candidateFaceCounts.get(sourceFaceId) ?? 0;
+  const sourceFaceId = getPrimarySourceFaceId(loop);
+  const sourceFaceVertexCount = sourceFaceId === undefined
+    ? 0
+    : loop.filter((vertex) => vertex.sourceKeys.has(`f:${sourceFaceId}`)).length;
   const sourceContext = sourceFaceId === undefined || sourceFaceVertexCount < loop.length
     ? undefined
     : sourceFaceContexts.get(sourceFaceId);
@@ -1546,11 +1619,58 @@ function getOmniFaceRoleSignature(
   return `face:${sourceContext.sideCount}:${geometricSignature}`;
 }
 
+function isPointInsideSourceFace(point: Vector3, face: SourceFace): boolean {
+  const halfedges = sourceFaceHalfedges(face);
+  const normal = face.normal;
+  const absX = Math.abs(normal.x);
+  const absY = Math.abs(normal.y);
+  const absZ = Math.abs(normal.z);
+  const dropAxis = absX > absY && absX > absZ ? 'x' : absY > absZ ? 'y' : 'z';
+  const to2d = (vertex: Vector3): [number, number] => {
+    if (dropAxis === 'x') return [vertex.y, vertex.z];
+    if (dropAxis === 'y') return [vertex.x, vertex.z];
+    return [vertex.x, vertex.y];
+  };
+
+  const [px, py] = to2d(point);
+  let inside = false;
+  for (let index = 0; index < halfedges.length; index++) {
+    const a = halfedges[index].prev.vertex.position;
+    const b = halfedges[index].vertex.position;
+    const [ax, ay] = to2d(a);
+    const [bx, by] = to2d(b);
+    const cross = (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+    const dot = (px - ax) * (px - bx) + (py - ay) * (py - by);
+    if (Math.abs(cross) < 1e-8 && dot <= 1e-8) {
+      return true;
+    }
+    if ((ay > py) !== (by > py)) {
+      const intersectionX = ((bx - ax) * (py - ay)) / (by - ay) + ax;
+      if (px < intersectionX) {
+        inside = !inside;
+      }
+    }
+  }
+
+  return inside;
+}
+
+function isPointInsideSelectedSourceFaces(
+  point: Vector3,
+  sourceMesh: { faces: SourceFace[] },
+  selectedFaceIds: Set<number>
+): boolean {
+  return sourceMesh.faces.some((face) => selectedFaceIds.has(face.id) && isPointInsideSourceFace(point, face));
+}
+
 function buildMeshFromEdges(
   edges: OEdge[],
   sourceFaceContexts: Map<number, SourceFaceRoleContext>,
   roleGeometryDetail: number,
-  roleShapeBasis: RoleShapeBasis
+  roleShapeBasis: RoleShapeBasis,
+  sourceFaceValues?: number[],
+  dropPositiveOrientationLoops = false,
+  selectiveSource?: { sourceMesh: { faces: SourceFace[] }; selectedFaceIds: Set<number> }
 ): Mesh {
   if (edges.length === 0) {
     throw new Error('Omni operator produced no edges');
@@ -1618,6 +1738,9 @@ function buildMeshFromEdges(
     const centroid = new Vector3();
     loop.forEach((vertex) => centroid.add(vertex.position));
     centroid.divideScalar(loop.length);
+    if (selectiveSource && !isPointInsideSelectedSourceFaces(centroid, selectiveSource.sourceMesh, selectiveSource.selectedFaceIds)) {
+      continue;
+    }
 
     const faceNormal = new Vector3();
     for (let index = 0; index < loop.length; index++) {
@@ -1629,6 +1752,9 @@ function buildMeshFromEdges(
     const averageVertexNormal = new Vector3();
     loop.forEach((vertex) => averageVertexNormal.add(vertex.normal));
     const dot = faceNormal.dot(averageVertexNormal);
+    if (dropPositiveOrientationLoops && dot >= 0) {
+      continue;
+    }
 
     if (dot < 0) {
       loop.reverse();
@@ -1650,6 +1776,7 @@ function buildMeshFromEdges(
   const faces: number[][] = [];
   const roleBySignature = new Map<string, number>();
   const roleValues: number[] = [];
+  const faceValues: number[] = [];
 
   faceLoops.forEach((loop, faceIndex) => {
     const indices = loop.map((vertex) => {
@@ -1681,9 +1808,83 @@ function buildMeshFromEdges(
       roleBySignature.set(signature, nextRole);
       roleValues.push(nextRole);
     }
+
+    if (sourceFaceValues) {
+      const sourceFaceId = getPrimarySourceFaceId(loop);
+      faceValues.push(sourceFaceId === undefined ? 0 : sourceFaceValues[sourceFaceId] ?? 0);
+    }
   });
 
-  return { vertices, faces, roleValues };
+  return { vertices, faces, roleValues, faceValues: sourceFaceValues ? faceValues : undefined };
+}
+
+function mergeGeneratedAndPreservedFaces(
+  source: Mesh,
+  generated: Mesh,
+  selectedFaceIds: Set<number>
+): Mesh {
+  if (selectedFaceIds.size === 0) {
+    return cloneMesh(source);
+  }
+  if (selectedFaceIds.size === source.faces.length) {
+    return generated;
+  }
+
+  const vertices: number[] = [];
+  const vertexByPosition = new Map<string, number>();
+  const faces: number[][] = [];
+  const roleValues: number[] = [];
+  const faceValues: number[] = [];
+  const includeRoleValues = Boolean(source.roleValues) || Boolean(generated.roleValues);
+  const includeFaceValues = Boolean(source.faceValues) || Boolean(generated.faceValues);
+
+  const getVertexIndex = (sourceVertices: number[], vertexIndex: number) => {
+    const offset = vertexIndex * 3;
+    const x = sourceVertices[offset];
+    const y = sourceVertices[offset + 1];
+    const z = sourceVertices[offset + 2];
+    const key = `${x},${y},${z}`;
+    const existing = vertexByPosition.get(key);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const nextIndex = vertices.length / 3;
+    vertexByPosition.set(key, nextIndex);
+    vertices.push(x, y, z);
+    return nextIndex;
+  };
+
+  source.faces.forEach((face, faceIndex) => {
+    if (selectedFaceIds.has(faceIndex)) {
+      return;
+    }
+
+    faces.push(face.map((vertexIndex) => getVertexIndex(source.vertices, vertexIndex)));
+    if (includeRoleValues) {
+      roleValues.push(source.roleValues?.[faceIndex] ?? Math.max(0, face.length - 3));
+    }
+    if (includeFaceValues) {
+      faceValues.push(source.faceValues?.[faceIndex] ?? 0);
+    }
+  });
+
+  generated.faces.forEach((face, faceIndex) => {
+    faces.push(face.map((vertexIndex) => getVertexIndex(generated.vertices, vertexIndex)));
+    if (includeRoleValues) {
+      roleValues.push(generated.roleValues?.[faceIndex] ?? Math.max(0, face.length - 3));
+    }
+    if (includeFaceValues) {
+      faceValues.push(generated.faceValues?.[faceIndex] ?? 0);
+    }
+  });
+
+  return {
+    vertices,
+    faces,
+    roleValues: includeRoleValues ? roleValues : undefined,
+    faceValues: includeFaceValues ? faceValues : undefined,
+  };
 }
 
 export function applyOmni(
@@ -1693,7 +1894,8 @@ export function applyOmni(
   tVf = DEFAULT_OMNI_PARAMS.tVf,
   tFe = DEFAULT_OMNI_PARAMS.tFe,
   roleGeometryDetail = 3,
-  roleShapeBasis: RoleShapeBasis = 'lengths-angles'
+  roleShapeBasis: RoleShapeBasis = 'lengths-angles',
+  faceFilter?: FaceFilterSpec
 ): Mesh {
   if (!operatorNotation.trim()) {
     return cloneMesh(mesh);
@@ -1718,6 +1920,16 @@ export function applyOmni(
   if (atoms.length === 0) {
     return cloneMesh(mesh);
   }
+  const supportsFaceFilter = atoms.some(([classA, classB]) => classA === 'V' && classB === 'V');
+  const normalizedFaceFilter = normalizeFaceFilter(faceFilter);
+  const selectedFaceIds = supportsFaceFilter && normalizedFaceFilter.enabled
+    ? new Set(sourceMesh.faces
+        .filter((face) => testFaceFilter(mesh, face.id, normalizedFaceFilter))
+        .map((face) => face.id))
+    : null;
+  if (selectedFaceIds && selectedFaceIds.size === 0) {
+    return cloneMesh(mesh);
+  }
 
   const classesNeeded = new Set<OmniPointClass>();
   atoms.forEach(([classA, classB]) => {
@@ -1730,6 +1942,10 @@ export function applyOmni(
   const edges: OEdge[] = [];
 
   sourceMesh.faces.forEach((face) => {
+    if (selectedFaceIds && !selectedFaceIds.has(face.id)) {
+      return;
+    }
+
     const halfedges = sourceFaceHalfedges(face);
     const sourceEdgeKeys = halfedges.map((halfedge) => edgeKey(halfedge.prev.vertex.id, halfedge.vertex.id));
     const points = buildFacePoints(
@@ -1756,7 +1972,18 @@ export function applyOmni(
     });
   });
 
-  return buildMeshFromEdges(edges, sourceFaceContexts, roleGeometryDetail, roleShapeBasis);
+  const generated = buildMeshFromEdges(
+    edges,
+    sourceFaceContexts,
+    roleGeometryDetail,
+    roleShapeBasis,
+    mesh.faceValues,
+    Boolean(selectedFaceIds),
+    selectedFaceIds ? { sourceMesh, selectedFaceIds } : undefined
+  );
+  return selectedFaceIds
+    ? mergeGeneratedAndPreservedFaces(mesh, generated, selectedFaceIds)
+    : generated;
 }
 
 export function createOperatorSpec(notation: string, overrides: Partial<OperatorSpec> = {}): OperatorSpec {
@@ -1765,11 +1992,17 @@ export function createOperatorSpec(notation: string, overrides: Partial<Operator
     tVe: overrides.tVe ?? DEFAULT_OMNI_PARAMS.tVe,
     tVf: overrides.tVf ?? DEFAULT_OMNI_PARAMS.tVf,
     tFe: overrides.tFe ?? DEFAULT_OMNI_PARAMS.tFe,
+    faceFilter: overrides.faceFilter ? normalizeFaceFilter(overrides.faceFilter) : undefined,
   };
 }
 
 export function resolveOperatorNotation(operator: string): string {
   return OPERATOR_ALIASES[operator] ?? OMNI_PRESETS[operator] ?? operator;
+}
+
+export function operatorSupportsFaceFilter(operator: string | OperatorSpec): boolean {
+  const notation = typeof operator === 'string' ? operator : operator.notation;
+  return parseAtomList(resolveOperatorNotation(notation)).includes('V-V');
 }
 
 export function getOmniParamVisibility(operator: string): OmniParamVisibility {
@@ -1798,29 +2031,51 @@ export function getOmniParamVisibility(operator: string): OmniParamVisibility {
 }
 
 export function serializeOperatorSpec(spec: OperatorSpec): string {
-  return [
+  const parts = [
     spec.notation,
     spec.tVe.toString(),
     spec.tVf.toString(),
     spec.tFe.toString(),
-  ].join(OPERATOR_SPEC_DELIMITER);
+  ];
+  if (spec.faceFilter) {
+    const filter = normalizeFaceFilter(spec.faceFilter);
+    parts.push(
+      filter.enabled ? '1' : '0',
+      filter.property,
+      filter.measure,
+      filter.negate ? '1' : '0',
+      filter.value.toString(),
+    );
+  }
+  return parts.join(OPERATOR_SPEC_DELIMITER);
 }
 
 export function parseOperatorSpec(serialized: string): OperatorSpec {
   const parts = serialized.split(OPERATOR_SPEC_DELIMITER);
-  if (parts.length !== 4) {
+  if (parts.length !== 4 && parts.length !== 9) {
     return createOperatorSpec(serialized);
   }
 
-  const [notation, tVeRaw, tVfRaw, tFeRaw] = parts;
+  const [notation, tVeRaw, tVfRaw, tFeRaw, filterEnabledRaw, filterPropertyRaw, filterMeasureRaw, filterNegateRaw, filterValueRaw] = parts;
   const tVe = Number.parseFloat(tVeRaw);
   const tVf = Number.parseFloat(tVfRaw);
   const tFe = Number.parseFloat(tFeRaw);
+  const filterValue = Number.parseInt(filterValueRaw ?? '', 10);
+  const faceFilter = parts.length === 9
+    ? normalizeFaceFilter({
+        enabled: filterEnabledRaw === '1',
+        property: filterPropertyRaw as FaceFilterProperty,
+        measure: filterMeasureRaw as FaceFilterMeasure,
+        negate: filterNegateRaw === '1',
+        value: Number.isFinite(filterValue) ? filterValue : DEFAULT_FACE_FILTER.value,
+      })
+    : undefined;
 
   return createOperatorSpec(notation, {
     tVe: Number.isFinite(tVe) ? tVe : DEFAULT_OMNI_PARAMS.tVe,
     tVf: Number.isFinite(tVf) ? tVf : DEFAULT_OMNI_PARAMS.tVf,
     tFe: Number.isFinite(tFe) ? tFe : DEFAULT_OMNI_PARAMS.tFe,
+    faceFilter,
   });
 }
 
@@ -1833,7 +2088,8 @@ export function applyOperator(mesh: Mesh, operator: string | OperatorSpec): Mesh
       operator.tVf,
       operator.tFe,
       operator.roleGeometryDetail,
-      operator.roleShapeBasis
+      operator.roleShapeBasis,
+      operator.faceFilter
     );
   }
 

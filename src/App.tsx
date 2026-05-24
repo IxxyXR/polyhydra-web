@@ -60,7 +60,12 @@ import {
   serializeOperatorSpec,
   applyOperator,
   hasMeshEdgeCrossings,
+  normalizeFaceFilter,
+  operatorSupportsFaceFilter,
   OperatorSpec,
+  FaceFilterMeasure,
+  FaceFilterProperty,
+  FaceFilterSpec,
   RoleShapeBasis,
 } from './lib/conway-operators';
 
@@ -441,6 +446,52 @@ function decodeOperatorParam(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed / 100 : fallback;
 }
 
+const FACE_FILTER_PROPERTY_TO_URL: Record<FaceFilterProperty, string> = {
+  sides: 's',
+};
+const FACE_FILTER_PROPERTY_FROM_URL: Record<string, FaceFilterProperty> = {
+  s: 'sides',
+};
+const FACE_FILTER_MEASURE_TO_URL: Record<FaceFilterMeasure, string> = {
+  equal: 'e',
+  'less-than': 'l',
+  'is-even': 'v',
+};
+const FACE_FILTER_MEASURE_FROM_URL: Record<string, FaceFilterMeasure> = {
+  e: 'equal',
+  l: 'less-than',
+  v: 'is-even',
+};
+
+function encodeFaceFilter(filter?: FaceFilterSpec) {
+  if (!filter) return '';
+  const normalized = normalizeFaceFilter(filter);
+  return [
+    'f',
+    FACE_FILTER_PROPERTY_TO_URL[normalized.property],
+    FACE_FILTER_MEASURE_TO_URL[normalized.measure],
+    normalized.negate ? '1' : '0',
+    normalized.value.toString(36).padStart(2, '0'),
+    normalized.enabled ? '1' : '0',
+  ].join('');
+}
+
+function decodeFaceFilter(value: string): FaceFilterSpec | undefined {
+  if (!value.startsWith('f') || value.length < 6) return undefined;
+  const property = FACE_FILTER_PROPERTY_FROM_URL[value[1]];
+  const measure = FACE_FILTER_MEASURE_FROM_URL[value[2]];
+  const parsedValue = Number.parseInt(value.slice(4, 6), 36);
+  if (!property || !measure || !Number.isFinite(parsedValue)) return undefined;
+
+  return normalizeFaceFilter({
+    enabled: value[6] === undefined ? true : value[6] === '1',
+    property,
+    measure,
+    negate: value[3] === '1',
+    value: parsedValue,
+  });
+}
+
 function serializeCompactOperator(operator: OperatorState) {
   let atomMask = 0;
   const selectedAtoms = new Set(parseAtomList(operator.notation));
@@ -459,13 +510,15 @@ function serializeCompactOperator(operator: OperatorState) {
   const payload = encodedParams === defaultParams
     ? atomMask.toString(36)
     : `${atomMask.toString(36)}.${encodedParams}`;
+  const filterPayload = encodeFaceFilter(operator.faceFilter);
 
-  return `${operator.enabled ? '' : '!'}${payload}`;
+  return `${operator.enabled ? '' : '!'}${payload}${filterPayload ? `~${filterPayload}` : ''}`;
 }
 
 function parseCompactOperator(token: string): OperatorState | null {
   const enabled = !token.startsWith('!');
-  const payload = enabled ? token : token.slice(1);
+  const fullPayload = enabled ? token : token.slice(1);
+  const [payload, filterRaw] = fullPayload.split('~');
   const [maskRaw, paramRaw] = payload.split('.');
   if (!maskRaw) return null;
 
@@ -490,7 +543,10 @@ function parseCompactOperator(token: string): OperatorState | null {
       }
     : DEFAULT_OMNI_PARAMS;
 
-  return createOperator(joinAtomList(atoms), enabled, params);
+  return createOperator(joinAtomList(atoms), enabled, {
+    ...params,
+    faceFilter: filterRaw ? decodeFaceFilter(filterRaw) : undefined,
+  });
 }
 
 function createOperator(notation: string, enabled = true, overrides: Partial<OperatorSpec> = {}): OperatorState {
@@ -602,7 +658,8 @@ function buildAppSearchParams(state: {
 
 function parseOperatorsFromUrlParam(urlOps: string): OperatorState[] {
   const compactEntries = urlOps.split(';').filter(Boolean);
-  if (compactEntries.length > 0 && compactEntries.every((entry) => entry.includes('.') || /^[!0-9a-z]+$/i.test(entry))) {
+  const compactOperatorPattern = /^!?[0-9a-z]+(?:\.[0-9a-z]{6})?(?:~f[srv][elv][01][0-9a-z]{2}[01]?)?$/i;
+  if (compactEntries.length > 0 && compactEntries.every((entry) => compactOperatorPattern.test(entry))) {
     const parsedCompact = compactEntries
       .map(parseCompactOperator)
       .filter((operator): operator is OperatorState => operator !== null);
@@ -1125,6 +1182,8 @@ export default function App() {
     : (selectedMatchingPresetName ?? CUSTOM_PRESET_VALUE);
   const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation, hoveredGridAtom) ?? (selectedOperatorNotation.trim() === '' ? createEmptyDiagramSvg(hoveredGridAtom) : null);
   const activeOperators = useMemo(() => operators.filter((op) => op.enabled), [operators]);
+  const selectedOperatorSupportsFaceFilter = selectedOperator ? operatorSupportsFaceFilter(selectedOperator) : false;
+  const selectedFaceFilter = normalizeFaceFilter(selectedOperator?.faceFilter);
 
   const updateSelectedOperatorNotation = (notation: string) => {
     if (!selectedOperatorId) return;
@@ -1169,6 +1228,14 @@ export default function App() {
         ? { ...op, [field]: Number.isFinite(parsed) ? parsed : DEFAULT_OMNI_PARAMS[field] }
         : op
     ));
+  };
+
+  const updateOperatorFaceFilter = (id: string, patch: Partial<FaceFilterSpec>) => {
+    setOperators((current) => current.map((op) => (
+      op.id === id
+        ? { ...op, faceFilter: normalizeFaceFilter({ ...normalizeFaceFilter(op.faceFilter), ...patch }) }
+        : op
+    )));
   };
 
   const updateMultigridSetting = <K extends keyof MultiGridSettings>(field: K, value: MultiGridSettings[K]) => {
@@ -2823,6 +2890,67 @@ export default function App() {
                                           ))}
                                         </div>
                                       </div>
+
+                                      {selectedOperatorSupportsFaceFilter && (
+                                        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+                                          <div className="mb-2 flex items-center justify-between gap-3">
+                                            <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                                              <input
+                                                type="checkbox"
+                                                checked={selectedFaceFilter.enabled}
+                                                onChange={(e) => updateOperatorFaceFilter(op.id, { enabled: e.target.checked })}
+                                                className="h-3.5 w-3.5 accent-blue-600"
+                                              />
+                                              Face Filter
+                                            </label>
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Sides</span>
+                                          </div>
+                                          <div className="grid gap-2">
+                                            <div className="grid grid-cols-3 gap-1">
+                                              {([
+                                                ['equal', '='],
+                                                ['less-than', '<'],
+                                                ['is-even', 'Even'],
+                                              ] as Array<[FaceFilterMeasure, string]>).map(([measure, label]) => (
+                                                <button
+                                                  key={measure}
+                                                  type="button"
+                                                  onClick={() => updateOperatorFaceFilter(op.id, { measure })}
+                                                  className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                                    selectedFaceFilter.measure === measure
+                                                      ? 'border-blue-700/60 bg-blue-950/30 text-blue-300'
+                                                      : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                                  }`}
+                                                >
+                                                  {label}
+                                                </button>
+                                              ))}
+                                            </div>
+                                            <div className="grid grid-cols-[1fr_auto] gap-2">
+                                              <input
+                                                type="number"
+                                                min="3"
+                                                max="32"
+                                                step="1"
+                                                disabled={selectedFaceFilter.measure === 'is-even'}
+                                                value={selectedFaceFilter.value}
+                                                aria-label="Face side count"
+                                                onChange={(e) => updateOperatorFaceFilter(op.id, { value: Number.parseInt(e.target.value, 10) })}
+                                                className="w-full rounded-lg border border-neutral-700/50 bg-neutral-800/40 px-2 py-1.5 text-xs text-neutral-200 disabled:text-neutral-600 focus:border-blue-500 focus:outline-none"
+                                              />
+                                              <label className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900/40 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={selectedFaceFilter.negate}
+                                                  onChange={(e) => updateOperatorFaceFilter(op.id, { negate: e.target.checked })}
+                                                  className="h-3.5 w-3.5 accent-blue-600"
+                                                />
+                                                Not
+                                              </label>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
 
                                       <AnimatePresence>
                                         {showOnboarding && activeOnboardingStep === 5 && (
