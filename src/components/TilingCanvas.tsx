@@ -6,7 +6,7 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 import { installHtmlInCanvasPolyfill } from 'three-html-render/polyfill';
 import { TilingGenerationOptions, triangulateFaces } from '../lib/tiling-geometries';
 import { PaletteKey } from '../lib/palettes';
-import { RadialPolyType } from '../lib/radial-solids';
+import { RadialBuildOptions, RadialPolyType } from '../lib/radial-solids';
 
 import { OperatorSpec, RoleShapeBasis } from '../lib/conway-operators';
 import { ColorMode, computeFaceColors } from '../lib/coloring';
@@ -895,6 +895,7 @@ interface TilingCanvasProps {
   mode?: '2d' | '3d';
   radialType?: RadialPolyType;
   radialSides?: number;
+  radialBuildOptions?: RadialBuildOptions;
   finalization?: MeshFinalizationMode;
   fitRequestKey?: number;
   onGeometryGenerationChange?: (isGenerating: boolean) => void;
@@ -948,6 +949,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   mode = '2d' as '2d' | '3d',
   radialType = 'Prism' as RadialPolyType,
   radialSides = 5,
+  radialBuildOptions,
   finalization = 'planarize' as MeshFinalizationMode,
   fitRequestKey = 0,
   onGeometryGenerationChange,
@@ -1463,6 +1465,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         operators,
         radialType,
         radialSides,
+        radialBuildOptions,
         roleGeometryDetail,
         roleShapeBasis,
         generationOptions,
@@ -1660,7 +1663,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         window.clearTimeout(embossTimeoutId);
       }
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, finalization, fitRequestKey, onGeometryGenerationChange]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, radialBuildOptions, finalization, fitRequestKey, onGeometryGenerationChange]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 });

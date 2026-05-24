@@ -1,6 +1,6 @@
 import { applyOperator, Mesh, OperatorSpec, RoleShapeBasis } from './conway-operators';
 import { MeshFinalizationMode, finalizeMesh } from './mesh-finalization';
-import { buildRadialSolid, RadialPolyType } from './radial-solids';
+import { buildRadialSolid, RadialBuildOptions, RadialPolyType } from './radial-solids';
 import { TilingGenerationOptions, UNIFORM_TILINGS } from './tiling-geometries';
 
 export interface FinalMeshOptions {
@@ -11,6 +11,7 @@ export interface FinalMeshOptions {
   operators: OperatorSpec[];
   radialType: RadialPolyType;
   radialSides: number;
+  radialBuildOptions?: RadialBuildOptions;
   roleGeometryDetail?: number;
   roleShapeBasis?: RoleShapeBasis;
   generationOptions?: TilingGenerationOptions;
@@ -25,6 +26,7 @@ export function generateFinalMesh({
   operators,
   radialType,
   radialSides,
+  radialBuildOptions,
   roleGeometryDetail,
   roleShapeBasis,
   generationOptions,
@@ -33,7 +35,7 @@ export function generateFinalMesh({
   let mesh: Mesh;
 
   if (mode === '3d') {
-    const solid = buildRadialSolid(radialType, radialSides);
+    const solid = buildRadialSolid(radialType, radialSides, radialBuildOptions);
     mesh = solid;
   } else {
     const tiling = UNIFORM_TILINGS[tilingType];

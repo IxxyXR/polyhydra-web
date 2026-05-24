@@ -2,6 +2,7 @@ import { applyOperator, Mesh } from './conway-operators';
 import { finalizeMesh } from './mesh-finalization';
 
 export type RadialPolyType =
+  | 'Box' | 'Cone' | 'Torus'
   | 'Tetrahedron' | 'Cube' | 'Octahedron' | 'Dodecahedron' | 'Icosahedron'
   | 'TruncatedTetrahedron'
   | 'Cuboctahedron' | 'TruncatedCube' | 'TruncatedOctahedron' | 'Rhombicuboctahedron' | 'TruncatedCuboctahedron' | 'SnubCube'
@@ -28,6 +29,9 @@ export type RadialPolyType =
   | 'GyroelongatedCupolaRotunda';
 
 export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
+  Box: 'Box',
+  Cone: 'Cone',
+  Torus: 'Torus',
   Tetrahedron: 'Tetrahedron',
   Cube: 'Cube',
   Octahedron: 'Octahedron',
@@ -96,6 +100,7 @@ export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
 };
 
 export const RADIAL_SHAPE_GROUPS: { name: string; types: RadialPolyType[] }[] = [
+  { name: 'General Shapes', types: ['Box', 'Cone', 'Torus'] },
   { name: 'Platonic Solids', types: ['Tetrahedron', 'Cube', 'Octahedron', 'Dodecahedron', 'Icosahedron'] },
   { name: 'Archimedean Solids', types: [
     'TruncatedTetrahedron',
@@ -136,6 +141,8 @@ export const RADIAL_SHAPE_GROUPS: { name: string; types: RadialPolyType[] }[] = 
 ];
 
 export const RADIAL_TYPES_WITH_SIDES = new Set<RadialPolyType>([
+  'Cone',
+  'Torus',
   'Prism',
   'Antiprism',
   'Trapezohedron',
@@ -167,6 +174,17 @@ export const RADIAL_TYPES_WITH_SIDES = new Set<RadialPolyType>([
   'ElongatedGyroCupolaRotunda',
   'GyroelongatedCupolaRotunda',
 ]);
+
+export interface RadialBuildOptions {
+  boxSegments?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  coneHeightSegments?: number;
+  coneTaper?: number;
+  torusProfileSides?: number;
+}
 
 const NAMED_UNIFORM_CANONICALIZE_MAX_ITERATIONS = 300;
 
@@ -588,6 +606,146 @@ function computeDual(verts: number[], faces: number[][]): { vertices: number[]; 
 }
 
 // --- shape builders ---
+
+function makeBox(xSegments: number, ySegments: number, zSegments: number): { vertices: number[]; faces: number[][] } {
+  const sx = Math.max(1, Math.min(32, Math.round(xSegments)));
+  const sy = Math.max(1, Math.min(32, Math.round(ySegments)));
+  const sz = Math.max(1, Math.min(32, Math.round(zSegments)));
+  const halfX = sx / 2;
+  const halfY = sy / 2;
+  const halfZ = sz / 2;
+  const vertices: number[] = [];
+  const vertexByKey = new Map<string, number>();
+  const faces: number[][] = [];
+
+  const getVertex = (x: number, y: number, z: number) => {
+    const key = `${x.toFixed(8)},${y.toFixed(8)},${z.toFixed(8)}`;
+    const existing = vertexByKey.get(key);
+    if (existing !== undefined) return existing;
+
+    const index = vertices.length / 3;
+    vertexByKey.set(key, index);
+    vertices.push(x, y, z);
+    return index;
+  };
+
+  const coord = (index: number, segments: number) => index - (segments / 2);
+  const addQuad = (a: V3, b: V3, c: V3, d: V3) => {
+    faces.push([getVertex(...a), getVertex(...b), getVertex(...c), getVertex(...d)]);
+  };
+
+  for (let y = 0; y < sy; y += 1) {
+    for (let z = 0; z < sz; z += 1) {
+      addQuad([-halfX, coord(y, sy), coord(z, sz)], [-halfX, coord(y, sy), coord(z + 1, sz)], [-halfX, coord(y + 1, sy), coord(z + 1, sz)], [-halfX, coord(y + 1, sy), coord(z, sz)]);
+      addQuad([halfX, coord(y, sy), coord(z, sz)], [halfX, coord(y + 1, sy), coord(z, sz)], [halfX, coord(y + 1, sy), coord(z + 1, sz)], [halfX, coord(y, sy), coord(z + 1, sz)]);
+    }
+  }
+
+  for (let x = 0; x < sx; x += 1) {
+    for (let z = 0; z < sz; z += 1) {
+      addQuad([coord(x, sx), -halfY, coord(z, sz)], [coord(x + 1, sx), -halfY, coord(z, sz)], [coord(x + 1, sx), -halfY, coord(z + 1, sz)], [coord(x, sx), -halfY, coord(z + 1, sz)]);
+      addQuad([coord(x, sx), halfY, coord(z, sz)], [coord(x, sx), halfY, coord(z + 1, sz)], [coord(x + 1, sx), halfY, coord(z + 1, sz)], [coord(x + 1, sx), halfY, coord(z, sz)]);
+    }
+  }
+
+  for (let x = 0; x < sx; x += 1) {
+    for (let y = 0; y < sy; y += 1) {
+      addQuad([coord(x, sx), coord(y, sy), -halfZ], [coord(x, sx), coord(y + 1, sy), -halfZ], [coord(x + 1, sx), coord(y + 1, sy), -halfZ], [coord(x + 1, sx), coord(y, sy), -halfZ]);
+      addQuad([coord(x, sx), coord(y, sy), halfZ], [coord(x + 1, sx), coord(y, sy), halfZ], [coord(x + 1, sx), coord(y + 1, sy), halfZ], [coord(x, sx), coord(y + 1, sy), halfZ]);
+    }
+  }
+
+  return centerAndNormalize({ vertices, faces });
+}
+
+function makeCone(n: number, heightSegments: number, taper: number): { vertices: number[]; faces: number[][] } {
+  const sides = Math.max(3, Math.min(64, Math.round(n)));
+  const segments = Math.max(1, Math.min(32, Math.round(heightSegments)));
+  const topRadius = Math.max(0, Math.min(2, taper));
+  const height = 2;
+  const vertices: number[] = [];
+  const ringIndices: number[][] = [];
+  const faces: number[][] = [];
+  const topIsPoint = topRadius < 1e-5;
+  const ringCount = topIsPoint ? segments : segments + 1;
+
+  for (let level = 0; level < ringCount; level += 1) {
+    const t = level / segments;
+    const radius = 1 + (topRadius - 1) * t;
+    const y = -height / 2 + height * t;
+    ringIndices.push(ring(sides, radius, y).map((vertex) => {
+      const index = vertices.length / 3;
+      vertices.push(vertex[0], vertex[1], vertex[2]);
+      return index;
+    }));
+  }
+
+  const bottomRing = ringIndices[0];
+  faces.push([...bottomRing].reverse());
+
+  for (let level = 0; level < ringIndices.length - 1; level += 1) {
+    const lower = ringIndices[level];
+    const upper = ringIndices[level + 1];
+    for (let side = 0; side < sides; side += 1) {
+      faces.push([lower[side], lower[mod(side + 1, sides)], upper[mod(side + 1, sides)], upper[side]]);
+    }
+  }
+
+  if (topIsPoint) {
+    const apexIndex = vertices.length / 3;
+    vertices.push(0, height / 2, 0);
+    const lastRing = ringIndices[ringIndices.length - 1];
+    for (let side = 0; side < sides; side += 1) {
+      faces.push([lastRing[side], lastRing[mod(side + 1, sides)], apexIndex]);
+    }
+  } else {
+    faces.push([...ringIndices[ringIndices.length - 1]]);
+  }
+
+  return centerAndNormalize({ vertices, faces });
+}
+
+function makeTorus(sides: number, profileSides: number): { vertices: number[]; faces: number[][] } {
+  const ringCount = Math.max(3, Math.min(96, Math.round(sides)));
+  const profileCount = Math.max(3, Math.min(32, Math.round(profileSides)));
+  const majorRadius = 1.15;
+  const profileRadius = 0.35;
+  const vertices: number[] = [];
+  const faces: number[][] = [];
+
+  for (let i = 0; i < ringCount; i += 1) {
+    const majorAngle = (2 * Math.PI * i) / ringCount;
+    const cosMajor = Math.cos(majorAngle);
+    const sinMajor = Math.sin(majorAngle);
+
+    for (let j = 0; j < profileCount; j += 1) {
+      const profileAngle = (2 * Math.PI * j) / profileCount;
+      const radius = majorRadius + profileRadius * Math.cos(profileAngle);
+      vertices.push(
+        radius * cosMajor,
+        profileRadius * Math.sin(profileAngle),
+        radius * sinMajor,
+      );
+    }
+  }
+
+  const index = (ringIndex: number, profileIndex: number) => (
+    mod(ringIndex, ringCount) * profileCount + mod(profileIndex, profileCount)
+  );
+
+  for (let i = 0; i < ringCount; i += 1) {
+    for (let j = 0; j < profileCount; j += 1) {
+      faces.push([
+        index(i, j),
+        index(i, j + 1),
+        index(i + 1, j + 1),
+        index(i + 1, j),
+      ]);
+    }
+  }
+
+  return centerAndNormalize({ vertices, faces });
+}
 
 function makePrism(n: number, h?: number): { vertices: number[]; faces: number[][] } {
   const height = h ?? sideLen(n);
@@ -1456,10 +1614,23 @@ function buildAlternatedCatalanSolid(base: Mesh, operators: string[]): Mesh {
 
 // --- public API ---
 
-export function buildRadialSolid(type: RadialPolyType, sides: number): { vertices: number[]; faces: number[][] } {
-  const n = Math.max(3, Math.min(16, sides));
+export function buildRadialSolid(type: RadialPolyType, sides: number, options: RadialBuildOptions = {}): { vertices: number[]; faces: number[][] } {
+  const n = Math.max(3, Math.min(type === 'Torus' ? 64 : 16, sides));
   let result: { vertices: number[]; faces: number[][] };
   switch (type) {
+    case 'Box':
+      result = makeBox(
+        options.boxSegments?.x ?? 1,
+        options.boxSegments?.y ?? 1,
+        options.boxSegments?.z ?? 1,
+      );
+      break;
+    case 'Cone':
+      result = makeCone(n, options.coneHeightSegments ?? 1, options.coneTaper ?? 0);
+      break;
+    case 'Torus':
+      result = makeTorus(n, options.torusProfileSides ?? 8);
+      break;
     case 'Tetrahedron':            result = makeTetrahedron(); break;
     case 'Cube':                   result = makeCube(); break;
     case 'Octahedron':             result = makeOctahedron(); break;
@@ -1544,5 +1715,5 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
       break;
     case 'GyroelongatedCupolaRotunda': result = makeGyroelongatedCupolaRotunda(n); break;
   }
-  return { vertices: result.vertices, faces: fixNormals(result.vertices, result.faces) };
+  return { vertices: result.vertices, faces: type === 'Torus' ? result.faces : fixNormals(result.vertices, result.faces) };
 }
