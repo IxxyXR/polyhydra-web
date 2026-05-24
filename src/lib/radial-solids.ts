@@ -10,6 +10,7 @@ export type RadialPolyType =
   | 'DeltoidalIcositetrahedron' | 'DisdyakisDodecahedron' | 'PentagonalIcositetrahedron'
   | 'RhombicTriacontahedron' | 'TriakisIcosahedron' | 'PentakisDodecahedron'
   | 'DeltoidalHexecontahedron' | 'DisdyakisTriacontahedron' | 'PentagonalHexecontahedron'
+  | 'SmallStellatedDodecahedron' | 'GreatDodecahedron' | 'GreatStellatedDodecahedron' | 'GreatIcosahedron'
   | 'Prism' | 'Antiprism' | 'Trapezohedron'
   | 'Pyramid' | 'Dipyramid'
   | 'ElongatedPyramid' | 'ElongatedDipyramid'
@@ -58,6 +59,10 @@ export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
   DeltoidalHexecontahedron: 'Deltoidal Hexecontahedron',
   DisdyakisTriacontahedron: 'Disdyakis Triacontahedron',
   PentagonalHexecontahedron: 'Pentagonal Hexecontahedron',
+  SmallStellatedDodecahedron: 'Small Stellated Dodecahedron',
+  GreatDodecahedron: 'Great Dodecahedron',
+  GreatStellatedDodecahedron: 'Great Stellated Dodecahedron',
+  GreatIcosahedron: 'Great Icosahedron',
   Prism: 'Prism',
   Antiprism: 'Antiprism',
   Trapezohedron: 'Trapezohedron',
@@ -122,6 +127,7 @@ export const RADIAL_SHAPE_GROUPS: { name: string; types: RadialPolyType[] }[] = 
     'DisdyakisTriacontahedron',
     'PentagonalHexecontahedron',
   ] },
+  { name: 'Kepler-Poinsot Solids', types: ['SmallStellatedDodecahedron', 'GreatDodecahedron', 'GreatStellatedDodecahedron', 'GreatIcosahedron'] },
   { name: 'Prisms', types: ['Prism', 'Antiprism'] },
   { name: 'Pyramids', types: ['Pyramid', 'Dipyramid', 'ElongatedPyramid', 'ElongatedDipyramid', 'GyroelongatedPyramid', 'GyroelongatedDipyramid', 'Trapezohedron'] },
   { name: 'Cupolae', types: ['Cupola', 'ElongatedCupola', 'GyroelongatedCupola', 'OrthoBicupola', 'GyroBicupola', 'ElongatedOrthoBicupola', 'ElongatedGyroBicupola', 'GyroelongatedBicupola'] },
@@ -362,6 +368,91 @@ function ring(n: number, radius: number, y: number, angleOffset = 0): V3[] {
 }
 function flatten(verts: V3[]): number[] { return verts.flatMap(v => v); }
 function mod(i: number, n: number): number { return ((i % n) + n) % n; }
+function distanceSquared(a: V3, b: V3): number {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  const dz = a[2] - b[2];
+  return dx * dx + dy * dy + dz * dz;
+}
+
+function faceCentroid(vertices: number[], face: number[]): V3 {
+  const center: V3 = [0, 0, 0];
+  for (const vertexIndex of face) {
+    const vertex = v3(vertices, vertexIndex);
+    center[0] += vertex[0];
+    center[1] += vertex[1];
+    center[2] += vertex[2];
+  }
+  return scale(center, 1 / face.length);
+}
+
+function outwardFaceNormal(vertices: number[], face: number[]): V3 {
+  if (face.length < 3) return [0, 1, 0];
+  const a = v3(vertices, face[0]);
+  const b = v3(vertices, face[1]);
+  const c = v3(vertices, face[2]);
+  let normal = norm(cross(sub(b, a), sub(c, a)));
+  const center = faceCentroid(vertices, face);
+  if (dot(normal, center) < 0) {
+    normal = scale(normal, -1);
+  }
+  return normal;
+}
+
+function sortVerticesAroundAxis(vertices: number[], indices: number[], center: V3, axis: V3): number[] {
+  const normal = norm(axis);
+  const fallbackAxis: V3 = Math.abs(normal[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const tangent = norm(cross(fallbackAxis, normal));
+  const bitangent = norm(cross(normal, tangent));
+
+  return [...indices].sort((a, b) => {
+    const da = sub(v3(vertices, a), center);
+    const db = sub(v3(vertices, b), center);
+    const angleA = Math.atan2(dot(da, bitangent), dot(da, tangent));
+    const angleB = Math.atan2(dot(db, bitangent), dot(db, tangent));
+    return angleA - angleB;
+  });
+}
+
+function stellateMesh(mesh: Mesh, heightForFace: (vertices: number[], face: number[]) => number): Mesh {
+  const vertices = [...mesh.vertices];
+  const faces: number[][] = [];
+  const sourceFaces = fixNormals(mesh.vertices, mesh.faces);
+
+  for (const face of sourceFaces) {
+    const center = faceCentroid(mesh.vertices, face);
+    const normal = outwardFaceNormal(mesh.vertices, face);
+    const height = heightForFace(mesh.vertices, face);
+    const apexIndex = vertices.length / 3;
+    const apex = add(center, scale(normal, height));
+    vertices.push(apex[0], apex[1], apex[2]);
+
+    for (let i = 0; i < face.length; i += 1) {
+      faces.push([apexIndex, face[i], face[(i + 1) % face.length]]);
+    }
+  }
+
+  return centerAndNormalize({ vertices, faces });
+}
+
+function lineIntersection2D(
+  a: [number, number],
+  b: [number, number],
+  c: [number, number],
+  d: [number, number],
+): [number, number] | null {
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const cdx = d[0] - c[0];
+  const cdy = d[1] - c[1];
+  const denominator = abx * cdy - aby * cdx;
+  if (Math.abs(denominator) < 1e-10) return null;
+
+  const acx = c[0] - a[0];
+  const acy = c[1] - a[1];
+  const t = (acx * cdy - acy * cdx) / denominator;
+  return [a[0] + t * abx, a[1] + t * aby];
+}
 
 // --- shape parameter helpers ---
 function sideLen(n: number) { return 2 * Math.sin(Math.PI / n); }
@@ -1160,6 +1251,173 @@ function makeDodecahedron(): Mesh {
   return centerAndNormalize(computeDual(icosa.vertices, icosa.faces));
 }
 
+function makeSmallStellatedDodecahedron(): Mesh {
+  const icosahedron = makeIcosahedron();
+  const tipCount = icosahedron.vertices.length / 3;
+  const vertices = [...icosahedron.vertices];
+  const faces: number[][] = [];
+  const vertexByKey = new Map<string, number>();
+
+  for (let vertexIndex = 0; vertexIndex < tipCount; vertexIndex += 1) {
+    const vertex = v3(vertices, vertexIndex);
+    vertexByKey.set(vertex.map((value) => value.toFixed(8)).join(','), vertexIndex);
+  }
+
+  const addVertex = (point: V3) => {
+    const key = point.map((value) => value.toFixed(8)).join(',');
+    const existing = vertexByKey.get(key);
+    if (existing !== undefined) return existing;
+
+    const nextIndex = vertices.length / 3;
+    vertexByKey.set(key, nextIndex);
+    vertices.push(point[0], point[1], point[2]);
+    return nextIndex;
+  };
+
+  const coplanarTipSets: number[][] = [];
+  for (let a = 0; a < tipCount - 4; a += 1) {
+    for (let b = a + 1; b < tipCount - 3; b += 1) {
+      for (let c = b + 1; c < tipCount - 2; c += 1) {
+        for (let d = c + 1; d < tipCount - 1; d += 1) {
+          for (let e = d + 1; e < tipCount; e += 1) {
+            const set = [a, b, c, d, e];
+            const p0 = v3(vertices, set[0]);
+            const normal = norm(cross(sub(v3(vertices, set[1]), p0), sub(v3(vertices, set[2]), p0)));
+            if (normal.some((value) => !Number.isFinite(value))) continue;
+            if (set.every((index) => Math.abs(dot(normal, sub(v3(vertices, index), p0))) < 1e-8)) {
+              coplanarTipSets.push(set);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (const tipSet of coplanarTipSets) {
+    const center = scale(
+      tipSet.reduce((current, index) => add(current, v3(vertices, index)), [0, 0, 0] as V3),
+      1 / tipSet.length,
+    );
+    let normal = norm(cross(sub(v3(vertices, tipSet[1]), v3(vertices, tipSet[0])), sub(v3(vertices, tipSet[2]), v3(vertices, tipSet[0]))));
+    if (dot(normal, center) < 0) {
+      normal = scale(normal, -1);
+    }
+    const tangent = norm(sub(v3(vertices, tipSet[0]), center));
+    const bitangent = norm(cross(normal, tangent));
+    const orderedTips = [...tipSet].sort((a, b) => {
+      const da = sub(v3(vertices, a), center);
+      const db = sub(v3(vertices, b), center);
+      const angleA = Math.atan2(dot(da, bitangent), dot(da, tangent));
+      const angleB = Math.atan2(dot(db, bitangent), dot(db, tangent));
+      return angleA - angleB;
+    });
+    const localPoints = orderedTips.map((index) => {
+      const delta = sub(v3(vertices, index), center);
+      return [dot(delta, tangent), dot(delta, bitangent)] as [number, number];
+    });
+    const toWorld = (point: [number, number]): V3 => add(center, add(scale(tangent, point[0]), scale(bitangent, point[1])));
+    const starEdges = orderedTips.map((_, index) => [index, (index + 2) % orderedTips.length] as const);
+
+    for (let tipPosition = 0; tipPosition < orderedTips.length; tipPosition += 1) {
+      const containingEdges = starEdges
+        .map((edge, edgeIndex) => ({ edge, edgeIndex }))
+        .filter(({ edge }) => edge[0] === tipPosition || edge[1] === tipPosition);
+      const armVertices = containingEdges.map(({ edge, edgeIndex }) => {
+        const tipPoint = localPoints[tipPosition];
+        const intersections = starEdges
+          .map((otherEdge, otherEdgeIndex) => {
+            if (otherEdgeIndex === edgeIndex || otherEdge.includes(tipPosition)) return null;
+            const intersection = lineIntersection2D(
+              localPoints[edge[0]],
+              localPoints[edge[1]],
+              localPoints[otherEdge[0]],
+              localPoints[otherEdge[1]],
+            );
+            if (!intersection) return null;
+            const dx = intersection[0] - tipPoint[0];
+            const dy = intersection[1] - tipPoint[1];
+            return { intersection, distance: dx * dx + dy * dy };
+          })
+          .filter((entry): entry is { intersection: [number, number]; distance: number } => entry !== null)
+          .sort((a, b) => a.distance - b.distance);
+
+        return addVertex(toWorld(intersections[0].intersection));
+      });
+
+      faces.push([orderedTips[tipPosition], armVertices[0], armVertices[1]]);
+    }
+  }
+
+  return centerAndNormalize({ vertices, faces });
+}
+
+function makeGreatDodecahedron(): Mesh {
+  const icosahedron = makeIcosahedron();
+  const vertexCount = icosahedron.vertices.length / 3;
+  const adjacency = Array.from({ length: vertexCount }, () => new Set<number>());
+
+  for (const face of icosahedron.faces) {
+    for (let i = 0; i < face.length; i += 1) {
+      const a = face[i];
+      const b = face[(i + 1) % face.length];
+      adjacency[a].add(b);
+      adjacency[b].add(a);
+    }
+  }
+
+  const faces = adjacency.map((neighbors, vertexIndex) => {
+    const center = v3(icosahedron.vertices, vertexIndex);
+    return sortVerticesAroundAxis(icosahedron.vertices, [...neighbors], center, center);
+  });
+
+  return centerAndNormalize({ vertices: icosahedron.vertices, faces });
+}
+
+function makeGreatIcosahedron(): Mesh {
+  const icosahedron = makeIcosahedron();
+  const vertexCount = icosahedron.vertices.length / 3;
+  const distances: number[] = [];
+  for (let a = 0; a < vertexCount; a += 1) {
+    for (let b = a + 1; b < vertexCount; b += 1) {
+      distances.push(distanceSquared(v3(icosahedron.vertices, a), v3(icosahedron.vertices, b)));
+    }
+  }
+  const uniqueDistances = [...new Set(distances.map((value) => value.toFixed(8)))]
+    .map(Number)
+    .sort((a, b) => a - b);
+  const longEdgeDistance = uniqueDistances[1];
+  const epsilon = 1e-6;
+  const faces: number[][] = [];
+
+  for (let a = 0; a < vertexCount - 2; a += 1) {
+    for (let b = a + 1; b < vertexCount - 1; b += 1) {
+      for (let c = b + 1; c < vertexCount; c += 1) {
+        const ab = distanceSquared(v3(icosahedron.vertices, a), v3(icosahedron.vertices, b));
+        const ac = distanceSquared(v3(icosahedron.vertices, a), v3(icosahedron.vertices, c));
+        const bc = distanceSquared(v3(icosahedron.vertices, b), v3(icosahedron.vertices, c));
+        if (
+          Math.abs(ab - longEdgeDistance) < epsilon &&
+          Math.abs(ac - longEdgeDistance) < epsilon &&
+          Math.abs(bc - longEdgeDistance) < epsilon
+        ) {
+          faces.push([a, b, c]);
+        }
+      }
+    }
+  }
+
+  return centerAndNormalize({ vertices: icosahedron.vertices, faces });
+}
+
+function makeGreatStellatedDodecahedron(): Mesh {
+  const icosahedron = makeIcosahedron();
+  const stellationHeightRatio = Math.sqrt((7 + 3 * Math.sqrt(5)) / 6);
+  return stellateMesh(icosahedron, (vertices, face) => {
+    const side = Math.sqrt(distanceSquared(v3(vertices, face[0]), v3(vertices, face[1])));
+    return side * stellationHeightRatio;
+  });
+}
+
 function buildDerivedSolid(base: Mesh, operators: string[]): Mesh {
   let mesh = centerAndNormalize(base);
   for (const operator of operators) {
@@ -1243,6 +1501,10 @@ export function buildRadialSolid(type: RadialPolyType, sides: number): { vertice
     case 'PentagonalHexecontahedron':
       result = buildAlternatedCatalanSolid(makeDodecahedron(), ['Ambo', 'Truncate']);
       break;
+    case 'SmallStellatedDodecahedron': result = makeSmallStellatedDodecahedron(); break;
+    case 'GreatDodecahedron':          result = makeGreatDodecahedron(); break;
+    case 'GreatStellatedDodecahedron': result = makeGreatStellatedDodecahedron(); break;
+    case 'GreatIcosahedron':           result = makeGreatIcosahedron(); break;
     case 'Prism':                  result = makePrism(n); break;
     case 'Antiprism':              result = makeAntiprism(n); break;
     case 'Trapezohedron':          result = makeTrapezohedron(n); break;
