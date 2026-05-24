@@ -30,7 +30,7 @@ export type RadialPolyType =
 
 export const RADIAL_SOLID_NAMES: Record<RadialPolyType, string> = {
   Box: 'Box',
-  Cone: 'Cone',
+  Cone: 'Cylinder/Cone',
   Torus: 'Torus',
   Tetrahedron: 'Tetrahedron',
   Cube: 'Cube',
