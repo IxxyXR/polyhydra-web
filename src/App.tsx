@@ -75,15 +75,20 @@ import {
   DeformerMode,
   DeformerStackItem,
   getPointGroupBaseOrder,
+  getPointGroupCopyCount,
   isClonerStackItem,
   isDeformerStackItem,
-  isInfinitePointGroup,
   isOperatorStackItem,
   OperatorStackItem,
+  POINT_ORBIT_SITES,
   POINT_GROUP_SYMMETRIES,
+  PointOrbitSite,
   PointGroupSymmetry,
   StackItem,
+  usesPointGroupOrder,
+  WALLPAPER_PLANES,
   WALLPAPER_SYMMETRIES,
+  WallpaperPlane,
   WallpaperSymmetry,
 } from './lib/stack-items';
 
@@ -609,6 +614,10 @@ function serializeCompactStackItem(item: StackItemState) {
     encodeOperatorParam(item.spacingX / 4),
     encodeOperatorParam(item.spacingY / 4),
     item.wallpaperAutoFit ? '1' : '0',
+    item.wallpaperPlane,
+    item.pointAutoFit ? '1' : '0',
+    encodeOperatorParam(item.pointGap / 2),
+    item.pointOrbitSite,
   ].join('.');
 }
 
@@ -683,21 +692,33 @@ function parseCompactStackItem(token: string): StackItemState | null {
     const spacingXRaw = isLegacy ? '' : parts[13];
     const spacingYRaw = isLegacy ? '' : parts[14];
     const wallpaperAutoFitRaw = isLegacy ? '1' : parts[15];
+    const wallpaperPlaneRaw = isLegacy ? 'xy' : parts[16];
+    const pointAutoFitRaw = isLegacy ? '1' : parts[17];
+    const pointGapRaw = isLegacy ? '' : parts[18];
+    const pointOrbitSiteRaw = isLegacy ? 'generic' : parts[19];
     const copies = Number.parseInt(copiesRaw ?? '', 36);
     const xRepeats = Number.parseInt(xRepeatsRaw ?? '', 36);
     const yRepeats = Number.parseInt(yRepeatsRaw ?? '', 36);
     const pointGroup = POINT_GROUP_SYMMETRIES.includes(groupRaw as PointGroupSymmetry)
       ? groupRaw as PointGroupSymmetry
-      : 'C6';
+      : 'O';
     const wallpaperGroup = WALLPAPER_SYMMETRIES.includes(groupRaw as WallpaperSymmetry)
       ? groupRaw as WallpaperSymmetry
       : 'p1';
     return {
       ...createCloner(mode),
       enabled,
-      copies: Number.isFinite(copies) ? Math.min(Math.max(copies, 1), 48) : (mode === 'point' ? 6 : 4),
+      copies: Number.isFinite(copies) ? Math.min(Math.max(copies, 1), 48) : 4,
       pointGroup,
+      pointAutoFit: pointAutoFitRaw !== '0',
+      pointGap: decodeOperatorParam(pointGapRaw ?? '', 0.075) * 2,
+      pointOrbitSite: POINT_ORBIT_SITES.includes(pointOrbitSiteRaw as PointOrbitSite)
+        ? pointOrbitSiteRaw as PointOrbitSite
+        : 'generic',
       wallpaperGroup,
+      wallpaperPlane: WALLPAPER_PLANES.includes(wallpaperPlaneRaw as WallpaperPlane)
+        ? wallpaperPlaneRaw as WallpaperPlane
+        : 'xy',
       radius: decodeOperatorParam(radiusRaw ?? '', 0.2) * 10,
       xRepeats: Number.isFinite(xRepeats) ? Math.min(Math.max(xRepeats, 1), 24) : 2,
       yRepeats: Number.isFinite(yRepeats) ? Math.min(Math.max(yRepeats, 1), 24) : 2,
@@ -745,8 +766,12 @@ function createCloner(mode: ClonerMode = 'point'): ClonerStackItem {
     enabled: true,
     kind: 'cloner',
     mode,
-    pointGroup: 'C6',
+    pointGroup: 'O',
+    pointAutoFit: true,
+    pointGap: 0.15,
+    pointOrbitSite: 'generic',
     wallpaperGroup: 'p1',
+    wallpaperPlane: 'xy',
     copies: 6,
     radius: 2,
     xRepeats: 2,
@@ -1523,18 +1548,7 @@ export default function App() {
         return op;
       }
 
-      const copies = Math.min(Math.max(Math.round(value), 1), 48);
-      if (isInfinitePointGroup(op.pointGroup)) {
-        return { ...op, copies };
-      }
-
-      if (op.pointGroup.startsWith('D')) {
-        const order = Math.min(Math.max(Math.round(copies / 2), 2), 6);
-        return { ...op, pointGroup: `D${order}` as PointGroupSymmetry, copies: order * 2 };
-      }
-
-      const order = Math.min(Math.max(copies, 1), 6);
-      return { ...op, pointGroup: `C${order}` as PointGroupSymmetry, copies: order };
+      return { ...op, copies: Math.min(Math.max(Math.round(value), 1), 12) };
     }));
   };
 
@@ -3129,21 +3143,81 @@ export default function App() {
                                           </select>
                                         </label>
                                         <label className="grid gap-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Primary Axis</span>
+                                          <select
+                                            value={op.wallpaperPlane}
+                                            onChange={(e) => {
+                                              updateCloner(op.id, { wallpaperPlane: e.target.value as WallpaperPlane });
+                                              requestFitToExtents();
+                                            }}
+                                            className="w-full rounded-lg border border-neutral-700/50 bg-neutral-800/40 px-2 py-1.5 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                                          >
+                                            <option value="yz">X</option>
+                                            <option value="xz">Y</option>
+                                            <option value="xy">Z</option>
+                                          </select>
+                                        </label>
+                                        {usesPointGroupOrder(op.pointGroup) && (
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Order</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">
+                                                {getPointGroupBaseOrder(op.pointGroup, op.copies)}
+                                              </span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="1"
+                                              max="12"
+                                              step="1"
+                                              value={getPointGroupBaseOrder(op.pointGroup, op.copies)}
+                                              onChange={(e) => updatePointClonerCopies(op.id, Number.parseInt(e.target.value, 10))}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                        )}
+                                        <div className="flex items-center justify-between gap-2 rounded-lg border border-neutral-800 bg-neutral-900/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                          <span>Copies</span>
+                                          <span className="font-mono text-neutral-300">{getPointGroupCopyCount(op.pointGroup, op.copies)}</span>
+                                        </div>
+                                        <label className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                                          <span>Auto Pack</span>
+                                          <input
+                                            type="checkbox"
+                                            checked={op.pointAutoFit}
+                                            onChange={(e) => updateCloner(op.id, { pointAutoFit: e.target.checked })}
+                                            className="h-3.5 w-3.5 accent-blue-600"
+                                          />
+                                        </label>
+                                        <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
-                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Copies</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">
-                                              {getPointGroupBaseOrder(op.pointGroup, op.copies) * (op.pointGroup.startsWith('D') ? 2 : 1)}
-                                            </span>
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Gap</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.pointGap.toFixed(2)}</span>
                                           </div>
                                           <input
                                             type="range"
-                                            min={op.pointGroup.startsWith('D') ? 4 : 1}
-                                            max={isInfinitePointGroup(op.pointGroup) ? 48 : op.pointGroup.startsWith('D') ? 12 : 6}
-                                            step={op.pointGroup.startsWith('D') ? 2 : 1}
-                                            value={getPointGroupBaseOrder(op.pointGroup, op.copies) * (op.pointGroup.startsWith('D') ? 2 : 1)}
-                                            onChange={(e) => updatePointClonerCopies(op.id, Number.parseInt(e.target.value, 10))}
-                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            min="0"
+                                            max="2"
+                                            step="0.01"
+                                            value={op.pointGap}
+                                            disabled={!op.pointAutoFit}
+                                            onChange={(e) => updateCloner(op.id, { pointGap: Number.parseFloat(e.target.value), pointAutoFit: true })}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
                                           />
+                                        </label>
+                                        <label className="grid gap-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Orbit Site</span>
+                                          <select
+                                            value={op.pointOrbitSite}
+                                            onChange={(e) => updateCloner(op.id, { pointOrbitSite: e.target.value as PointOrbitSite })}
+                                            className="w-full rounded-lg border border-neutral-700/50 bg-neutral-800/40 px-2 py-1.5 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                                          >
+                                            {POINT_ORBIT_SITES.map((site) => (
+                                              <option key={site} value={site}>
+                                                {site}
+                                              </option>
+                                            ))}
+                                          </select>
                                         </label>
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
@@ -3156,8 +3230,9 @@ export default function App() {
                                             max="9.9"
                                             step="0.1"
                                             value={op.radius}
-                                            onChange={(e) => updateCloner(op.id, { radius: Number.parseFloat(e.target.value) })}
-                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            disabled={op.pointAutoFit}
+                                            onChange={(e) => updateCloner(op.id, { radius: Number.parseFloat(e.target.value), pointAutoFit: false })}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
                                           />
                                         </label>
                                       </>
@@ -3181,6 +3256,23 @@ export default function App() {
                                             {WALLPAPER_SYMMETRIES.map((group) => (
                                               <option key={group} value={group}>
                                                 {group}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                        <label className="grid gap-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Primary Axis</span>
+                                          <select
+                                            value={op.wallpaperPlane}
+                                            onChange={(e) => {
+                                              updateCloner(op.id, { wallpaperPlane: e.target.value as WallpaperPlane });
+                                              requestFitToExtents();
+                                            }}
+                                            className="w-full rounded-lg border border-neutral-700/50 bg-neutral-800/40 px-2 py-1.5 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                                          >
+                                            {WALLPAPER_PLANES.map((plane) => (
+                                              <option key={plane} value={plane}>
+                                                {plane.toUpperCase()}
                                               </option>
                                             ))}
                                           </select>

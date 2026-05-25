@@ -3,11 +3,15 @@ import { Mesh, OperatorSpec } from './conway-operators';
 export type DeformerMode = 'stretch' | 'taper' | 'spherify';
 export type DeformerAxis = 'x' | 'y' | 'z';
 export type ClonerMode = 'point' | 'wallpaper';
-export type PointGroupSymmetry = 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6' | 'D2' | 'D3' | 'D4' | 'D6' | 'Cinf' | 'Dinf';
+export type PointGroupSymmetry = 'Cn' | 'Cnv' | 'Cnh' | 'Sn' | 'Dn' | 'Dnh' | 'Dnd' | 'T' | 'Th' | 'Td' | 'O' | 'Oh' | 'I' | 'Ih';
 export type WallpaperSymmetry = 'p1' | 'p2' | 'pm' | 'pg' | 'cm' | 'pmm' | 'pmg' | 'pgg' | 'cmm' | 'p4' | 'p4m' | 'p4g' | 'p3' | 'p3m1' | 'p31m' | 'p6' | 'p6m';
+export type WallpaperPlane = 'xy' | 'yz' | 'xz';
+export type PointOrbitSite = 'generic' | 'vertex' | 'edge' | 'face';
 
-export const POINT_GROUP_SYMMETRIES: PointGroupSymmetry[] = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'D2', 'D3', 'D4', 'D6', 'Cinf', 'Dinf'];
+export const POINT_GROUP_SYMMETRIES: PointGroupSymmetry[] = ['Cn', 'Cnv', 'Cnh', 'Sn', 'Dn', 'Dnh', 'Dnd', 'T', 'Th', 'Td', 'O', 'Oh', 'I', 'Ih'];
 export const WALLPAPER_SYMMETRIES: WallpaperSymmetry[] = ['p1', 'p2', 'pm', 'pg', 'cm', 'pmm', 'pmg', 'pgg', 'cmm', 'p4', 'p4m', 'p4g', 'p3', 'p3m1', 'p31m', 'p6', 'p6m'];
+export const WALLPAPER_PLANES: WallpaperPlane[] = ['xy', 'yz', 'xz'];
+export const POINT_ORBIT_SITES: PointOrbitSite[] = ['generic', 'vertex', 'edge', 'face'];
 
 export interface OperatorStackItem extends OperatorSpec {
   id: string;
@@ -30,7 +34,11 @@ export interface ClonerStackItem {
   kind: 'cloner';
   mode: ClonerMode;
   pointGroup: PointGroupSymmetry;
+  pointAutoFit: boolean;
+  pointGap: number;
+  pointOrbitSite: PointOrbitSite;
   wallpaperGroup: WallpaperSymmetry;
+  wallpaperPlane: WallpaperPlane;
   copies: number;
   radius: number;
   xRepeats: number;
@@ -66,14 +74,28 @@ export function isClonerStackItem(item: StackItem): item is ClonerStackItem {
 }
 
 export function isInfinitePointGroup(group: PointGroupSymmetry) {
-  return group === 'Cinf' || group === 'Dinf';
+  return false;
 }
 
 export function getPointGroupBaseOrder(group: PointGroupSymmetry, fallbackCopies: number) {
-  if (group === 'Cinf' || group === 'Dinf') {
-    return Math.min(Math.max(Math.round(fallbackCopies), 1), 48);
-  }
-  return Number.parseInt(group.slice(1), 10) || 1;
+  return usesPointGroupOrder(group) ? Math.min(Math.max(Math.round(fallbackCopies), 1), 12) : 1;
+}
+
+export function usesPointGroupOrder(group: PointGroupSymmetry) {
+  return group === 'Cn' || group === 'Cnv' || group === 'Cnh' || group === 'Sn' || group === 'Dn' || group === 'Dnh' || group === 'Dnd';
+}
+
+export function getPointGroupCopyCount(group: PointGroupSymmetry, order: number) {
+  const n = getPointGroupBaseOrder(group, order);
+  if (group === 'Cn') return n;
+  if (group === 'Cnv' || group === 'Cnh' || group === 'Sn' || group === 'Dn') return n * 2;
+  if (group === 'Dnh' || group === 'Dnd') return n * 4;
+  if (group === 'T') return 12;
+  if (group === 'Th' || group === 'Td') return 24;
+  if (group === 'O') return 24;
+  if (group === 'Oh') return 48;
+  if (group === 'I') return 60;
+  return 120;
 }
 
 function cloneMesh(mesh: Mesh): Mesh {
@@ -153,10 +175,14 @@ interface CloneTransform {
   scale?: number;
   unitOffsetX?: number;
   unitOffsetY?: number;
+  unitOffsetZ?: number;
   matrix?: [number, number, number, number];
+  matrix3?: Matrix3;
+  wallpaperPlane?: WallpaperPlane;
 }
 
 type Matrix2 = [number, number, number, number];
+type Matrix3 = [number, number, number, number, number, number, number, number, number];
 
 interface AffineTransform {
   matrix: Matrix2;
@@ -172,6 +198,27 @@ interface WallpaperGeometry {
 }
 
 const IDENTITY_MATRIX: Matrix2 = [1, 0, 0, 1];
+const IDENTITY_MATRIX_3: Matrix3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+function getWallpaperPlaneComponents(vertices: number[], index: number, plane: WallpaperPlane) {
+  if (plane === 'yz') {
+    return { u: vertices[index + 1], v: vertices[index + 2], w: vertices[index] };
+  }
+  if (plane === 'xz') {
+    return { u: vertices[index], v: vertices[index + 2], w: vertices[index + 1] };
+  }
+  return { u: vertices[index], v: vertices[index + 1], w: vertices[index + 2] };
+}
+
+function pushWallpaperPlaneVertex(target: number[], plane: WallpaperPlane, transformedU: number, transformedV: number, transformedW: number) {
+  if (plane === 'yz') {
+    target.push(transformedW, transformedU, transformedV);
+  } else if (plane === 'xz') {
+    target.push(transformedU, transformedW, transformedV);
+  } else {
+    target.push(transformedU, transformedV, transformedW);
+  }
+}
 
 function pushTransformedMeshCopy(source: Mesh, target: Mesh, transform: CloneTransform) {
   const vertexOffset = target.vertices.length / 3;
@@ -183,16 +230,34 @@ function pushTransformedMeshCopy(source: Mesh, target: Mesh, transform: CloneTra
   const scale = transform.scale ?? 1;
   const unitOffsetX = transform.unitOffsetX ?? 0;
   const unitOffsetY = transform.unitOffsetY ?? 0;
+  const unitOffsetZ = transform.unitOffsetZ ?? 0;
   const matrix = transform.matrix;
-  const determinant = matrix ? matrix[0] * matrix[3] - matrix[1] * matrix[2] : (transform.mirrorX ? -1 : 1);
+  const matrix3 = transform.matrix3;
+  const determinant = matrix3
+    ? determinant3(matrix3)
+    : matrix ? matrix[0] * matrix[3] - matrix[1] * matrix[2] : (transform.mirrorX ? -1 : 1);
+  const wallpaperPlane = transform.wallpaperPlane ?? 'xy';
 
   for (let index = 0; index < source.vertices.length; index += 3) {
-    const localX = (source.vertices[index] - originX) * scale + unitOffsetX;
-    const localY = (source.vertices[index + 1] - originY) * scale + unitOffsetY;
-    const localZ = (source.vertices[index + 2] - originZ) * scale + originZ;
+    const sourceComponents = getWallpaperPlaneComponents(source.vertices, index, wallpaperPlane);
+    const localX = (sourceComponents.u - originX) * scale + unitOffsetX;
+    const localY = (sourceComponents.v - originY) * scale + unitOffsetY;
+    const localZ = (sourceComponents.w - originZ) * scale + originZ + unitOffsetZ;
+    if (matrix3) {
+      pushWallpaperPlaneVertex(
+        target.vertices,
+        wallpaperPlane,
+        matrix3[0] * localX + matrix3[1] * localY + matrix3[2] * localZ,
+        matrix3[3] * localX + matrix3[4] * localY + matrix3[5] * localZ,
+        matrix3[6] * localX + matrix3[7] * localY + matrix3[8] * localZ,
+      );
+      continue;
+    }
     const sx = transform.mirrorX ? -localX : localX;
     const sy = localY;
-    target.vertices.push(
+    pushWallpaperPlaneVertex(
+      target.vertices,
+      wallpaperPlane,
       matrix ? sx * matrix[0] + sy * matrix[1] + transform.tx : sx * cos - sy * sin + transform.tx,
       matrix ? sx * matrix[2] + sy * matrix[3] + transform.ty : sx * sin + sy * cos + transform.ty,
       localZ,
@@ -207,29 +272,82 @@ function pushTransformedMeshCopy(source: Mesh, target: Mesh, transform: CloneTra
   source.roleValues?.forEach((value) => target.roleValues?.push(value));
 }
 
-function makePointGroupTransforms(cloner: ClonerStackItem): CloneTransform[] {
-  const order = getPointGroupBaseOrder(cloner.pointGroup, cloner.copies);
-  const hasMirror = cloner.pointGroup.startsWith('D');
-  const transforms: CloneTransform[] = [];
+function makePointGroupTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTransform[] {
+  const { min, max } = getMeshBounds(mesh.vertices);
+  const originX = (min[0] + max[0]) / 2;
+  const originY = (min[1] + max[1]) / 2;
+  const originZ = (min[2] + max[2]) / 2;
+  const orientation = pointGroupOrientationMatrix(cloner.wallpaperPlane ?? 'xz');
+  const orientationInverse = transposeMatrix3(orientation);
+  const matrices = makePointGroupMatrices(cloner.pointGroup, getPointGroupBaseOrder(cloner.pointGroup, cloner.copies))
+    .map((matrix) => multiplyMatrix3(orientation, multiplyMatrix3(matrix, orientationInverse)));
+  const unitScale = cloner.unitScale;
+  const seedDirection = transform3(orientation, getPointGroupSeedDirection(cloner.pointOrbitSite));
+  const radius = cloner.pointAutoFit
+    ? getPointGroupAutoRadius(mesh, matrices, seedDirection, originX, originY, originZ, unitScale, cloner.pointGap)
+    : Math.max(cloner.radius, 0.01);
+  const seed = seedDirection.map((value) => value * radius) as [number, number, number];
+  return matrices.map((matrix) => ({
+    rotation: 0,
+    tx: 0,
+    ty: 0,
+    matrix3: matrix,
+    originX,
+    originY,
+    originZ,
+    scale: unitScale,
+    unitOffsetX: seed[0],
+    unitOffsetY: seed[1],
+    unitOffsetZ: seed[2] - originZ,
+  }));
+}
 
-  for (let copy = 0; copy < order; copy++) {
-    const rotation = (copy / order) * Math.PI * 2;
-    transforms.push({
-      rotation,
-      tx: Math.cos(rotation) * cloner.radius,
-      ty: Math.sin(rotation) * cloner.radius,
-    });
-    if (hasMirror) {
-      transforms.push({
-        rotation,
-        mirrorX: true,
-        tx: Math.cos(rotation) * cloner.radius,
-        ty: Math.sin(rotation) * cloner.radius,
-      });
+function getPointGroupSeedDirection(site: PointOrbitSite): [number, number, number] {
+  if (site === 'vertex') return normalize3([1, 1, 1]);
+  if (site === 'edge') return normalize3([1, 1, 0]);
+  if (site === 'face') return [0, 0, 1];
+  return normalize3([0.37, 0.53, 1]);
+}
+
+function getMaxRadius3(mesh: Mesh, originX: number, originY: number, originZ: number) {
+  let radius = 0;
+  for (let index = 0; index < mesh.vertices.length; index += 3) {
+    radius = Math.max(radius, Math.hypot(mesh.vertices[index] - originX, mesh.vertices[index + 1] - originY, mesh.vertices[index + 2] - originZ));
+  }
+  return Math.max(radius, 1e-6);
+}
+
+function getVisualPackingRadius3(mesh: Mesh) {
+  const { min, max } = getMeshBounds(mesh.vertices);
+  const spanX = Math.max(max[0] - min[0], 1e-6);
+  const spanY = Math.max(max[1] - min[1], 1e-6);
+  const spanZ = Math.max(max[2] - min[2], 1e-6);
+  return (spanX + spanY + spanZ) / 6;
+}
+
+function getPointGroupAutoRadius(
+  mesh: Mesh,
+  matrices: Matrix3[],
+  seedDirection: [number, number, number],
+  originX: number,
+  originY: number,
+  originZ: number,
+  unitScale: number,
+  gap: number,
+) {
+  if (matrices.length <= 1) return 0;
+  const centers = matrices.map((matrix) => transform3(matrix, seedDirection));
+  let nearestUnitDistance = Infinity;
+  for (let a = 0; a < centers.length; a++) {
+    for (let b = a + 1; b < centers.length; b++) {
+      const distance = Math.hypot(centers[a][0] - centers[b][0], centers[a][1] - centers[b][1], centers[a][2] - centers[b][2]);
+      if (distance > 1e-6) nearestUnitDistance = Math.min(nearestUnitDistance, distance);
     }
   }
-
-  return transforms;
+  if (!Number.isFinite(nearestUnitDistance)) return 0;
+  const sourceRadius = getVisualPackingRadius3(mesh) * unitScale;
+  const desiredNearestDistance = sourceRadius * 2 * (1 + Math.max(gap, 0));
+  return desiredNearestDistance / nearestUnitDistance;
 }
 
 function matrixFromRotation(rotation: number): Matrix2 {
@@ -239,6 +357,205 @@ function matrixFromRotation(rotation: number): Matrix2 {
     Math.sin(rotation),
     Math.cos(rotation),
   ];
+}
+
+function determinant3(matrix: Matrix3) {
+  return matrix[0] * (matrix[4] * matrix[8] - matrix[5] * matrix[7])
+    - matrix[1] * (matrix[3] * matrix[8] - matrix[5] * matrix[6])
+    + matrix[2] * (matrix[3] * matrix[7] - matrix[4] * matrix[6]);
+}
+
+function multiplyMatrix3(a: Matrix3, b: Matrix3): Matrix3 {
+  return [
+    a[0] * b[0] + a[1] * b[3] + a[2] * b[6],
+    a[0] * b[1] + a[1] * b[4] + a[2] * b[7],
+    a[0] * b[2] + a[1] * b[5] + a[2] * b[8],
+    a[3] * b[0] + a[4] * b[3] + a[5] * b[6],
+    a[3] * b[1] + a[4] * b[4] + a[5] * b[7],
+    a[3] * b[2] + a[4] * b[5] + a[5] * b[8],
+    a[6] * b[0] + a[7] * b[3] + a[8] * b[6],
+    a[6] * b[1] + a[7] * b[4] + a[8] * b[7],
+    a[6] * b[2] + a[7] * b[5] + a[8] * b[8],
+  ];
+}
+
+function transposeMatrix3(matrix: Matrix3): Matrix3 {
+  return [
+    matrix[0], matrix[3], matrix[6],
+    matrix[1], matrix[4], matrix[7],
+    matrix[2], matrix[5], matrix[8],
+  ];
+}
+
+function pointGroupOrientationMatrix(plane: WallpaperPlane): Matrix3 {
+  if (plane === 'xy') return rotationX(Math.PI / 2);
+  if (plane === 'yz') return rotationZ(-Math.PI / 2);
+  return IDENTITY_MATRIX_3;
+}
+
+function rotationX(angle: number): Matrix3 {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return [1, 0, 0, 0, c, -s, 0, s, c];
+}
+
+function rotationY(angle: number): Matrix3 {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return [c, 0, s, 0, 1, 0, -s, 0, c];
+}
+
+function rotationZ(angle: number): Matrix3 {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return [c, -s, 0, s, c, 0, 0, 0, 1];
+}
+
+function scaleMatrix3(x: number, y: number, z: number): Matrix3 {
+  return [x, 0, 0, 0, y, 0, 0, 0, z];
+}
+
+function transform3(matrix: Matrix3, point: [number, number, number]): [number, number, number] {
+  return [
+    matrix[0] * point[0] + matrix[1] * point[1] + matrix[2] * point[2],
+    matrix[3] * point[0] + matrix[4] * point[1] + matrix[5] * point[2],
+    matrix[6] * point[0] + matrix[7] * point[1] + matrix[8] * point[2],
+  ];
+}
+
+function normalize3(vector: [number, number, number]): [number, number, number] {
+  const length = Math.hypot(vector[0], vector[1], vector[2]) || 1;
+  return [vector[0] / length, vector[1] / length, vector[2] / length];
+}
+
+function cross3(a: [number, number, number], b: [number, number, number]): [number, number, number] {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function subtract3(a: [number, number, number], b: [number, number, number]): [number, number, number] {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function average3(points: Array<[number, number, number]>): [number, number, number] {
+  return points.reduce<[number, number, number]>((sum, point) => [
+    sum[0] + point[0] / points.length,
+    sum[1] + point[1] / points.length,
+    sum[2] + point[2] / points.length,
+  ], [0, 0, 0]);
+}
+
+function lookRotationMatrix(forwardInput: [number, number, number], upInput: [number, number, number]): Matrix3 {
+  const forward = normalize3(forwardInput);
+  let right = normalize3(cross3(upInput, forward));
+  if (Math.hypot(right[0], right[1], right[2]) < 1e-6) {
+    right = normalize3(cross3([0, 1, 0], forward));
+  }
+  const up = cross3(forward, right);
+  return [
+    right[0], up[0], forward[0],
+    right[1], up[1], forward[1],
+    right[2], up[2], forward[2],
+  ];
+}
+
+function signedPermutationMatrices(detFilter?: 1 | -1) {
+  const permutations = [
+    [0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0],
+  ];
+  const signs = [-1, 1];
+  const matrices: Matrix3[] = [];
+  permutations.forEach((permutation) => {
+    signs.forEach((sx) => signs.forEach((sy) => signs.forEach((sz) => {
+      const matrix: Matrix3 = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      [sx, sy, sz].forEach((sign, row) => {
+        matrix[row * 3 + permutation[row]] = sign;
+      });
+      if (detFilter === undefined || Math.round(determinant3(matrix)) === detFilter) {
+        matrices.push(matrix);
+      }
+    })));
+  });
+  return matrices;
+}
+
+function tetrahedronFaces(): Array<Array<[number, number, number]>> {
+  const x = 1 / (2 * Math.sqrt(2));
+  const y = -x;
+  const a: [number, number, number] = [x, x, x];
+  const b: [number, number, number] = [y, y, x];
+  const c: [number, number, number] = [y, x, y];
+  const d: [number, number, number] = [x, y, y];
+  return [[a, b, c], [a, b, d], [a, c, d], [b, c, d]];
+}
+
+function octahedronFaces(): Array<Array<[number, number, number]>> {
+  const x = 1 / Math.sqrt(2);
+  const y = -x;
+  const a: [number, number, number] = [x, 0, 0];
+  const b: [number, number, number] = [0, x, 0];
+  const c: [number, number, number] = [0, 0, x];
+  const d: [number, number, number] = [y, 0, 0];
+  const e: [number, number, number] = [0, y, 0];
+  const f: [number, number, number] = [0, 0, y];
+  return [[b, a, c], [b, a, f], [b, c, d], [b, d, f], [e, f, d], [e, f, a], [e, c, a], [e, c, d]];
+}
+
+function icosahedronFaces(): Array<Array<[number, number, number]>> {
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const vertices: Array<[number, number, number]> = [
+    [-1, phi, 0], [1, phi, 0], [-1, -phi, 0], [1, -phi, 0],
+    [0, -1, phi], [0, 1, phi], [0, -1, -phi], [0, 1, -phi],
+    [phi, 0, -1], [phi, 0, 1], [-phi, 0, -1], [-phi, 0, 1],
+  ];
+  const faces = [
+    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+    [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+    [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+  ];
+  return faces.map((face) => face.map((index) => normalize3(vertices[index])));
+}
+
+function matricesForPolyhedron(faces: Array<Array<[number, number, number]>>) {
+  return faces.flatMap((face) => {
+    const centroid = normalize3(average3(face));
+    return face.map((vertex) => lookRotationMatrix(subtract3(vertex, centroid), centroid));
+  });
+}
+
+function makePointGroupMatrices(group: PointGroupSymmetry, orderInput: number): Matrix3[] {
+  const order = Math.max(1, orderInput);
+  const angle = (Math.PI * 2) / order;
+  const rotations = Array.from({ length: group === 'Sn' ? order * 2 : order }, (_, index) => rotationY(group === 'Sn' ? (angle / 2) * index : angle * index));
+  const horizontal = scaleMatrix3(-1, 1, 1);
+  const vertical = scaleMatrix3(1, -1, 1);
+
+  if (group === 'Cn') return rotations;
+  if (group === 'Cnv') return [...rotations, ...rotations.map((matrix) => multiplyMatrix3(horizontal, matrix))];
+  if (group === 'Cnh') return [...rotations, ...rotations.map((matrix) => multiplyMatrix3(vertical, matrix))];
+  if (group === 'Sn') return rotations.map((matrix, index) => index % 2 === 0 ? matrix : multiplyMatrix3(vertical, matrix));
+  if (group === 'Dn') return [...rotations, ...rotations.map((matrix) => multiplyMatrix3(rotationZ(Math.PI), matrix))];
+  if (group === 'Dnh') {
+    const base = [...rotations, ...rotations.map((matrix) => multiplyMatrix3(horizontal, matrix))];
+    return [...base, ...base.map((matrix) => multiplyMatrix3(vertical, matrix))];
+  }
+  if (group === 'Dnd') {
+    const base = [...rotations, ...rotations.map((matrix) => multiplyMatrix3(horizontal, matrix))];
+    return [...base, ...base.map((matrix) => multiplyMatrix3(rotationY(angle / 2), multiplyMatrix3(vertical, matrix)))];
+  }
+  if (group === 'T') return matricesForPolyhedron(tetrahedronFaces());
+  if (group === 'Th' || group === 'Td') {
+    const tetra = matricesForPolyhedron(tetrahedronFaces());
+    return [...tetra, ...tetra.map((matrix) => multiplyMatrix3(horizontal, matrix))];
+  }
+  if (group === 'O') return signedPermutationMatrices(1);
+  if (group === 'Oh') return signedPermutationMatrices();
+  if (group === 'I') return matricesForPolyhedron(icosahedronFaces());
+  return [...matricesForPolyhedron(icosahedronFaces()), ...matricesForPolyhedron(icosahedronFaces()).map((matrix) => multiplyMatrix3(horizontal, matrix))];
 }
 
 function multiplyMatrix(a: Matrix2, b: Matrix2): Matrix2 {
@@ -703,16 +1020,32 @@ function getRobustProjectedRadius(mesh: Mesh, originX: number, originY: number) 
   return Math.max(getPercentile(distances, 0.75), 1e-6);
 }
 
-function getSourceFootprint(mesh: Mesh, originX: number, originY: number): Array<[number, number]> {
+function getSourcePlaneBounds(vertices: number[], plane: WallpaperPlane) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let index = 0; index < vertices.length; index += 3) {
+    const { u, v, w } = getWallpaperPlaneComponents(vertices, index, plane);
+    min[0] = Math.min(min[0], u);
+    min[1] = Math.min(min[1], v);
+    min[2] = Math.min(min[2], w);
+    max[0] = Math.max(max[0], u);
+    max[1] = Math.max(max[1], v);
+    max[2] = Math.max(max[2], w);
+  }
+  return { min, max };
+}
+
+function getSourceFootprint(mesh: Mesh, originX: number, originY: number, plane: WallpaperPlane): Array<[number, number]> {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (let index = 0; index < mesh.vertices.length; index += 3) {
-    minX = Math.min(minX, mesh.vertices[index] - originX);
-    minY = Math.min(minY, mesh.vertices[index + 1] - originY);
-    maxX = Math.max(maxX, mesh.vertices[index] - originX);
-    maxY = Math.max(maxY, mesh.vertices[index + 1] - originY);
+    const { u, v } = getWallpaperPlaneComponents(mesh.vertices, index, plane);
+    minX = Math.min(minX, u - originX);
+    minY = Math.min(minY, v - originY);
+    maxX = Math.max(maxX, u - originX);
+    maxY = Math.max(maxY, v - originY);
   }
 
   return [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]];
@@ -780,9 +1113,18 @@ function hasWallpaperFootprintOverlap(footprint: Array<[number, number]>, transf
   return false;
 }
 
-function getWallpaperAutoScale(mesh: Mesh, geometry: WallpaperGeometry, seed: { x: number; y: number }, originX: number, originY: number, spacingX: number, spacingY: number) {
-  const footprint = getSourceFootprint(mesh, originX, originY);
+function getWallpaperAutoScale(mesh: Mesh, geometry: WallpaperGeometry, seed: { x: number; y: number }, originX: number, originY: number, spacingX: number, spacingY: number, plane: WallpaperPlane) {
+  const footprint = getSourceFootprint(mesh, originX, originY, plane);
   const orbitTransforms = getWallpaperOrbitTransforms(geometry, spacingX, spacingY);
+  return getMaxNonOverlappingScale(footprint, orbitTransforms, seed);
+}
+
+function getPointGroupAutoScale(mesh: Mesh, orbitTransforms: AffineTransform[], seed: { x: number; y: number }, originX: number, originY: number, plane: WallpaperPlane) {
+  const footprint = getSourceFootprint(mesh, originX, originY, plane);
+  return getMaxNonOverlappingScale(footprint, orbitTransforms, seed);
+}
+
+function getMaxNonOverlappingScale(footprint: Array<[number, number]>, orbitTransforms: AffineTransform[], seed: { x: number; y: number }) {
   let low = 0.01;
   let high = 1;
 
@@ -804,7 +1146,8 @@ function getWallpaperAutoScale(mesh: Mesh, geometry: WallpaperGeometry, seed: { 
 }
 
 function makeWallpaperTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTransform[] {
-  const { min, max } = getMeshBounds(mesh.vertices);
+  const plane = cloner.wallpaperPlane ?? 'xy';
+  const { min, max } = getSourcePlaneBounds(mesh.vertices, plane);
   const sourceWidth = Math.max(max[0] - min[0], 1);
   const sourceHeight = Math.max(max[1] - min[1], 1);
   const width = Math.max(cloner.cellWidth, sourceWidth * 1.05, 0.01);
@@ -817,7 +1160,7 @@ function makeWallpaperTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTran
   const geometry = buildWallpaperGeometry(cloner.wallpaperGroup, width, height, cloner.skewX, cloner.skewY);
   const tile = geometry.fundamentalRegion;
   const tileSeed = getCanonicalWallpaperSeed(cloner.wallpaperGroup, tile) ?? chooseWallpaperSeedPoint(tile, geometry.reps);
-  const autoScale = getWallpaperAutoScale(mesh, geometry, tileSeed, originX, originY, cloner.spacingX, cloner.spacingY);
+  const autoScale = getWallpaperAutoScale(mesh, geometry, tileSeed, originX, originY, cloner.spacingX, cloner.spacingY, plane);
   const useAutoFit = cloner.wallpaperAutoFit;
   const unitOffsetX = useAutoFit
     ? tileSeed.x
@@ -844,6 +1187,7 @@ function makeWallpaperTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTran
           scale: unitScale,
           unitOffsetX,
           unitOffsetY,
+          wallpaperPlane: plane,
         });
       }
     }
@@ -854,7 +1198,7 @@ function makeWallpaperTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTran
 
 export function applyCloner(mesh: Mesh, cloner: ClonerStackItem): Mesh {
   const transforms = cloner.mode === 'point'
-    ? makePointGroupTransforms(cloner)
+    ? makePointGroupTransforms(mesh, cloner)
     : makeWallpaperTransforms(mesh, cloner);
   if (transforms.length <= 1) return cloneMesh(mesh);
 
