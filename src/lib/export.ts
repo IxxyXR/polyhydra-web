@@ -5,6 +5,7 @@ import { PaletteKey } from './palettes';
 import { ColorMode, computeFaceColors } from './coloring';
 import { RadialBuildOptions, RadialPolyType } from './radial-solids';
 import { generateFinalMesh } from './mesh-pipeline';
+import { StackItem } from './stack-items';
 
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
@@ -17,7 +18,7 @@ export async function sendToBlender(
   tilingType: string,
   rows: number,
   cols: number,
-  operators: OperatorSpec[],
+  operators: Array<OperatorSpec | StackItem>,
   paletteKey: PaletteKey,
   colorMode: ColorMode,
   roleColorCount: number,
@@ -59,7 +60,7 @@ export function exportObj(
   tilingType: string,
   rows: number,
   cols: number,
-  operators: OperatorSpec[],
+  operators: Array<OperatorSpec | StackItem>,
   paletteKey: PaletteKey,
   colorMode: ColorMode,
   roleColorCount: number,
@@ -103,7 +104,7 @@ export function exportOff(
   tilingType: string,
   rows: number,
   cols: number,
-  operators: OperatorSpec[],
+  operators: Array<OperatorSpec | StackItem>,
   paletteKey: PaletteKey,
   colorMode: ColorMode,
   roleColorCount: number,
@@ -313,7 +314,7 @@ export function exportSvg(
   tilingType: string,
   rows: number,
   cols: number,
-  operators: OperatorSpec[],
+  operators: Array<OperatorSpec | StackItem>,
   paletteKey: PaletteKey,
   colorMode: ColorMode,
   roleColorCount: number,

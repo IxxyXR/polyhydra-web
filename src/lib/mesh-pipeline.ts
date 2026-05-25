@@ -1,6 +1,7 @@
 import { applyOperator, Mesh, OperatorSpec, RoleShapeBasis } from './conway-operators';
 import { MeshFinalizationMode, finalizeMesh } from './mesh-finalization';
 import { buildRadialSolid, RadialBuildOptions, RadialPolyType } from './radial-solids';
+import { applyCloner, applyDeformer, isClonerStackItem, isDeformerStackItem, isOperatorStackItem, StackItem } from './stack-items';
 import { TilingGenerationOptions, UNIFORM_TILINGS } from './tiling-geometries';
 
 export interface FinalMeshOptions {
@@ -8,7 +9,7 @@ export interface FinalMeshOptions {
   tilingType: string;
   rows: number;
   cols: number;
-  operators: OperatorSpec[];
+  operators: Array<OperatorSpec | StackItem>;
   radialType: RadialPolyType;
   radialSides: number;
   radialBuildOptions?: RadialBuildOptions;
@@ -45,8 +46,18 @@ export function generateFinalMesh({
     mesh = tiling.generate(rows, cols, generationOptions);
   }
 
-  for (const operator of operators) {
-    mesh = applyOperator(mesh, { ...operator, roleGeometryDetail, roleShapeBasis });
+  for (const item of operators) {
+    if ('kind' in item) {
+      if (isOperatorStackItem(item)) {
+        mesh = applyOperator(mesh, { ...item, roleGeometryDetail, roleShapeBasis });
+      } else if (isDeformerStackItem(item)) {
+        mesh = applyDeformer(mesh, item);
+      } else if (isClonerStackItem(item)) {
+        mesh = applyCloner(mesh, item);
+      }
+    } else {
+      mesh = applyOperator(mesh, { ...item, roleGeometryDetail, roleShapeBasis });
+    }
   }
 
   if (mode === '3d' && finalization !== 'none') {

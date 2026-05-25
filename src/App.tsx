@@ -68,10 +68,61 @@ import {
   FaceFilterSpec,
   RoleShapeBasis,
 } from './lib/conway-operators';
+import {
+  ClonerMode,
+  ClonerStackItem,
+  DeformerAxis,
+  DeformerMode,
+  DeformerStackItem,
+  getPointGroupBaseOrder,
+  isClonerStackItem,
+  isDeformerStackItem,
+  isInfinitePointGroup,
+  isOperatorStackItem,
+  OperatorStackItem,
+  POINT_GROUP_SYMMETRIES,
+  PointGroupSymmetry,
+  StackItem,
+  WALLPAPER_SYMMETRIES,
+  WallpaperSymmetry,
+} from './lib/stack-items';
 
-interface OperatorState extends OperatorSpec {
-  id: string;
-  enabled: boolean;
+type OperatorState = OperatorStackItem;
+type StackItemState = StackItem;
+
+const DEFORMER_LABELS: Record<DeformerMode, string> = {
+  stretch: 'Stretch',
+  taper: 'Taper',
+  spherify: 'Spherify',
+};
+
+const CLONER_LABELS: Record<ClonerMode, string> = {
+  point: 'Point Group',
+  wallpaper: 'Wallpaper',
+};
+
+function getDefaultWallpaperUnitOffset(group: WallpaperSymmetry, width: number, height: number) {
+  if (group === 'p1') {
+    return { unitOffsetX: 0, unitOffsetY: 0 };
+  }
+
+  if (group === 'pm') {
+    return { unitOffsetX: width * 0.25, unitOffsetY: 0 };
+  }
+
+  if (group === 'pg') {
+    return { unitOffsetX: width * 0.2, unitOffsetY: height * 0.2 };
+  }
+
+  if (group === 'p4m' || group === 'p4g') {
+    return { unitOffsetX: width * 0.25, unitOffsetY: height * 0.15 };
+  }
+
+  if (group === 'p2' || group === 'pmm' || group === 'pmg' || group === 'pgg' || group === 'cmm' || group === 'p4') {
+    return { unitOffsetX: width * 0.25, unitOffsetY: height * 0.25 };
+  }
+
+  return { unitOffsetX: width * 0.25, unitOffsetY: height * 0.15 };
 }
 
 const APP_DEFAULTS = {
@@ -530,6 +581,37 @@ function serializeCompactOperator(operator: OperatorState) {
   return `${operator.enabled ? '' : '!'}${payload}${filterPayload ? `~${filterPayload}` : ''}`;
 }
 
+function serializeCompactStackItem(item: StackItemState) {
+  if (isOperatorStackItem(item)) {
+    return serializeCompactOperator(item);
+  }
+
+  if (isDeformerStackItem(item)) {
+    const mode = item.mode === 'stretch' ? 's' : item.mode === 'taper' ? 't' : 'p';
+    return `${item.enabled ? '' : '!'}d${mode}.${encodeOperatorParam(item.amount)}${item.axis}`;
+  }
+
+  const mode = item.mode === 'point' ? 'p' : 'w';
+  return [
+    `${item.enabled ? '' : '!'}c${mode}`,
+    item.mode === 'point' ? item.pointGroup : item.wallpaperGroup,
+    Math.min(Math.max(Math.round(item.copies), 1), 48).toString(36),
+    encodeOperatorParam(item.radius / 10),
+    Math.min(Math.max(Math.round(item.xRepeats), 1), 24).toString(36),
+    Math.min(Math.max(Math.round(item.yRepeats), 1), 24).toString(36),
+    encodeOperatorParam(item.cellWidth / 20),
+    encodeOperatorParam(item.cellHeight / 20),
+    encodeOperatorParam((item.skewX + 10) / 20),
+    encodeOperatorParam((item.skewY + 10) / 20),
+    encodeOperatorParam(item.unitScale / 4),
+    encodeOperatorParam((item.unitOffsetX + 10) / 20),
+    encodeOperatorParam((item.unitOffsetY + 10) / 20),
+    encodeOperatorParam(item.spacingX / 4),
+    encodeOperatorParam(item.spacingY / 4),
+    item.wallpaperAutoFit ? '1' : '0',
+  ].join('.');
+}
+
 function parseCompactOperator(token: string): OperatorState | null {
   const enabled = !token.startsWith('!');
   const fullPayload = enabled ? token : token.slice(1);
@@ -564,11 +646,125 @@ function parseCompactOperator(token: string): OperatorState | null {
   });
 }
 
+function parseCompactStackItem(token: string): StackItemState | null {
+  const enabled = !token.startsWith('!');
+  const payload = enabled ? token : token.slice(1);
+
+  if (payload.startsWith('d')) {
+    const [modeRaw, paramsRaw = ''] = payload.slice(1).split('.');
+    const mode: DeformerMode = modeRaw === 't' ? 'taper' : modeRaw === 'p' ? 'spherify' : 'stretch';
+    const axisRaw = paramsRaw.at(-1);
+    const axis: DeformerAxis = axisRaw === 'y' || axisRaw === 'z' ? axisRaw : 'x';
+    return {
+      ...createDeformer(mode),
+      enabled,
+      amount: decodeOperatorParam(paramsRaw.slice(0, 2), mode === 'spherify' ? 0.5 : 0.25),
+      axis,
+    };
+  }
+
+  if (payload.startsWith('c')) {
+    const parts = payload.slice(1).split('.');
+    const [modeRaw] = parts;
+    const mode: ClonerMode = modeRaw === 'w' ? 'wallpaper' : 'point';
+    const isLegacy = parts.length === 4;
+    const groupRaw = isLegacy ? null : parts[1];
+    const copiesRaw = isLegacy ? parts[1] : parts[2];
+    const radiusRaw = isLegacy ? '' : parts[3];
+    const xRepeatsRaw = isLegacy ? parts[1] : parts[4];
+    const yRepeatsRaw = isLegacy ? parts[1] : parts[5];
+    const cellWidthRaw = isLegacy ? parts[2] : parts[6];
+    const cellHeightRaw = isLegacy ? parts[2] : parts[7];
+    const skewXRaw = isLegacy ? '' : parts[8];
+    const skewYRaw = isLegacy ? '' : parts[9];
+    const unitScaleRaw = isLegacy ? '' : parts[10];
+    const unitOffsetXRaw = isLegacy ? '' : parts[11];
+    const unitOffsetYRaw = isLegacy ? '' : parts[12];
+    const spacingXRaw = isLegacy ? '' : parts[13];
+    const spacingYRaw = isLegacy ? '' : parts[14];
+    const wallpaperAutoFitRaw = isLegacy ? '1' : parts[15];
+    const copies = Number.parseInt(copiesRaw ?? '', 36);
+    const xRepeats = Number.parseInt(xRepeatsRaw ?? '', 36);
+    const yRepeats = Number.parseInt(yRepeatsRaw ?? '', 36);
+    const pointGroup = POINT_GROUP_SYMMETRIES.includes(groupRaw as PointGroupSymmetry)
+      ? groupRaw as PointGroupSymmetry
+      : 'C6';
+    const wallpaperGroup = WALLPAPER_SYMMETRIES.includes(groupRaw as WallpaperSymmetry)
+      ? groupRaw as WallpaperSymmetry
+      : 'p1';
+    return {
+      ...createCloner(mode),
+      enabled,
+      copies: Number.isFinite(copies) ? Math.min(Math.max(copies, 1), 48) : (mode === 'point' ? 6 : 4),
+      pointGroup,
+      wallpaperGroup,
+      radius: decodeOperatorParam(radiusRaw ?? '', 0.2) * 10,
+      xRepeats: Number.isFinite(xRepeats) ? Math.min(Math.max(xRepeats, 1), 24) : 2,
+      yRepeats: Number.isFinite(yRepeats) ? Math.min(Math.max(yRepeats, 1), 24) : 2,
+      cellWidth: decodeOperatorParam(cellWidthRaw ?? '', 0.08) * 20,
+      cellHeight: decodeOperatorParam(cellHeightRaw ?? '', 0.08) * 20,
+      cellOffsetX: 0.25,
+      cellOffsetY: 0.5,
+      skewX: decodeOperatorParam(skewXRaw ?? '', 0.5) * 20 - 10,
+      skewY: decodeOperatorParam(skewYRaw ?? '', 0.5) * 20 - 10,
+      unitScale: decodeOperatorParam(unitScaleRaw ?? '', 0.25) * 4,
+      unitOffsetX: decodeOperatorParam(unitOffsetXRaw ?? '', 0.5) * 20 - 10,
+      unitOffsetY: decodeOperatorParam(unitOffsetYRaw ?? '', 0.5) * 20 - 10,
+      wallpaperAutoFit: wallpaperAutoFitRaw !== '0',
+      spacingX: decodeOperatorParam(spacingXRaw ?? '', 0.25) * 4,
+      spacingY: decodeOperatorParam(spacingYRaw ?? '', 0.25) * 4,
+    };
+  }
+
+  return parseCompactOperator(token);
+}
+
 function createOperator(notation: string, enabled = true, overrides: Partial<OperatorSpec> = {}): OperatorState {
   return {
     id: Math.random().toString(36).substring(7) + Date.now(),
     enabled,
+    kind: 'operator',
     ...createOperatorSpec(notation, overrides),
+  };
+}
+
+function createDeformer(mode: DeformerMode = 'stretch'): DeformerStackItem {
+  return {
+    id: Math.random().toString(36).substring(7) + Date.now(),
+    enabled: true,
+    kind: 'deformer',
+    mode,
+    amount: mode === 'spherify' ? 0.5 : 0.25,
+    axis: 'x',
+  };
+}
+
+function createCloner(mode: ClonerMode = 'point'): ClonerStackItem {
+  return {
+    id: Math.random().toString(36).substring(7) + Date.now(),
+    enabled: true,
+    kind: 'cloner',
+    mode,
+    pointGroup: 'C6',
+    wallpaperGroup: 'p1',
+    copies: 6,
+    radius: 2,
+    xRepeats: 2,
+    yRepeats: 2,
+    cellWidth: 1.6,
+    cellHeight: 1.6,
+    cellOffsetX: 0.25,
+    cellOffsetY: 0.5,
+    skewX: 0,
+    skewY: 0,
+    unitScale: 1,
+    unitOffsetX: 0,
+    unitOffsetY: 0,
+    wallpaperAutoFit: true,
+    spacingX: 1,
+    spacingY: 1,
+    spacing: 1.1,
+    rotation: 0,
   };
 }
 
@@ -610,7 +806,7 @@ function buildAppSearchParams(state: {
   faceRoughness: number;
   faceOpacity: number;
   multigridSettings: MultiGridSettings;
-  operators: OperatorState[];
+  operators: StackItemState[];
 }) {
   const params = new URLSearchParams();
   setParamIfNeeded(params, URL_KEYS.mode, MODE_TO_URL[state.mode], MODE_TO_URL[APP_DEFAULTS.mode]);
@@ -678,18 +874,18 @@ function buildAppSearchParams(state: {
   setParamIfNeeded(params, URL_KEYS.multigridColorIndex, state.multigridSettings.colorIndex, MULTIGRID_DEFAULTS.colorIndex);
   setParamIfNeeded(params, URL_KEYS.multigridRandomSeed, state.multigridSettings.randomSeed, MULTIGRID_DEFAULTS.randomSeed);
   if (state.operators.length > 0) {
-    params.set(URL_KEYS.operators, state.operators.map(serializeCompactOperator).join(';'));
+    params.set(URL_KEYS.operators, state.operators.map(serializeCompactStackItem).join(';'));
   }
   return params;
 }
 
-function parseOperatorsFromUrlParam(urlOps: string): OperatorState[] {
+function parseOperatorsFromUrlParam(urlOps: string): StackItemState[] {
   const compactEntries = urlOps.split(';').filter(Boolean);
-  const compactOperatorPattern = /^!?[0-9a-z]+(?:\.[0-9a-z]{6})?(?:~f[srv][elv][01][0-9a-z]{2}[01]?)?$/i;
+  const compactOperatorPattern = /^!?(?:[0-9a-z]+(?:\.[0-9a-z]{6})?(?:~f[srv][elv][01][0-9a-z]{2}[01]?)?|d[stp]\.[0-9a-z]{2}[xyz]|c[pw](?:\.[a-z0-9]+)+)$/i;
   if (compactEntries.length > 0 && compactEntries.every((entry) => compactOperatorPattern.test(entry))) {
     const parsedCompact = compactEntries
-      .map(parseCompactOperator)
-      .filter((operator): operator is OperatorState => operator !== null);
+      .map(parseCompactStackItem)
+      .filter((operator): operator is StackItemState => operator !== null);
     if (parsedCompact.length > 0) {
       return parsedCompact;
     }
@@ -752,7 +948,7 @@ export default function App() {
   const [finalization, setFinalization] = useState<MeshFinalizationMode>(APP_DEFAULTS.finalization);
   const [isReady, setIsReady] = useState(false);
   const isPopStateRef = useRef(false);
-  const [operators, setOperators] = useState<OperatorState[]>([]);
+  const [operators, setOperators] = useState<StackItemState[]>([]);
   const [palette, setPalette] = useState<PaletteKey>(APP_DEFAULTS.palette);
   const [shuffledColors, setShuffledColors] = useState<string[] | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>(APP_DEFAULTS.colorMode);
@@ -779,6 +975,8 @@ export default function App() {
   const [lightingMenuOpen, setLightingMenuOpen] = useState(false);
   const [paletteMenuOpen, setPaletteMenuOpen] = useState(false);
   const [selectedOperatorId, setSelectedOperatorId] = useState<string | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [advancedWallpaperOpen, setAdvancedWallpaperOpen] = useState(false);
   const [rawEditorOpen, setRawEditorOpen] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [hoveredGridAtom, setHoveredGridAtom] = useState<string | null>(null);
@@ -1189,12 +1387,28 @@ export default function App() {
     const nextOperator = createOperator(notation.trim(), true, overrides);
     setOperators((current) => [...current, nextOperator]);
     setSelectedOperatorId(nextOperator.id);
+    setAddMenuOpen(false);
   };
 
   const addBlankOperator = () => {
     const nextOperator = createOperator('', true);
     setOperators((current) => [...current, nextOperator]);
     setSelectedOperatorId(nextOperator.id);
+    setAddMenuOpen(false);
+  };
+
+  const addDeformer = (mode: DeformerMode) => {
+    const nextDeformer = createDeformer(mode);
+    setOperators((current) => [...current, nextDeformer]);
+    setSelectedOperatorId(nextDeformer.id);
+    setAddMenuOpen(false);
+  };
+
+  const addCloner = (mode: ClonerMode) => {
+    const nextCloner = createCloner(mode);
+    setOperators((current) => [...current, nextCloner]);
+    setSelectedOperatorId(nextCloner.id);
+    setAddMenuOpen(false);
   };
 
   const removeOperator = (id: string) => {
@@ -1215,11 +1429,12 @@ export default function App() {
     const randomAtoms = orderAtoms(OMNI_VALID_OPERATORS[randomIndex]);
     const notation = joinAtomList(randomAtoms);
     setOperators((current) => current.map((op) =>
-      op.id === selectedOperatorId ? { ...op, notation } : op
+      op.id === selectedOperatorId && isOperatorStackItem(op) ? { ...op, notation } : op
     ));
   };
 
-  const selectedOperator = operators.find((op) => op.id === selectedOperatorId) ?? null;
+  const selectedStackItem = operators.find((op) => op.id === selectedOperatorId) ?? null;
+  const selectedOperator = selectedStackItem && isOperatorStackItem(selectedStackItem) ? selectedStackItem : null;
   const selectedOperatorNotation = selectedOperator ? resolveOperatorNotation(selectedOperator.notation) : '';
   const selectedAtoms = parseAtomList(selectedOperatorNotation);
   const orderedSelectedAtoms = orderAtoms(selectedAtoms);
@@ -1239,12 +1454,13 @@ export default function App() {
   const updateSelectedOperatorNotation = (notation: string) => {
     if (!selectedOperatorId) return;
     setOperators((current) => current.map((op) =>
-      op.id === selectedOperatorId ? { ...op, notation } : op
+      op.id === selectedOperatorId && isOperatorStackItem(op) ? { ...op, notation } : op
     ));
   };
 
   const selectOperator = (id: string) => {
     setSelectedOperatorId(id);
+    setAddMenuOpen(false);
     setRawEditorOpen(false);
     setPresetPickerOpen(false);
     setDotPopup(null);
@@ -1252,7 +1468,7 @@ export default function App() {
   };
 
   const toggleGridAtom = (atom: string) => {
-    if (!selectedOperatorId) return;
+    if (!selectedOperatorId || !selectedOperator) return;
 
     const nextAtoms = new Set(uniqueSelectedAtoms);
     if (nextAtoms.has(atom)) {
@@ -1275,7 +1491,7 @@ export default function App() {
   const updateOperatorParams = (id: string, field: keyof Pick<OperatorSpec, 'tVe' | 'tVf' | 'tFe'>, value: string) => {
     const parsed = Number.parseFloat(value);
     setOperators(operators.map((op) =>
-      op.id === id
+      op.id === id && isOperatorStackItem(op)
         ? { ...op, [field]: Number.isFinite(parsed) ? parsed : DEFAULT_OMNI_PARAMS[field] }
         : op
     ));
@@ -1283,10 +1499,43 @@ export default function App() {
 
   const updateOperatorFaceFilter = (id: string, patch: Partial<FaceFilterSpec>) => {
     setOperators((current) => current.map((op) => (
-      op.id === id
+      op.id === id && isOperatorStackItem(op)
         ? { ...op, faceFilter: normalizeFaceFilter({ ...normalizeFaceFilter(op.faceFilter), ...patch }) }
         : op
     )));
+  };
+
+  const updateDeformer = (id: string, patch: Partial<Omit<DeformerStackItem, 'id' | 'kind'>>) => {
+    setOperators((current) => current.map((op) => (
+      op.id === id && isDeformerStackItem(op) ? { ...op, ...patch } : op
+    )));
+  };
+
+  const updateCloner = (id: string, patch: Partial<Omit<ClonerStackItem, 'id' | 'kind'>>) => {
+    setOperators((current) => current.map((op) => (
+      op.id === id && isClonerStackItem(op) ? { ...op, ...patch } : op
+    )));
+  };
+
+  const updatePointClonerCopies = (id: string, value: number) => {
+    setOperators((current) => current.map((op) => {
+      if (op.id !== id || !isClonerStackItem(op) || op.mode !== 'point') {
+        return op;
+      }
+
+      const copies = Math.min(Math.max(Math.round(value), 1), 48);
+      if (isInfinitePointGroup(op.pointGroup)) {
+        return { ...op, copies };
+      }
+
+      if (op.pointGroup.startsWith('D')) {
+        const order = Math.min(Math.max(Math.round(copies / 2), 2), 6);
+        return { ...op, pointGroup: `D${order}` as PointGroupSymmetry, copies: order * 2 };
+      }
+
+      const order = Math.min(Math.max(copies, 1), 6);
+      return { ...op, pointGroup: `C${order}` as PointGroupSymmetry, copies: order };
+    }));
   };
 
   const updateMultigridSetting = <K extends keyof MultiGridSettings>(field: K, value: MultiGridSettings[K]) => {
@@ -1394,11 +1643,11 @@ export default function App() {
     const tiling = UNIFORM_TILINGS[tilingType];
     if (!tiling || tilingType === 'multigrid') return false;
     const selectedIdx = operators.findIndex(op => op.id === selectedOperatorId);
-    if (selectedIdx === -1 || !operators[selectedIdx].enabled) return false;
+    if (selectedIdx === -1 || !operators[selectedIdx].enabled || !isOperatorStackItem(operators[selectedIdx])) return false;
     try {
       let { vertices, faces } = tiling.generate(2, 2);
       for (let i = 0; i <= selectedIdx; i++) {
-        if (operators[i].enabled) {
+        if (operators[i].enabled && isOperatorStackItem(operators[i])) {
           ({ vertices, faces } = applyOperator({ vertices, faces }, operators[i]));
         }
       }
@@ -2607,7 +2856,7 @@ export default function App() {
             <section>
               <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Layers className="w-3 h-3" />
-                Operators
+                Stack
               </h2>
               <div className="space-y-3 bg-neutral-800/20 p-4 rounded-2xl border border-neutral-800">
                 <AnimatePresence>
@@ -2621,7 +2870,7 @@ export default function App() {
                     >
                       <div className="callout-animate mb-3 flex items-center gap-2.5 rounded-xl bg-yellow-400 px-3 py-2.5 text-xs font-semibold text-yellow-900 shadow-lg shadow-yellow-900/30">
                         <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-900 text-yellow-300 text-[10px] font-bold shrink-0">2</span>
-                        <span>Click <span className="font-black">Add Operator</span> below to transform the tiling</span>
+                        <span>Click <span className="font-black">Add</span> below to transform the tiling</span>
                       </div>
                     </motion.div>
                   )}
@@ -2686,14 +2935,26 @@ export default function App() {
                                 <span className="w-4 shrink-0 font-mono text-[10px] text-neutral-500">{idx + 1}.</span>
                                 <div className="min-w-0">
                                   <div className={`${op.enabled ? 'text-blue-400' : 'text-neutral-500'} truncate font-mono font-bold`}>
-                                    {findPresetName(parseAtomList(resolveOperatorNotation(op.notation))) ?? (resolveOperatorNotation(op.notation) || 'New Operator')}
+                                    {isOperatorStackItem(op)
+                                      ? (findPresetName(parseAtomList(resolveOperatorNotation(op.notation))) ?? (resolveOperatorNotation(op.notation) || 'New Operator'))
+                                      : isDeformerStackItem(op)
+                                        ? DEFORMER_LABELS[op.mode]
+                                        : CLONER_LABELS[op.mode]}
                                   </div>
                                   <div className="truncate font-mono text-[10px] text-neutral-500">
-                                    {resolveOperatorNotation(op.notation) || 'No atoms'}
+                                    {isOperatorStackItem(op)
+                                      ? (resolveOperatorNotation(op.notation) || 'No atoms')
+                                      : isDeformerStackItem(op)
+                                        ? `Deformer · ${op.axis.toUpperCase()} · ${op.amount.toFixed(2)}`
+                                        : op.mode === 'point'
+                                          ? `Point · ${op.pointGroup} · r ${op.radius.toFixed(1)}`
+                                          : `Wallpaper · ${op.wallpaperGroup} · ${op.xRepeats}x${op.yRepeats}`}
                                   </div>
                                 </div>
                               </div>
                               <div className="flex shrink-0 items-center gap-1">
+                                {isOperatorStackItem(op) && (
+                                  <>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -2726,7 +2987,7 @@ export default function App() {
                                     const randomAtoms = orderAtoms(OMNI_VALID_OPERATORS[randomIndex]);
                                     const notation = joinAtomList(randomAtoms);
                                     setOperators((current) => current.map((item) =>
-                                      item.id === op.id ? { ...item, notation } : item
+                                      item.id === op.id && isOperatorStackItem(item) ? { ...item, notation } : item
                                       ));
                                       setRawEditorOpen(false);
                                       setPresetPickerOpen(false);
@@ -2737,6 +2998,8 @@ export default function App() {
                                   >
                                     <Shuffle className="w-3 h-3" />
                                   </button>
+                                  </>
+                                )}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -2759,6 +3022,370 @@ export default function App() {
                               </div>
                             </div>
                             {(() => {
+                              if (isDeformerStackItem(op)) {
+                                const isSelectedItem = selectedOperatorId === op.id;
+                                if (!isSelectedItem) return null;
+                                return (
+                                  <div
+                                    className="mt-3 grid gap-2"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="grid grid-cols-3 gap-1">
+                                      {(['stretch', 'taper', 'spherify'] as DeformerMode[]).map((modeValue) => (
+                                        <button
+                                          key={modeValue}
+                                          type="button"
+                                          onClick={() => updateDeformer(op.id, { mode: modeValue })}
+                                          className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                            op.mode === modeValue
+                                              ? 'border-blue-700/60 bg-blue-950/30 text-blue-300'
+                                              : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                          }`}
+                                        >
+                                          {DEFORMER_LABELS[modeValue]}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    {op.mode !== 'spherify' && (
+                                      <div className="grid grid-cols-3 gap-1">
+                                        {(['x', 'y', 'z'] as DeformerAxis[]).map((axis) => (
+                                          <button
+                                            key={axis}
+                                            type="button"
+                                            onClick={() => updateDeformer(op.id, { axis })}
+                                            className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                              op.axis === axis
+                                                ? 'border-blue-700/60 bg-blue-950/30 text-blue-300'
+                                                : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                            }`}
+                                          >
+                                            {axis}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    <label className="grid gap-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
+                                        <span className="font-mono text-[10px] text-neutral-400">{op.amount.toFixed(2)}</span>
+                                      </div>
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.01"
+                                        value={op.amount}
+                                        onChange={(e) => updateDeformer(op.id, { amount: Number.parseFloat(e.target.value) })}
+                                        className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                      />
+                                    </label>
+                                  </div>
+                                );
+                              }
+
+                              if (isClonerStackItem(op)) {
+                                const isSelectedItem = selectedOperatorId === op.id;
+                                if (!isSelectedItem) return null;
+                                return (
+                                  <div
+                                    className="mt-3 grid gap-2"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="grid grid-cols-2 gap-1">
+                                      {(['point', 'wallpaper'] as ClonerMode[]).map((modeValue) => (
+                                        <button
+                                          key={modeValue}
+                                          type="button"
+                                          onClick={() => updateCloner(op.id, { mode: modeValue })}
+                                          className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                            op.mode === modeValue
+                                              ? 'border-blue-700/60 bg-blue-950/30 text-blue-300'
+                                              : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                          }`}
+                                        >
+                                          {CLONER_LABELS[modeValue]}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    {op.mode === 'point' ? (
+                                      <>
+                                        <label className="grid gap-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Point Group</span>
+                                          <select
+                                            value={op.pointGroup}
+                                            onChange={(e) => {
+                                              updateCloner(op.id, { pointGroup: e.target.value as PointGroupSymmetry });
+                                              requestFitToExtents();
+                                            }}
+                                            className="w-full rounded-lg border border-neutral-700/50 bg-neutral-800/40 px-2 py-1.5 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                                          >
+                                            {POINT_GROUP_SYMMETRIES.map((group) => (
+                                              <option key={group} value={group}>
+                                                {group}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Copies</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">
+                                              {getPointGroupBaseOrder(op.pointGroup, op.copies) * (op.pointGroup.startsWith('D') ? 2 : 1)}
+                                            </span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min={op.pointGroup.startsWith('D') ? 4 : 1}
+                                            max={isInfinitePointGroup(op.pointGroup) ? 48 : op.pointGroup.startsWith('D') ? 12 : 6}
+                                            step={op.pointGroup.startsWith('D') ? 2 : 1}
+                                            value={getPointGroupBaseOrder(op.pointGroup, op.copies) * (op.pointGroup.startsWith('D') ? 2 : 1)}
+                                            onChange={(e) => updatePointClonerCopies(op.id, Number.parseInt(e.target.value, 10))}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Radius</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.radius.toFixed(1)}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="9.9"
+                                            step="0.1"
+                                            value={op.radius}
+                                            onChange={(e) => updateCloner(op.id, { radius: Number.parseFloat(e.target.value) })}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <label className="grid gap-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Wallpaper Group</span>
+                                          <select
+                                            value={op.wallpaperGroup}
+                                            onChange={(e) => {
+                                              const wallpaperGroup = e.target.value as WallpaperSymmetry;
+                                              updateCloner(op.id, {
+                                                wallpaperGroup,
+                                                ...getDefaultWallpaperUnitOffset(wallpaperGroup, op.cellWidth, op.cellHeight),
+                                                wallpaperAutoFit: true,
+                                              });
+                                              requestFitToExtents();
+                                            }}
+                                            className="w-full rounded-lg border border-neutral-700/50 bg-neutral-800/40 px-2 py-1.5 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                                          >
+                                            {WALLPAPER_SYMMETRIES.map((group) => (
+                                              <option key={group} value={group}>
+                                                {group}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">X</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.xRepeats}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="1"
+                                              max="12"
+                                              step="1"
+                                              value={op.xRepeats}
+                                              onChange={(e) => updateCloner(op.id, { xRepeats: Number.parseInt(e.target.value, 10) })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Y</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.yRepeats}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="1"
+                                              max="12"
+                                              step="1"
+                                              value={op.yRepeats}
+                                              onChange={(e) => updateCloner(op.id, { yRepeats: Number.parseInt(e.target.value, 10) })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => setAdvancedWallpaperOpen((current) => !current)}
+                                          className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-500 transition-colors hover:bg-neutral-800/60"
+                                        >
+                                          Advanced Wallpaper
+                                        </button>
+                                        {advancedWallpaperOpen && (
+                                          <>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Width</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.cellWidth.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="0.25"
+                                              max="20"
+                                              step="0.05"
+                                              value={op.cellWidth}
+                                              onChange={(e) => updateCloner(op.id, { cellWidth: Number.parseFloat(e.target.value) })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Height</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.cellHeight.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="0.25"
+                                              max="20"
+                                              step="0.05"
+                                              value={op.cellHeight}
+                                              onChange={(e) => updateCloner(op.id, { cellHeight: Number.parseFloat(e.target.value) })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Skew X</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.skewX.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="-10"
+                                              max="10"
+                                              step="0.05"
+                                              value={op.skewX}
+                                              onChange={(e) => updateCloner(op.id, { skewX: Number.parseFloat(e.target.value) })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Skew Y</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.skewY.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="-10"
+                                              max="10"
+                                              step="0.05"
+                                              value={op.skewY}
+                                              onChange={(e) => updateCloner(op.id, { skewY: Number.parseFloat(e.target.value) })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                        </div>
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Unit Scale</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.unitScale.toFixed(2)}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="0.05"
+                                            max="4"
+                                            step="0.01"
+                                            value={op.unitScale}
+                                            onChange={(e) => updateCloner(op.id, { unitScale: Number.parseFloat(e.target.value) })}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
+                                        <label className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                                          <span>Auto Fit</span>
+                                          <input
+                                            type="checkbox"
+                                            checked={op.wallpaperAutoFit}
+                                            onChange={(e) => updateCloner(op.id, { wallpaperAutoFit: e.target.checked })}
+                                            className="h-3.5 w-3.5 accent-blue-600"
+                                          />
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Unit X</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.unitOffsetX.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="-10"
+                                              max="10"
+                                              step="0.05"
+                                              value={op.unitOffsetX}
+                                              onChange={(e) => updateCloner(op.id, { unitOffsetX: Number.parseFloat(e.target.value), wallpaperAutoFit: false })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Unit Y</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.unitOffsetY.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="-10"
+                                              max="10"
+                                              step="0.05"
+                                              value={op.unitOffsetY}
+                                              onChange={(e) => updateCloner(op.id, { unitOffsetY: Number.parseFloat(e.target.value), wallpaperAutoFit: false })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <label className="grid gap-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Spacing X</span>
+                                              <span className="font-mono text-[10px] text-neutral-400">{op.spacingX.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="0.05"
+                                              max="4"
+                                              step="0.01"
+                                              value={op.spacingX}
+                                              onChange={(e) => updateCloner(op.id, { spacingX: Number.parseFloat(e.target.value) })}
+                                              className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                            />
+                                          </label>
+                                            <label className="grid gap-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Spacing Y</span>
+                                                <span className="font-mono text-[10px] text-neutral-400">{op.spacingY.toFixed(2)}</span>
+                                              </div>
+                                              <input
+                                                type="range"
+                                                min="0.05"
+                                                max="4"
+                                                step="0.01"
+                                                value={op.spacingY}
+                                                onChange={(e) => updateCloner(op.id, { spacingY: Number.parseFloat(e.target.value) })}
+                                                className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                              />
+                                            </label>
+                                        </div>
+                                          </>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              }
+
                               const visibility = getOmniParamVisibility(op.notation);
                               const isSelectedOperator = selectedOperatorId === op.id;
                               if (!visibility.showP1 && !visibility.showP2 && !visibility.showP3 && !isSelectedOperator) {
@@ -3286,13 +3913,35 @@ export default function App() {
                         ))}
                       </Reorder.Group>
                     )}
-                    <button
-                      onClick={addBlankOperator}
-                      className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors uppercase font-bold"
-                    >
-                      <Plus className="w-3 h-3" />
-                      Add Operator
-                    </button>
+                    <div className="relative inline-block">
+                      <button
+                        onClick={() => setAddMenuOpen((current) => !current)}
+                        className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors uppercase font-bold"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add
+                      </button>
+                      <AnimatePresence>
+                        {addMenuOpen && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            className="absolute bottom-full left-0 z-30 mb-2 w-48 rounded-xl border border-neutral-800 bg-neutral-950 p-2 shadow-2xl"
+                          >
+                            <button type="button" onClick={addBlankOperator} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
+                              Operator
+                            </button>
+                            <button type="button" onClick={() => addDeformer('stretch')} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
+                              Deformer
+                            </button>
+                            <button type="button" onClick={() => addCloner('point')} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
+                              Cloner
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   </div>
             </section>
 

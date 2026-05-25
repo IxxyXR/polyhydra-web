@@ -12,6 +12,7 @@ import { OperatorSpec, RoleShapeBasis } from '../lib/conway-operators';
 import { ColorMode, computeFaceColors } from '../lib/coloring';
 import { MeshFinalizationMode } from '../lib/mesh-finalization';
 import { generateFinalMesh } from '../lib/mesh-pipeline';
+import { StackItem } from '../lib/stack-items';
 
 const FIT_PADDING_MULTIPLIER = 1.12;
 const FIT_LERP_ALPHA = 0.14;
@@ -871,7 +872,7 @@ interface TilingCanvasProps {
   showVertices: boolean;
   showFaces: boolean;
   wireframe: boolean;
-  operators: OperatorSpec[];
+  operators: Array<OperatorSpec | StackItem>;
   palette: PaletteKey;
   paletteColors?: string[];
   colorMode: ColorMode;
