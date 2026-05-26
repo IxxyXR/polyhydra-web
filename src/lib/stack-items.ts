@@ -57,9 +57,7 @@ export interface ClonerStackItem {
   spacingY: number;
   spacing: number;
   rotation: number;
-  arrayCountX: number;
-  arrayCountY: number;
-  arrayCountZ: number;
+  arrayCopies: number;
   arrayTranslateX: number;
   arrayTranslateY: number;
   arrayTranslateZ: number;
@@ -1240,10 +1238,7 @@ function makeArrayTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTransfor
     (min[2] + max[2]) / 2,
   ];
 
-  const clampCount = (value: number) => Math.min(Math.max(Math.round(value), 1), 16);
-  const countX = clampCount(cloner.arrayCountX);
-  const countY = clampCount(cloner.arrayCountY);
-  const countZ = clampCount(cloner.arrayCountZ);
+  const count = Math.min(Math.max(Math.round(cloner.arrayCopies), 1), 64);
 
   const toRadians = Math.PI / 180;
   const stepRotationX = cloner.arrayRotateX * toRadians;
@@ -1251,46 +1246,37 @@ function makeArrayTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTransfor
   const stepRotationZ = cloner.arrayRotateZ * toRadians;
   const stepScale = cloner.arrayScale;
 
-  // Each dimension advances along its own world axis by the matching translate
-  // component, so the X/Y/Z sliders are independent grid spacings in every mode.
   const stepX = cloner.arrayTranslateX;
   const stepY = cloner.arrayTranslateY;
   const stepZ = cloner.arrayTranslateZ;
 
-  const MAX_COPIES = 4096;
   const transforms: CloneTransform[] = [];
-  for (let k = 0; k < countZ && transforms.length < MAX_COPIES; k++) {
-    for (let j = 0; j < countY && transforms.length < MAX_COPIES; j++) {
-      for (let i = 0; i < countX && transforms.length < MAX_COPIES; i++) {
-        const step = i + j + k;
-        const rotation = step === 0
-          ? IDENTITY_MATRIX_3
-          : multiplyMatrix3(
-              rotationZ(stepRotationZ * step),
-              multiplyMatrix3(rotationY(stepRotationY * step), rotationX(stepRotationX * step)),
-            );
-        const scale = Math.pow(stepScale, step);
-        const m = rotation.map((value) => value * scale) as Matrix3;
-        const offsetX = i * stepX;
-        const offsetY = j * stepY;
-        const offsetZ = k * stepZ;
-        // Rotate/scale about the source centre, then place at the grid offset.
-        const rotatedCenter = transform3(m, center);
-        transforms.push({
-          rotation: 0,
-          tx: 0,
-          ty: 0,
-          affine3: {
-            m,
-            t: [
-              center[0] + offsetX - rotatedCenter[0],
-              center[1] + offsetY - rotatedCenter[1],
-              center[2] + offsetZ - rotatedCenter[2],
-            ],
-          },
-        });
-      }
-    }
+  for (let i = 0; i < count; i++) {
+    const rotation = i === 0
+      ? IDENTITY_MATRIX_3
+      : multiplyMatrix3(
+          rotationZ(stepRotationZ * i),
+          multiplyMatrix3(rotationY(stepRotationY * i), rotationX(stepRotationX * i)),
+        );
+    const scale = Math.pow(stepScale, i);
+    const m = rotation.map((v) => v * scale) as Matrix3;
+    const offsetX = i * stepX;
+    const offsetY = i * stepY;
+    const offsetZ = i * stepZ;
+    const rotatedCenter = transform3(m, center);
+    transforms.push({
+      rotation: 0,
+      tx: 0,
+      ty: 0,
+      affine3: {
+        m,
+        t: [
+          center[0] + offsetX - rotatedCenter[0],
+          center[1] + offsetY - rotatedCenter[1],
+          center[2] + offsetZ - rotatedCenter[2],
+        ],
+      },
+    });
   }
 
   return transforms;

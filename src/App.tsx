@@ -619,13 +619,11 @@ function serializeCompactStackItem(item: StackItemState) {
     item.pointAutoFit ? '1' : '0',
     encodeOperatorParam(item.pointGap / 2),
     item.pointOrbitSite,
-    // Array cloner state (indices 20-29, appended so older tokens still parse).
-    Math.min(Math.max(Math.round(item.arrayCountX), 1), 16).toString(36),
-    Math.min(Math.max(Math.round(item.arrayCountY), 1), 16).toString(36),
-    Math.min(Math.max(Math.round(item.arrayCountZ), 1), 16).toString(36),
-    encodeOperatorParam((item.arrayTranslateX + 5) / 10),
-    encodeOperatorParam((item.arrayTranslateY + 5) / 10),
-    encodeOperatorParam((item.arrayTranslateZ + 5) / 10),
+    // Array cloner state (indices 20-27, appended so older tokens still parse).
+    Math.min(Math.max(Math.round(item.arrayCopies), 1), 64).toString(36),
+    encodeOperatorParam((item.arrayTranslateX + 10) / 20),
+    encodeOperatorParam((item.arrayTranslateY + 10) / 20),
+    encodeOperatorParam((item.arrayTranslateZ + 10) / 20),
     encodeOperatorParam((item.arrayRotateX + 180) / 360),
     encodeOperatorParam((item.arrayRotateY + 180) / 360),
     encodeOperatorParam((item.arrayRotateZ + 180) / 360),
@@ -708,9 +706,7 @@ function parseCompactStackItem(token: string): StackItemState | null {
     const pointAutoFitRaw = isLegacy ? '1' : parts[17];
     const pointGapRaw = isLegacy ? '' : parts[18];
     const pointOrbitSiteRaw = isLegacy ? 'generic' : parts[19];
-    const arrayCountX = Number.parseInt(parts[20] ?? '', 36);
-    const arrayCountY = Number.parseInt(parts[21] ?? '', 36);
-    const arrayCountZ = Number.parseInt(parts[22] ?? '', 36);
+    const arrayCopiesParsed = Number.parseInt(parts[20] ?? '', 36);
     const copies = Number.parseInt(copiesRaw ?? '', 36);
     const xRepeats = Number.parseInt(xRepeatsRaw ?? '', 36);
     const yRepeats = Number.parseInt(yRepeatsRaw ?? '', 36);
@@ -749,16 +745,14 @@ function parseCompactStackItem(token: string): StackItemState | null {
       wallpaperAutoFit: wallpaperAutoFitRaw !== '0',
       spacingX: decodeOperatorParam(spacingXRaw ?? '', 0.25) * 4,
       spacingY: decodeOperatorParam(spacingYRaw ?? '', 0.25) * 4,
-      arrayCountX: Number.isFinite(arrayCountX) ? Math.min(Math.max(arrayCountX, 1), 16) : 3,
-      arrayCountY: Number.isFinite(arrayCountY) ? Math.min(Math.max(arrayCountY, 1), 16) : 3,
-      arrayCountZ: Number.isFinite(arrayCountZ) ? Math.min(Math.max(arrayCountZ, 1), 16) : 2,
-      arrayTranslateX: decodeOperatorParam(parts[23] ?? '', 0.65) * 10 - 5,
-      arrayTranslateY: decodeOperatorParam(parts[24] ?? '', 0.65) * 10 - 5,
-      arrayTranslateZ: decodeOperatorParam(parts[25] ?? '', 0.65) * 10 - 5,
-      arrayRotateX: decodeOperatorParam(parts[26] ?? '', 0.5) * 360 - 180,
-      arrayRotateY: decodeOperatorParam(parts[27] ?? '', 0.5) * 360 - 180,
-      arrayRotateZ: decodeOperatorParam(parts[28] ?? '', 0.5) * 360 - 180,
-      arrayScale: decodeOperatorParam(parts[29] ?? '', 1 / 3) * 3,
+      arrayCopies: Number.isFinite(arrayCopiesParsed) ? Math.min(Math.max(arrayCopiesParsed, 1), 64) : 3,
+      arrayTranslateX: decodeOperatorParam(parts[21] ?? '', 0.575) * 20 - 10,
+      arrayTranslateY: decodeOperatorParam(parts[22] ?? '', 0.5) * 20 - 10,
+      arrayTranslateZ: decodeOperatorParam(parts[23] ?? '', 0.5) * 20 - 10,
+      arrayRotateX: decodeOperatorParam(parts[24] ?? '', 0.5) * 360 - 180,
+      arrayRotateY: decodeOperatorParam(parts[25] ?? '', 0.5) * 360 - 180,
+      arrayRotateZ: decodeOperatorParam(parts[26] ?? '', 0.5) * 360 - 180,
+      arrayScale: decodeOperatorParam(parts[27] ?? '', 1 / 3) * 3,
     };
   }
 
@@ -815,12 +809,10 @@ function createCloner(mode: ClonerMode = 'point'): ClonerStackItem {
     spacingY: 1,
     spacing: 1.1,
     rotation: 0,
-    arrayCountX: 3,
-    arrayCountY: 3,
-    arrayCountZ: 2,
+    arrayCopies: 3,
     arrayTranslateX: 1.5,
-    arrayTranslateY: 1.5,
-    arrayTranslateZ: 1.5,
+    arrayTranslateY: 0,
+    arrayTranslateZ: 0,
     arrayRotateX: 0,
     arrayRotateY: 0,
     arrayRotateZ: 0,
@@ -3510,27 +3502,22 @@ export default function App() {
                                       </>
                                     ) : (
                                       <>
-                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Copies (per axis)</span>
-                                        <div className="grid grid-cols-3 gap-2">
-                                          {(['arrayCountX', 'arrayCountY', 'arrayCountZ'] as const).map((key, axisIndex) => (
-                                            <label key={key} className="grid gap-1">
-                                              <div className="flex items-center justify-between gap-2">
-                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{['X', 'Y', 'Z'][axisIndex]}</span>
-                                                <span className="font-mono text-[10px] text-neutral-400">{op[key]}</span>
-                                              </div>
-                                              <input
-                                                type="range"
-                                                min="1"
-                                                max="16"
-                                                step="1"
-                                                value={op[key]}
-                                                onChange={(e) => updateCloner(op.id, { [key]: Number.parseInt(e.target.value, 10) })}
-                                                className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
-                                              />
-                                            </label>
-                                          ))}
-                                        </div>
-                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Spacing (per axis)</span>
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Copies</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.arrayCopies}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="1"
+                                            max="64"
+                                            step="1"
+                                            value={op.arrayCopies}
+                                            onChange={(e) => updateCloner(op.id, { arrayCopies: Number.parseInt(e.target.value, 10) })}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Spacing (per copy)</span>
                                         <div className="grid grid-cols-3 gap-2">
                                           {(['arrayTranslateX', 'arrayTranslateY', 'arrayTranslateZ'] as const).map((key, axisIndex) => (
                                             <label key={key} className="grid gap-1">
@@ -3540,8 +3527,8 @@ export default function App() {
                                               </div>
                                               <input
                                                 type="range"
-                                                min="-5"
-                                                max="5"
+                                                min="-10"
+                                                max="10"
                                                 step="0.1"
                                                 value={op[key]}
                                                 onChange={(e) => updateCloner(op.id, { [key]: Number.parseFloat(e.target.value) })}
