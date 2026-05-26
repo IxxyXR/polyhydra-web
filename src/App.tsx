@@ -102,8 +102,8 @@ const DEFORMER_LABELS: Record<DeformerMode, string> = {
 };
 
 const CLONER_LABELS: Record<ClonerMode, string> = {
-  point: 'Point Group',
-  wallpaper: 'Wallpaper',
+  point: '3D Symmetry',
+  wallpaper: '2D Symmetry',
 };
 
 function getDefaultWallpaperUnitOffset(group: WallpaperSymmetry, width: number, height: number) {
@@ -3126,7 +3126,7 @@ export default function App() {
                                     {op.mode === 'point' ? (
                                       <>
                                         <label className="grid gap-1">
-                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Point Group</span>
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Symmetry Group</span>
                                           <select
                                             value={op.pointGroup}
                                             onChange={(e) => {
@@ -3239,7 +3239,7 @@ export default function App() {
                                     ) : (
                                       <>
                                         <label className="grid gap-1">
-                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Wallpaper Group</span>
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Symmetry Group</span>
                                           <select
                                             value={op.wallpaperGroup}
                                             onChange={(e) => {
