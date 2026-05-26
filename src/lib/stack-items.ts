@@ -2,7 +2,7 @@ import { Mesh, OperatorSpec } from './conway-operators';
 
 export type DeformerMode = 'stretch' | 'taper' | 'spherify';
 export type DeformerAxis = 'x' | 'y' | 'z';
-export type ClonerMode = 'point' | 'wallpaper';
+export type ClonerMode = 'point' | 'wallpaper' | 'array';
 export type PointGroupSymmetry = 'Cn' | 'Cnv' | 'Cnh' | 'Sn' | 'Dn' | 'Dnh' | 'Dnd' | 'T' | 'Th' | 'Td' | 'O' | 'Oh' | 'I' | 'Ih';
 export type WallpaperSymmetry = 'p1' | 'p2' | 'pm' | 'pg' | 'cm' | 'pmm' | 'pmg' | 'pgg' | 'cmm' | 'p4' | 'p4m' | 'p4g' | 'p3' | 'p3m1' | 'p31m' | 'p6' | 'p6m';
 export type WallpaperPlane = 'xy' | 'yz' | 'xz';
@@ -57,6 +57,16 @@ export interface ClonerStackItem {
   spacingY: number;
   spacing: number;
   rotation: number;
+  arrayCountX: number;
+  arrayCountY: number;
+  arrayCountZ: number;
+  arrayTranslateX: number;
+  arrayTranslateY: number;
+  arrayTranslateZ: number;
+  arrayRotateX: number;
+  arrayRotateY: number;
+  arrayRotateZ: number;
+  arrayScale: number;
 }
 
 export type StackItem = OperatorStackItem | DeformerStackItem | ClonerStackItem;
@@ -179,6 +189,9 @@ interface CloneTransform {
   matrix?: [number, number, number, number];
   matrix3?: Matrix3;
   wallpaperPlane?: WallpaperPlane;
+  // Direct world-space affine: world = m * source + t. Used by the array cloner,
+  // bypassing the point/wallpaper origin + plane machinery above.
+  affine3?: { m: Matrix3; t: [number, number, number] };
 }
 
 type Matrix2 = [number, number, number, number];
@@ -221,6 +234,29 @@ function pushWallpaperPlaneVertex(target: number[], plane: WallpaperPlane, trans
 }
 
 function pushTransformedMeshCopy(source: Mesh, target: Mesh, transform: CloneTransform) {
+  if (transform.affine3) {
+    const { m, t } = transform.affine3;
+    const baseOffset = target.vertices.length / 3;
+    for (let index = 0; index < source.vertices.length; index += 3) {
+      const x = source.vertices[index];
+      const y = source.vertices[index + 1];
+      const z = source.vertices[index + 2];
+      target.vertices.push(
+        m[0] * x + m[1] * y + m[2] * z + t[0],
+        m[3] * x + m[4] * y + m[5] * z + t[1],
+        m[6] * x + m[7] * y + m[8] * z + t[2],
+      );
+    }
+    const affineDeterminant = determinant3(m);
+    source.faces.forEach((face) => {
+      const transformedFace = face.map((vertex) => vertex + baseOffset);
+      target.faces.push(affineDeterminant < 0 ? transformedFace.reverse() : transformedFace);
+    });
+    source.faceValues?.forEach((value) => target.faceValues?.push(value));
+    source.roleValues?.forEach((value) => target.roleValues?.push(value));
+    return;
+  }
+
   const vertexOffset = target.vertices.length / 3;
   const cos = Math.cos(transform.rotation);
   const sin = Math.sin(transform.rotation);
@@ -1196,10 +1232,76 @@ function makeWallpaperTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTran
   return transforms;
 }
 
+function makeArrayTransforms(mesh: Mesh, cloner: ClonerStackItem): CloneTransform[] {
+  const { min, max } = getMeshBounds(mesh.vertices);
+  const center: [number, number, number] = [
+    (min[0] + max[0]) / 2,
+    (min[1] + max[1]) / 2,
+    (min[2] + max[2]) / 2,
+  ];
+
+  const clampCount = (value: number) => Math.min(Math.max(Math.round(value), 1), 16);
+  const countX = clampCount(cloner.arrayCountX);
+  const countY = clampCount(cloner.arrayCountY);
+  const countZ = clampCount(cloner.arrayCountZ);
+
+  const toRadians = Math.PI / 180;
+  const stepRotationX = cloner.arrayRotateX * toRadians;
+  const stepRotationY = cloner.arrayRotateY * toRadians;
+  const stepRotationZ = cloner.arrayRotateZ * toRadians;
+  const stepScale = cloner.arrayScale;
+
+  // Each dimension advances along its own world axis by the matching translate
+  // component, so the X/Y/Z sliders are independent grid spacings in every mode.
+  const stepX = cloner.arrayTranslateX;
+  const stepY = cloner.arrayTranslateY;
+  const stepZ = cloner.arrayTranslateZ;
+
+  const MAX_COPIES = 4096;
+  const transforms: CloneTransform[] = [];
+  for (let k = 0; k < countZ && transforms.length < MAX_COPIES; k++) {
+    for (let j = 0; j < countY && transforms.length < MAX_COPIES; j++) {
+      for (let i = 0; i < countX && transforms.length < MAX_COPIES; i++) {
+        const step = i + j + k;
+        const rotation = step === 0
+          ? IDENTITY_MATRIX_3
+          : multiplyMatrix3(
+              rotationZ(stepRotationZ * step),
+              multiplyMatrix3(rotationY(stepRotationY * step), rotationX(stepRotationX * step)),
+            );
+        const scale = Math.pow(stepScale, step);
+        const m = rotation.map((value) => value * scale) as Matrix3;
+        const offsetX = i * stepX;
+        const offsetY = j * stepY;
+        const offsetZ = k * stepZ;
+        // Rotate/scale about the source centre, then place at the grid offset.
+        const rotatedCenter = transform3(m, center);
+        transforms.push({
+          rotation: 0,
+          tx: 0,
+          ty: 0,
+          affine3: {
+            m,
+            t: [
+              center[0] + offsetX - rotatedCenter[0],
+              center[1] + offsetY - rotatedCenter[1],
+              center[2] + offsetZ - rotatedCenter[2],
+            ],
+          },
+        });
+      }
+    }
+  }
+
+  return transforms;
+}
+
 export function applyCloner(mesh: Mesh, cloner: ClonerStackItem): Mesh {
   const transforms = cloner.mode === 'point'
     ? makePointGroupTransforms(mesh, cloner)
-    : makeWallpaperTransforms(mesh, cloner);
+    : cloner.mode === 'array'
+      ? makeArrayTransforms(mesh, cloner)
+      : makeWallpaperTransforms(mesh, cloner);
   if (transforms.length <= 1) return cloneMesh(mesh);
 
   const next: Mesh = { vertices: [], faces: [], faceValues: [], roleValues: [] };

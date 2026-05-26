@@ -104,6 +104,7 @@ const DEFORMER_LABELS: Record<DeformerMode, string> = {
 const CLONER_LABELS: Record<ClonerMode, string> = {
   point: '3D Symmetry',
   wallpaper: '2D Symmetry',
+  array: 'Array',
 };
 
 function getDefaultWallpaperUnitOffset(group: WallpaperSymmetry, width: number, height: number) {
@@ -596,7 +597,7 @@ function serializeCompactStackItem(item: StackItemState) {
     return `${item.enabled ? '' : '!'}d${mode}.${encodeOperatorParam(item.amount)}${item.axis}`;
   }
 
-  const mode = item.mode === 'point' ? 'p' : 'w';
+  const mode = item.mode === 'point' ? 'p' : item.mode === 'array' ? 'a' : 'w';
   return [
     `${item.enabled ? '' : '!'}c${mode}`,
     item.mode === 'point' ? item.pointGroup : item.wallpaperGroup,
@@ -618,6 +619,17 @@ function serializeCompactStackItem(item: StackItemState) {
     item.pointAutoFit ? '1' : '0',
     encodeOperatorParam(item.pointGap / 2),
     item.pointOrbitSite,
+    // Array cloner state (indices 20-29, appended so older tokens still parse).
+    Math.min(Math.max(Math.round(item.arrayCountX), 1), 16).toString(36),
+    Math.min(Math.max(Math.round(item.arrayCountY), 1), 16).toString(36),
+    Math.min(Math.max(Math.round(item.arrayCountZ), 1), 16).toString(36),
+    encodeOperatorParam((item.arrayTranslateX + 5) / 10),
+    encodeOperatorParam((item.arrayTranslateY + 5) / 10),
+    encodeOperatorParam((item.arrayTranslateZ + 5) / 10),
+    encodeOperatorParam((item.arrayRotateX + 180) / 360),
+    encodeOperatorParam((item.arrayRotateY + 180) / 360),
+    encodeOperatorParam((item.arrayRotateZ + 180) / 360),
+    encodeOperatorParam(item.arrayScale / 3),
   ].join('.');
 }
 
@@ -675,7 +687,7 @@ function parseCompactStackItem(token: string): StackItemState | null {
   if (payload.startsWith('c')) {
     const parts = payload.slice(1).split('.');
     const [modeRaw] = parts;
-    const mode: ClonerMode = modeRaw === 'w' ? 'wallpaper' : 'point';
+    const mode: ClonerMode = modeRaw === 'w' ? 'wallpaper' : modeRaw === 'a' ? 'array' : 'point';
     const isLegacy = parts.length === 4;
     const groupRaw = isLegacy ? null : parts[1];
     const copiesRaw = isLegacy ? parts[1] : parts[2];
@@ -696,6 +708,9 @@ function parseCompactStackItem(token: string): StackItemState | null {
     const pointAutoFitRaw = isLegacy ? '1' : parts[17];
     const pointGapRaw = isLegacy ? '' : parts[18];
     const pointOrbitSiteRaw = isLegacy ? 'generic' : parts[19];
+    const arrayCountX = Number.parseInt(parts[20] ?? '', 36);
+    const arrayCountY = Number.parseInt(parts[21] ?? '', 36);
+    const arrayCountZ = Number.parseInt(parts[22] ?? '', 36);
     const copies = Number.parseInt(copiesRaw ?? '', 36);
     const xRepeats = Number.parseInt(xRepeatsRaw ?? '', 36);
     const yRepeats = Number.parseInt(yRepeatsRaw ?? '', 36);
@@ -734,6 +749,16 @@ function parseCompactStackItem(token: string): StackItemState | null {
       wallpaperAutoFit: wallpaperAutoFitRaw !== '0',
       spacingX: decodeOperatorParam(spacingXRaw ?? '', 0.25) * 4,
       spacingY: decodeOperatorParam(spacingYRaw ?? '', 0.25) * 4,
+      arrayCountX: Number.isFinite(arrayCountX) ? Math.min(Math.max(arrayCountX, 1), 16) : 3,
+      arrayCountY: Number.isFinite(arrayCountY) ? Math.min(Math.max(arrayCountY, 1), 16) : 3,
+      arrayCountZ: Number.isFinite(arrayCountZ) ? Math.min(Math.max(arrayCountZ, 1), 16) : 2,
+      arrayTranslateX: decodeOperatorParam(parts[23] ?? '', 0.65) * 10 - 5,
+      arrayTranslateY: decodeOperatorParam(parts[24] ?? '', 0.65) * 10 - 5,
+      arrayTranslateZ: decodeOperatorParam(parts[25] ?? '', 0.65) * 10 - 5,
+      arrayRotateX: decodeOperatorParam(parts[26] ?? '', 0.5) * 360 - 180,
+      arrayRotateY: decodeOperatorParam(parts[27] ?? '', 0.5) * 360 - 180,
+      arrayRotateZ: decodeOperatorParam(parts[28] ?? '', 0.5) * 360 - 180,
+      arrayScale: decodeOperatorParam(parts[29] ?? '', 1 / 3) * 3,
     };
   }
 
@@ -790,6 +815,16 @@ function createCloner(mode: ClonerMode = 'point'): ClonerStackItem {
     spacingY: 1,
     spacing: 1.1,
     rotation: 0,
+    arrayCountX: 3,
+    arrayCountY: 3,
+    arrayCountZ: 2,
+    arrayTranslateX: 1.5,
+    arrayTranslateY: 1.5,
+    arrayTranslateZ: 1.5,
+    arrayRotateX: 0,
+    arrayRotateY: 0,
+    arrayRotateZ: 0,
+    arrayScale: 1,
   };
 }
 
@@ -906,7 +941,7 @@ function buildAppSearchParams(state: {
 
 function parseOperatorsFromUrlParam(urlOps: string): StackItemState[] {
   const compactEntries = urlOps.split(';').filter(Boolean);
-  const compactOperatorPattern = /^!?(?:[0-9a-z]+(?:\.[0-9a-z]{6})?(?:~f[srv][elv][01][0-9a-z]{2}[01]?)?|d[stp]\.[0-9a-z]{2}[xyz]|c[pw](?:\.[a-z0-9]+)+)$/i;
+  const compactOperatorPattern = /^!?(?:[0-9a-z]+(?:\.[0-9a-z]{6})?(?:~f[srv][elv][01][0-9a-z]{2}[01]?)?|d[stp]\.[0-9a-z]{2}[xyz]|c[apw](?:\.[a-z0-9]+)+)$/i;
   if (compactEntries.length > 0 && compactEntries.every((entry) => compactOperatorPattern.test(entry))) {
     const parsedCompact = compactEntries
       .map(parseCompactStackItem)
@@ -3107,8 +3142,8 @@ export default function App() {
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                    <div className="grid grid-cols-2 gap-1">
-                                      {(['point', 'wallpaper'] as ClonerMode[]).map((modeValue) => (
+                                    <div className="grid grid-cols-3 gap-1">
+                                      {(['array', 'point', 'wallpaper'] as ClonerMode[]).map((modeValue) => (
                                         <button
                                           key={modeValue}
                                           type="button"
@@ -3236,7 +3271,7 @@ export default function App() {
                                           />
                                         </label>
                                       </>
-                                    ) : (
+                                    ) : op.mode === 'wallpaper' ? (
                                       <>
                                         <label className="grid gap-1">
                                           <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Symmetry Group</span>
@@ -3472,6 +3507,84 @@ export default function App() {
                                         </div>
                                           </>
                                         )}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Copies (per axis)</span>
+                                        <div className="grid grid-cols-3 gap-2">
+                                          {(['arrayCountX', 'arrayCountY', 'arrayCountZ'] as const).map((key, axisIndex) => (
+                                            <label key={key} className="grid gap-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{['X', 'Y', 'Z'][axisIndex]}</span>
+                                                <span className="font-mono text-[10px] text-neutral-400">{op[key]}</span>
+                                              </div>
+                                              <input
+                                                type="range"
+                                                min="1"
+                                                max="16"
+                                                step="1"
+                                                value={op[key]}
+                                                onChange={(e) => updateCloner(op.id, { [key]: Number.parseInt(e.target.value, 10) })}
+                                                className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                              />
+                                            </label>
+                                          ))}
+                                        </div>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Spacing (per axis)</span>
+                                        <div className="grid grid-cols-3 gap-2">
+                                          {(['arrayTranslateX', 'arrayTranslateY', 'arrayTranslateZ'] as const).map((key, axisIndex) => (
+                                            <label key={key} className="grid gap-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{['X', 'Y', 'Z'][axisIndex]}</span>
+                                                <span className="font-mono text-[10px] text-neutral-400">{op[key].toFixed(1)}</span>
+                                              </div>
+                                              <input
+                                                type="range"
+                                                min="-5"
+                                                max="5"
+                                                step="0.1"
+                                                value={op[key]}
+                                                onChange={(e) => updateCloner(op.id, { [key]: Number.parseFloat(e.target.value) })}
+                                                className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                              />
+                                            </label>
+                                          ))}
+                                        </div>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Rotate °/copy</span>
+                                        <div className="grid grid-cols-3 gap-2">
+                                          {(['arrayRotateX', 'arrayRotateY', 'arrayRotateZ'] as const).map((key, axisIndex) => (
+                                            <label key={key} className="grid gap-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{['X', 'Y', 'Z'][axisIndex]}</span>
+                                                <span className="font-mono text-[10px] text-neutral-400">{Math.round(op[key])}</span>
+                                              </div>
+                                              <input
+                                                type="range"
+                                                min="-180"
+                                                max="180"
+                                                step="1"
+                                                value={op[key]}
+                                                onChange={(e) => updateCloner(op.id, { [key]: Number.parseFloat(e.target.value) })}
+                                                className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                              />
+                                            </label>
+                                          ))}
+                                        </div>
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Scale /copy</span>
+                                            <span className="font-mono text-[10px] text-neutral-400">{op.arrayScale.toFixed(2)}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="0.1"
+                                            max="3"
+                                            step="0.01"
+                                            value={op.arrayScale}
+                                            onChange={(e) => updateCloner(op.id, { arrayScale: Number.parseFloat(e.target.value) })}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                          />
+                                        </label>
                                       </>
                                     )}
                                   </div>
@@ -4027,7 +4140,7 @@ export default function App() {
                             <button type="button" onClick={() => addDeformer('stretch')} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
                               Deformer
                             </button>
-                            <button type="button" onClick={() => addCloner('point')} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
+                            <button type="button" onClick={() => addCloner('array')} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
                               Cloner
                             </button>
                           </motion.div>
