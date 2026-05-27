@@ -8,3 +8,13 @@
 .callout-animate {
   animation: callout-pulse 2s ease-in-out infinite;
 }
+
+.slider-value-field {
+  -moz-appearance: textfield;
+}
+
+.slider-value-field::-webkit-outer-spin-button,
+.slider-value-field::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

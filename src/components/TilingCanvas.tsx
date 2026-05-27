@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -553,8 +553,85 @@ function clamp01(value: number) {
   return Math.min(Math.max(value, 0), 1);
 }
 
-function formatPercent(value: number) {
-  return `${Math.round(value * 100)}%`;
+function clampRangeValue(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function formatSliderValue(value: number, precision = 0) {
+  if (!Number.isFinite(value)) return '0';
+  return value.toFixed(precision);
+}
+
+function XRSliderValueField({
+  value,
+  min,
+  max,
+  step,
+  onValueCommit,
+  disabled,
+  precision,
+  suffix,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onValueCommit: (value: number) => void;
+  disabled?: boolean;
+  precision?: number;
+  suffix?: string;
+}) {
+  const [inputValue, setInputValue] = useState(() => formatSliderValue(value, precision));
+
+  useEffect(() => {
+    setInputValue(formatSliderValue(value, precision));
+  }, [value, precision]);
+
+  const commit = (raw: string) => {
+    const parsed = Number.parseFloat(raw);
+    if (!Number.isFinite(parsed)) {
+      setInputValue(formatSliderValue(value, precision));
+      return;
+    }
+
+    const clamped = clampRangeValue(parsed, min, max);
+    onValueCommit(clamped);
+    setInputValue(formatSliderValue(clamped, precision));
+  };
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={inputValue}
+        disabled={disabled}
+        onChange={(event) => setInputValue(event.currentTarget.value)}
+        onBlur={(event) => commit(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        style={{
+          width: 72,
+          textAlign: 'right',
+          background: disabled ? 'rgba(24, 24, 27, 0.5)' : 'rgba(24, 24, 27, 0.78)',
+          color: '#e4e4e7',
+          border: '1px solid rgba(82, 82, 91, 0.9)',
+          borderRadius: 10,
+          fontSize: 20,
+          fontWeight: 700,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+          padding: '2px 6px',
+        }}
+      />
+      {suffix ? <span style={{ color: '#a1a1aa', fontSize: 18, fontWeight: 700 }}>{suffix}</span> : null}
+    </span>
+  );
 }
 
 function getOperatorParamLabel(field: OperatorParamKey) {
@@ -785,9 +862,15 @@ function XRControlPanel({ controls }: { controls: XRPanelControls }) {
           onChange={(event) => controls.onOperatorParamChange(field, Number.parseFloat(event.currentTarget.value))}
           style={{ width: '100%', height: 42, accentColor: '#3b82f6' }}
         />
-        <span style={{ fontSize: 22, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', color: '#93c5fd', textAlign: 'right' }}>
-          {formatPercent(value)}
-        </span>
+        <XRSliderValueField
+          value={value * 100}
+          min={0}
+          max={100}
+          step={1}
+          precision={0}
+          suffix="%"
+          onValueCommit={(next) => controls.onOperatorParamChange(field, next / 100)}
+        />
       </label>
     );
   };

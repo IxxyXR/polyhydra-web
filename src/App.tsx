@@ -107,6 +107,77 @@ const CLONER_LABELS: Record<ClonerMode, string> = {
   array: 'Array',
 };
 
+function clampRangeValue(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function formatSliderValue(value: number, precision = 0) {
+  if (!Number.isFinite(value)) return '0';
+  return value.toFixed(precision);
+}
+
+function SliderValueField({
+  value,
+  min,
+  max,
+  step,
+  onValueCommit,
+  disabled,
+  precision = 0,
+  suffix,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onValueCommit: (value: number) => void;
+  disabled?: boolean;
+  precision?: number;
+  suffix?: string;
+}) {
+  const [inputValue, setInputValue] = useState(() => formatSliderValue(value, precision));
+
+  useEffect(() => {
+    setInputValue(formatSliderValue(value, precision));
+  }, [value, precision]);
+
+  const commitValue = (rawValue: string) => {
+    const parsed = Number.parseFloat(rawValue);
+    if (!Number.isFinite(parsed)) {
+      setInputValue(formatSliderValue(value, precision));
+      return;
+    }
+
+    const clamped = clampRangeValue(parsed, min, max);
+    onValueCommit(clamped);
+    setInputValue(formatSliderValue(clamped, precision));
+  };
+
+  return (
+    <label className="inline-flex items-center gap-1 justify-end">
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={inputValue}
+        disabled={disabled}
+        onChange={(event) => setInputValue(event.currentTarget.value)}
+        onBlur={(event) => commitValue(event.currentTarget.value)}
+        className="slider-value-field w-14 text-right rounded border border-neutral-700 bg-neutral-800/60 px-2 py-0.5 text-[10px] font-mono text-neutral-100 focus:outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-55"
+        style={{ appearance: 'none' }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      {suffix ? <span className="text-[10px] text-neutral-400">{suffix}</span> : null}
+    </label>
+  );
+}
+
 function getDefaultWallpaperUnitOffset(group: WallpaperSymmetry, width: number, height: number) {
   if (group === 'p1') {
     return { unitOffsetX: 0, unitOffsetY: 0 };
@@ -2215,11 +2286,11 @@ export default function App() {
                     <>
                       {isBoxShape && (
                         <>
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-neutral-400">X Segments</span>
-                              <span className="text-blue-400 font-mono">{boxXSegments}</span>
-                            </div>
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-neutral-400">X Segments</span>
+                                  <SliderValueField value={boxXSegments} min={1} max={16} step={1} onValueCommit={setBoxXSegments} />
+                                </div>
                             <input
                               type="range"
                               min="1"
@@ -2229,11 +2300,11 @@ export default function App() {
                               className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
                             />
                           </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-neutral-400">Y Segments</span>
-                              <span className="text-blue-400 font-mono">{boxYSegments}</span>
-                            </div>
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-neutral-400">Y Segments</span>
+                                <SliderValueField value={boxYSegments} min={1} max={16} step={1} onValueCommit={setBoxYSegments} />
+                              </div>
                             <input
                               type="range"
                               min="1"
@@ -2243,11 +2314,11 @@ export default function App() {
                               className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
                             />
                           </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-neutral-400">Z Segments</span>
-                              <span className="text-blue-400 font-mono">{boxZSegments}</span>
-                            </div>
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-neutral-400">Z Segments</span>
+                                <SliderValueField value={boxZSegments} min={1} max={16} step={1} onValueCommit={setBoxZSegments} />
+                              </div>
                             <input
                               type="range"
                               min="1"
@@ -2260,11 +2331,11 @@ export default function App() {
                         </>
                       )}
                       {radialTypeUsesSides && (
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-neutral-400">Sides</span>
-                            <span className="text-blue-400 font-mono">{radialSides}</span>
-                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-neutral-400">Sides</span>
+                              <SliderValueField value={radialSides} min={3} max={isTorusShape ? 64 : 16} step={1} onValueCommit={setRadialSides} />
+                            </div>
                           <input
                             type="range"
                             min="3"
@@ -2280,7 +2351,7 @@ export default function App() {
                           <div className="space-y-2">
                             <div className="flex justify-between text-xs">
                               <span className="text-neutral-400">Height Segments</span>
-                              <span className="text-blue-400 font-mono">{coneHeightSegments}</span>
+                              <SliderValueField value={coneHeightSegments} min={1} max={24} step={1} onValueCommit={setConeHeightSegments} />
                             </div>
                             <input
                               type="range"
@@ -2294,7 +2365,7 @@ export default function App() {
                           <div className="space-y-2">
                             <div className="flex justify-between text-xs">
                               <span className="text-neutral-400">Taper</span>
-                              <span className="text-blue-400 font-mono">{coneTaper.toFixed(2)}</span>
+                              <SliderValueField value={coneTaper} min={0} max={2} step={0.01} precision={2} onValueCommit={setConeTaper} />
                             </div>
                             <input
                               type="range"
@@ -2312,7 +2383,7 @@ export default function App() {
                         <div className="space-y-2">
                           <div className="flex justify-between text-xs">
                             <span className="text-neutral-400">Profile Sides</span>
-                            <span className="text-blue-400 font-mono">{torusProfileSides}</span>
+                            <SliderValueField value={torusProfileSides} min={3} max={32} step={1} onValueCommit={setTorusProfileSides} />
                           </div>
                           <input
                             type="range"
@@ -2330,7 +2401,13 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
                         <span className="text-neutral-400">Dimensions</span>
-                        <span className="text-blue-400 font-mono">{multigridSettings.dimensions}</span>
+                        <SliderValueField
+                          value={multigridSettings.dimensions}
+                          min={3}
+                          max={30}
+                          step={1}
+                          onValueCommit={(value) => updateMultigridSetting('dimensions', value)}
+                        />
                       </div>
                       <input
                         type="range"
@@ -2344,7 +2421,13 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
                         <span className="text-neutral-400">Divisions</span>
-                        <span className="text-blue-400 font-mono">{multigridSettings.divisions}</span>
+                        <SliderValueField
+                          value={multigridSettings.divisions}
+                          min={1}
+                          max={30}
+                          step={1}
+                          onValueCommit={(value) => updateMultigridSetting('divisions', value)}
+                        />
                       </div>
                       <input
                         type="range"
@@ -2358,7 +2441,14 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
                         <span className="text-neutral-400">Offset</span>
-                        <span className="text-blue-400 font-mono">{multigridSettings.offset.toFixed(2)}</span>
+                        <SliderValueField
+                          value={multigridSettings.offset}
+                          min={-2}
+                          max={2}
+                          step={0.01}
+                          precision={2}
+                          onValueCommit={(value) => updateMultigridSetting('offset', value)}
+                        />
                       </div>
                       <input
                         type="range"
@@ -2375,7 +2465,14 @@ export default function App() {
                       <div className="space-y-2">
                         <div className="flex justify-between text-xs">
                           <span className="text-neutral-400">Min Distance</span>
-                          <span className="text-blue-400 font-mono">{multigridSettings.minDistance.toFixed(2)}</span>
+                          <SliderValueField
+                            value={multigridSettings.minDistance}
+                            min={0}
+                            max={2}
+                            step={0.01}
+                            precision={2}
+                            onValueCommit={(value) => updateMultigridSetting('minDistance', value)}
+                          />
                         </div>
                         <input
                           type="range"
@@ -2390,7 +2487,14 @@ export default function App() {
                       <div className="space-y-2">
                         <div className="flex justify-between text-xs">
                           <span className="text-neutral-400">Max Distance</span>
-                          <span className="text-blue-400 font-mono">{multigridSettings.maxDistance.toFixed(2)}</span>
+                          <SliderValueField
+                            value={multigridSettings.maxDistance}
+                            min={0}
+                            max={2}
+                            step={0.01}
+                            precision={2}
+                            onValueCommit={(value) => updateMultigridSetting('maxDistance', value)}
+                          />
                         </div>
                         <input
                           type="range"
@@ -2409,7 +2513,7 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
                         <span className="text-neutral-400">Rows</span>
-                        <span className="text-blue-400 font-mono">{rows}</span>
+                        <SliderValueField value={rows} min={2} max={30} step={1} onValueCommit={setRows} />
                       </div>
                       <input 
                         type="range" min="2" max="30" value={rows} 
@@ -2420,7 +2524,7 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
                         <span className="text-neutral-400">Columns</span>
-                        <span className="text-blue-400 font-mono">{cols}</span>
+                        <SliderValueField value={cols} min={2} max={30} step={1} onValueCommit={setCols} />
                       </div>
                       <input 
                         type="range" min="2" max="30" value={cols} 
@@ -2603,7 +2707,14 @@ export default function App() {
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                                   <span>Role Colors</span>
-                                  <span className="font-mono text-neutral-300">{roleColorCount}</span>
+                                  <SliderValueField
+                                    value={roleColorCount}
+                                    min={2}
+                                    max={(shuffledColors ?? selectedPalette.colors).length}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={setRoleColorCount}
+                                  />
                                 </div>
                                 <input
                                   type="range"
@@ -2618,7 +2729,14 @@ export default function App() {
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                                   <span>Role Detail</span>
-                                  <span className="font-mono text-neutral-300">{roleGeometryDetail}</span>
+                                  <SliderValueField
+                                    value={roleGeometryDetail}
+                                    min={0}
+                                    max={5}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={setRoleGeometryDetail}
+                                  />
                                 </div>
                                 <input
                                   type="range"
@@ -2637,7 +2755,17 @@ export default function App() {
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                                   <span>Side Modulo</span>
-                                  <span className="font-mono text-neutral-300">{sideModulo}</span>
+                                  <SliderValueField
+                                    value={sideModulo}
+                                    min={2}
+                                    max={(shuffledColors ?? selectedPalette.colors).length}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={(value) => {
+                                      setSideModulo(value);
+                                      setSideOffset((current) => current % value);
+                                    }}
+                                  />
                                 </div>
                                 <input
                                   type="range"
@@ -2656,7 +2784,14 @@ export default function App() {
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                                   <span>Side Offset</span>
-                                  <span className="font-mono text-neutral-300">{sideOffset % sideModulo}</span>
+                                  <SliderValueField
+                                    value={Math.min(sideOffset, Math.max(0, sideModulo - 1))}
+                                    min={0}
+                                    max={Math.max(0, sideModulo - 1)}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={setSideOffset}
+                                  />
                                 </div>
                                 <input
                                   type="range"
@@ -2682,11 +2817,19 @@ export default function App() {
                               />
                             </label>
                             <div className={`mt-3 space-y-3 transition-opacity ${embossEnabled ? 'opacity-100' : 'opacity-50'}`}>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Emboss Width</span>
-                                  <span className="font-mono text-neutral-300">{embossWidth.toFixed(3)}</span>
-                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                    <span>Emboss Width</span>
+                                    <SliderValueField
+                                      value={embossWidth}
+                                      min={0}
+                                      max={0.3}
+                                      step={0.005}
+                                      precision={3}
+                                      disabled={!embossEnabled}
+                                      onValueCommit={setEmbossWidth}
+                                    />
+                                  </div>
                                 <input
                                   type="range"
                                   min="0"
@@ -2698,11 +2841,19 @@ export default function App() {
                                   className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
                                 />
                               </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Emboss Depth</span>
-                                  <span className="font-mono text-neutral-300">{embossDepth.toFixed(3)}</span>
-                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                    <span>Emboss Depth</span>
+                                    <SliderValueField
+                                      value={embossDepth}
+                                      min={-0.04}
+                                      max={0.04}
+                                      step={0.0025}
+                                      precision={3}
+                                      disabled={!embossEnabled}
+                                      onValueCommit={setEmbossDepth}
+                                    />
+                                  </div>
                                 <input
                                   type="range"
                                   min="-0.04"
@@ -2714,11 +2865,19 @@ export default function App() {
                                   className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
                                 />
                               </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Emboss Smoothness</span>
-                                  <span className="font-mono text-neutral-300">{embossSmoothness.toFixed(2)}</span>
-                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                    <span>Emboss Smoothness</span>
+                                    <SliderValueField
+                                      value={embossSmoothness}
+                                      min={0}
+                                      max={1}
+                                      step={0.05}
+                                      precision={2}
+                                      disabled={!embossEnabled}
+                                      onValueCommit={setEmbossSmoothness}
+                                    />
+                                  </div>
                                 <input
                                   type="range"
                                   min="0"
@@ -2800,7 +2959,14 @@ export default function App() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                             <span>Ambient</span>
-                            <span className="font-mono text-neutral-300">{ambientLightIntensity.toFixed(2)}</span>
+                            <SliderValueField
+                              value={ambientLightIntensity}
+                              min={0}
+                              max={1.5}
+                              step={0.05}
+                              precision={2}
+                              onValueCommit={setAmbientLightIntensity}
+                            />
                           </div>
                           <input
                             type="range"
@@ -2815,7 +2981,14 @@ export default function App() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                             <span>Key Light</span>
-                            <span className="font-mono text-neutral-300">{keyLightIntensity.toFixed(2)}</span>
+                            <SliderValueField
+                              value={keyLightIntensity}
+                              min={0}
+                              max={2}
+                              step={0.05}
+                              precision={2}
+                              onValueCommit={setKeyLightIntensity}
+                            />
                           </div>
                           <input
                             type="range"
@@ -2830,7 +3003,15 @@ export default function App() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                             <span>Key Azimuth</span>
-                            <span className="font-mono text-neutral-300">{keyLightAzimuth.toFixed(0)}°</span>
+                            <SliderValueField
+                              value={keyLightAzimuth}
+                              min={-180}
+                              max={180}
+                              step={1}
+                              precision={0}
+                              suffix="°"
+                              onValueCommit={setKeyLightAzimuth}
+                            />
                           </div>
                           <input
                             type="range"
@@ -2845,7 +3026,15 @@ export default function App() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                             <span>Key Elevation</span>
-                            <span className="font-mono text-neutral-300">{keyLightElevation.toFixed(0)}°</span>
+                            <SliderValueField
+                              value={keyLightElevation}
+                              min={-85}
+                              max={85}
+                              step={1}
+                              precision={0}
+                              suffix="°"
+                              onValueCommit={setKeyLightElevation}
+                            />
                           </div>
                           <input
                             type="range"
@@ -2860,7 +3049,14 @@ export default function App() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                             <span>Roughness</span>
-                            <span className="font-mono text-neutral-300">{faceRoughness.toFixed(2)}</span>
+                            <SliderValueField
+                              value={faceRoughness}
+                              min={0}
+                              max={1}
+                              step={0.02}
+                              precision={2}
+                              onValueCommit={setFaceRoughness}
+                            />
                           </div>
                           <input
                             type="range"
@@ -2875,7 +3071,14 @@ export default function App() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                             <span>Opacity</span>
-                            <span className="font-mono text-neutral-300">{faceOpacity.toFixed(2)}</span>
+                            <SliderValueField
+                              value={faceOpacity}
+                              min={0}
+                              max={1}
+                              step={0.02}
+                              precision={2}
+                              onValueCommit={setFaceOpacity}
+                            />
                           </div>
                           <input
                             type="range"
@@ -3106,11 +3309,18 @@ export default function App() {
                                         ))}
                                       </div>
                                     )}
-                                    <label className="grid gap-1">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
-                                        <span className="font-mono text-[10px] text-neutral-400">{op.amount.toFixed(2)}</span>
-                                      </div>
+                                <label className="grid gap-1">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
+                                    <SliderValueField
+                                      value={op.amount}
+                                      min={0}
+                                      max={1}
+                                      step={0.01}
+                                      precision={2}
+                                      onValueCommit={(value) => updateDeformer(op.id, { amount: value })}
+                                    />
+                                  </div>
                                       <input
                                         type="range"
                                         min="0"
@@ -3185,13 +3395,18 @@ export default function App() {
                                           </select>
                                         </label>
                                         {usesPointGroupOrder(op.pointGroup) && (
-                                          <label className="grid gap-1">
-                                            <div className="flex items-center justify-between gap-2">
-                                              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Order</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">
-                                                {getPointGroupBaseOrder(op.pointGroup, op.copies)}
-                                              </span>
-                                            </div>
+                                            <label className="grid gap-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Order</span>
+                                                <SliderValueField
+                                                  value={getPointGroupBaseOrder(op.pointGroup, op.copies)}
+                                                  min={1}
+                                                  max={12}
+                                                  step={1}
+                                                  precision={0}
+                                                  onValueCommit={(value) => updatePointClonerCopies(op.id, value)}
+                                                />
+                                              </div>
                                             <input
                                               type="range"
                                               min="1"
@@ -3219,7 +3434,15 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Gap</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.pointGap.toFixed(2)}</span>
+                                            <SliderValueField
+                                              value={op.pointGap}
+                                              min={0}
+                                              max={2}
+                                              step={0.01}
+                                              precision={2}
+                                              onValueCommit={(value) => updateCloner(op.id, { pointGap: value, pointAutoFit: true })}
+                                              disabled={op.pointAutoFit}
+                                            />
                                           </div>
                                           <input
                                             type="range"
@@ -3249,7 +3472,15 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Radius</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.radius.toFixed(1)}</span>
+                                            <SliderValueField
+                                              value={op.radius}
+                                              min={0}
+                                              max={9.9}
+                                              step={0.1}
+                                              precision={1}
+                                              onValueCommit={(value) => updateCloner(op.id, { radius: value, pointAutoFit: false })}
+                                              disabled={op.pointAutoFit}
+                                            />
                                           </div>
                                           <input
                                             type="range"
@@ -3308,7 +3539,14 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">X</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.xRepeats}</span>
+                                              <SliderValueField
+                                                value={op.xRepeats}
+                                                min={1}
+                                                max={12}
+                                                step={1}
+                                                precision={0}
+                                                onValueCommit={(value) => updateCloner(op.id, { xRepeats: value })}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3323,7 +3561,14 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Y</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.yRepeats}</span>
+                                              <SliderValueField
+                                                value={op.yRepeats}
+                                                min={1}
+                                                max={12}
+                                                step={1}
+                                                precision={0}
+                                                onValueCommit={(value) => updateCloner(op.id, { yRepeats: value })}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3349,7 +3594,14 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Width</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.cellWidth.toFixed(2)}</span>
+                                              <SliderValueField
+                                                value={op.cellWidth}
+                                                min={0.25}
+                                                max={20}
+                                                step={0.05}
+                                                precision={2}
+                                                onValueCommit={(value) => updateCloner(op.id, { cellWidth: value })}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3364,7 +3616,14 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Height</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.cellHeight.toFixed(2)}</span>
+                                              <SliderValueField
+                                                value={op.cellHeight}
+                                                min={0.25}
+                                                max={20}
+                                                step={0.05}
+                                                precision={2}
+                                                onValueCommit={(value) => updateCloner(op.id, { cellHeight: value })}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3381,7 +3640,14 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Skew X</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.skewX.toFixed(2)}</span>
+                                              <SliderValueField
+                                                value={op.skewX}
+                                                min={-10}
+                                                max={10}
+                                                step={0.05}
+                                                precision={2}
+                                                onValueCommit={(value) => updateCloner(op.id, { skewX: value })}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3396,7 +3662,14 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Skew Y</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.skewY.toFixed(2)}</span>
+                                              <SliderValueField
+                                                value={op.skewY}
+                                                min={-10}
+                                                max={10}
+                                                step={0.05}
+                                                precision={2}
+                                                onValueCommit={(value) => updateCloner(op.id, { skewY: value })}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3412,7 +3685,14 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Unit Scale</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.unitScale.toFixed(2)}</span>
+                                            <SliderValueField
+                                              value={op.unitScale}
+                                              min={0.05}
+                                              max={4}
+                                              step={0.01}
+                                              precision={2}
+                                              onValueCommit={(value) => updateCloner(op.id, { unitScale: value })}
+                                            />
                                           </div>
                                           <input
                                             type="range"
@@ -3437,7 +3717,15 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Unit X</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.unitOffsetX.toFixed(2)}</span>
+                                              <SliderValueField
+                                                value={op.unitOffsetX}
+                                                min={-10}
+                                                max={10}
+                                                step={0.05}
+                                                precision={2}
+                                                onValueCommit={(value) => updateCloner(op.id, { unitOffsetX: value, wallpaperAutoFit: false })}
+                                                disabled={op.wallpaperAutoFit}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3452,7 +3740,15 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Unit Y</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.unitOffsetY.toFixed(2)}</span>
+                                              <SliderValueField
+                                                value={op.unitOffsetY}
+                                                min={-10}
+                                                max={10}
+                                                step={0.05}
+                                                precision={2}
+                                                onValueCommit={(value) => updateCloner(op.id, { unitOffsetY: value, wallpaperAutoFit: false })}
+                                                disabled={op.wallpaperAutoFit}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3469,7 +3765,14 @@ export default function App() {
                                           <label className="grid gap-1">
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Spacing X</span>
-                                              <span className="font-mono text-[10px] text-neutral-400">{op.spacingX.toFixed(2)}</span>
+                                              <SliderValueField
+                                                value={op.spacingX}
+                                                min={0.05}
+                                                max={4}
+                                                step={0.01}
+                                                precision={2}
+                                                onValueCommit={(value) => updateCloner(op.id, { spacingX: value })}
+                                              />
                                             </div>
                                             <input
                                               type="range"
@@ -3481,10 +3784,17 @@ export default function App() {
                                               className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
                                             />
                                           </label>
-                                            <label className="grid gap-1">
+                                          <label className="grid gap-1">
                                               <div className="flex items-center justify-between gap-2">
                                                 <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Spacing Y</span>
-                                                <span className="font-mono text-[10px] text-neutral-400">{op.spacingY.toFixed(2)}</span>
+                                                <SliderValueField
+                                                  value={op.spacingY}
+                                                  min={0.05}
+                                                  max={4}
+                                                  step={0.01}
+                                                  precision={2}
+                                                  onValueCommit={(value) => updateCloner(op.id, { spacingY: value })}
+                                                />
                                               </div>
                                               <input
                                                 type="range"
@@ -3505,7 +3815,14 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Copies</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.arrayCopies}</span>
+                                            <SliderValueField
+                                              value={op.arrayCopies}
+                                              min={1}
+                                              max={64}
+                                              step={1}
+                                              precision={0}
+                                              onValueCommit={(value) => updateCloner(op.id, { arrayCopies: value })}
+                                            />
                                           </div>
                                           <input
                                             type="range"
@@ -3523,7 +3840,14 @@ export default function App() {
                                             <label key={key} className="grid gap-1">
                                               <div className="flex items-center justify-between gap-2">
                                                 <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{['X', 'Y', 'Z'][axisIndex]}</span>
-                                                <span className="font-mono text-[10px] text-neutral-400">{op[key].toFixed(1)}</span>
+                                                <SliderValueField
+                                                  value={op[key]}
+                                                  min={-10}
+                                                  max={10}
+                                                  step={0.1}
+                                                  precision={1}
+                                                  onValueCommit={(value) => updateCloner(op.id, { [key]: value })}
+                                                />
                                               </div>
                                               <input
                                                 type="range"
@@ -3543,7 +3867,14 @@ export default function App() {
                                             <label key={key} className="grid gap-1">
                                               <div className="flex items-center justify-between gap-2">
                                                 <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{['X', 'Y', 'Z'][axisIndex]}</span>
-                                                <span className="font-mono text-[10px] text-neutral-400">{Math.round(op[key])}</span>
+                                                <SliderValueField
+                                                  value={op[key]}
+                                                  min={-180}
+                                                  max={180}
+                                                  step={1}
+                                                  precision={0}
+                                                  onValueCommit={(value) => updateCloner(op.id, { [key]: value })}
+                                                />
                                               </div>
                                               <input
                                                 type="range"
@@ -3560,7 +3891,14 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Scale /copy</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.arrayScale.toFixed(2)}</span>
+                                            <SliderValueField
+                                              value={op.arrayScale}
+                                              min={0.1}
+                                              max={3}
+                                              step={0.01}
+                                              precision={2}
+                                              onValueCommit={(value) => updateCloner(op.id, { arrayScale: value })}
+                                            />
                                           </div>
                                           <input
                                             type="range"
@@ -3593,12 +3931,15 @@ export default function App() {
                                   {!isSelectedOperator && visibility.showP1 && (
                                     <label className="grid gap-1">
                                       <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                          ve
-                                        </span>
-                                        <span className="font-mono text-[10px] text-neutral-400">
-                                          {op.tVe.toFixed(2)}
-                                        </span>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">ve</span>
+                                        <SliderValueField
+                                          value={op.tVe}
+                                          min={0.01}
+                                          max={0.99}
+                                          step={0.01}
+                                          precision={2}
+                                          onValueCommit={(value) => updateOperatorParams(op.id, 'tVe', value.toFixed(2))}
+                                        />
                                       </div>
                                       <input
                                         type="range"
@@ -3614,12 +3955,15 @@ export default function App() {
                                   {!isSelectedOperator && visibility.showP2 && (
                                     <label className="grid gap-1">
                                       <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                          vf
-                                        </span>
-                                        <span className="font-mono text-[10px] text-neutral-400">
-                                          {op.tVf.toFixed(2)}
-                                        </span>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">vf</span>
+                                        <SliderValueField
+                                          value={op.tVf}
+                                          min={0.01}
+                                          max={0.99}
+                                          step={0.01}
+                                          precision={2}
+                                          onValueCommit={(value) => updateOperatorParams(op.id, 'tVf', value.toFixed(2))}
+                                        />
                                       </div>
                                       <input
                                         type="range"
@@ -3635,12 +3979,15 @@ export default function App() {
                                   {!isSelectedOperator && visibility.showP3 && (
                                     <label className="grid gap-1">
                                       <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                          fe
-                                        </span>
-                                        <span className="font-mono text-[10px] text-neutral-400">
-                                          {op.tFe.toFixed(2)}
-                                        </span>
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">fe</span>
+                                        <SliderValueField
+                                          value={op.tFe}
+                                          min={0.01}
+                                          max={0.99}
+                                          step={0.01}
+                                          precision={2}
+                                          onValueCommit={(value) => updateOperatorParams(op.id, 'tFe', value.toFixed(2))}
+                                        />
                                       </div>
                                       <input
                                         type="range"
@@ -3965,7 +4312,17 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">ve</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.tVe.toFixed(2)}</span>
+                                            <SliderValueField
+                                              value={op.tVe}
+                                              min={0.01}
+                                              max={0.99}
+                                              step={0.01}
+                                              precision={2}
+                                              onValueCommit={(value) => {
+                                                setSliderMoved(true);
+                                                updateOperatorParams(op.id, 'tVe', value.toFixed(2));
+                                              }}
+                                            />
                                           </div>
                                           <input
                                             type="range"
@@ -3982,7 +4339,17 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">vf</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.tVf.toFixed(2)}</span>
+                                            <SliderValueField
+                                              value={op.tVf}
+                                              min={0.01}
+                                              max={0.99}
+                                              step={0.01}
+                                              precision={2}
+                                              onValueCommit={(value) => {
+                                                setSliderMoved(true);
+                                                updateOperatorParams(op.id, 'tVf', value.toFixed(2));
+                                              }}
+                                            />
                                           </div>
                                           <input
                                             type="range"
@@ -3999,7 +4366,17 @@ export default function App() {
                                         <label className="grid gap-1">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">fe</span>
-                                            <span className="font-mono text-[10px] text-neutral-400">{op.tFe.toFixed(2)}</span>
+                                            <SliderValueField
+                                              value={op.tFe}
+                                              min={0.01}
+                                              max={0.99}
+                                              step={0.01}
+                                              precision={2}
+                                              onValueCommit={(value) => {
+                                                setSliderMoved(true);
+                                                updateOperatorParams(op.id, 'tFe', value.toFixed(2));
+                                              }}
+                                            />
                                           </div>
                                           <input
                                             type="range"
