@@ -2638,564 +2638,7 @@ export default function App() {
             </section>
             )}
 
-            <section>
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
-                <button
-                  onClick={() => setDisplayMenuOpen(!displayMenuOpen)}
-                  className="w-full p-3 text-left transition-colors hover:bg-neutral-800/40"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                        <Eye className="w-3 h-3" />
-                        Appearance
-                      </div>
-                    </div>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
-                      <ChevronRight className={`w-4 h-4 transition-transform ${displayMenuOpen ? 'rotate-90 text-white' : ''}`} />
-                    </div>
-                  </div>
-                </button>
 
-                <AnimatePresence initial={false}>
-                  {displayMenuOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-neutral-800"
-                    >
-                      <div className="p-3 space-y-4">
-                        <div className="space-y-2.5">
-                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Faces</div>
-                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
-                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
-                            <input type="checkbox" checked={showFaces} onChange={(e) => setShowFaces(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                          </label>
-                          {showFaces && (
-                            <>
-                          <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
-                            <div className="flex items-stretch">
-                              <button
-                                onClick={() => setPaletteMenuOpen(!paletteMenuOpen)}
-                                className="min-w-0 flex-1 p-3 text-left transition-colors hover:bg-neutral-800/40"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-1">
-                                      Face Palette
-                                    </div>
-                                    <div className="text-xs font-semibold text-white truncate">{selectedPalette.name}</div>
-                                    <div className="mt-2 flex flex-wrap gap-y-1 pl-1">
-                                      {(shuffledColors ?? selectedPalette.colors).map((c, i) => (
-                                        <div
-                                          key={i}
-                                          className="-ml-1 h-3 w-3 rounded-full border border-neutral-900"
-                                          style={{ backgroundColor: c }}
-                                        />
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
-                                    <ChevronRight className={`w-4 h-4 transition-transform ${paletteMenuOpen ? 'rotate-90 text-white' : ''}`} />
-                                  </div>
-                                </div>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const colors = [...selectedPalette.colors];
-                                  for (let i = colors.length - 1; i > 0; i--) {
-                                    const j = Math.floor(Math.random() * (i + 1));
-                                    [colors[i], colors[j]] = [colors[j], colors[i]];
-                                  }
-                                  setShuffledColors(colors);
-                                }}
-                                className="flex w-10 shrink-0 items-center justify-center border-l border-neutral-800 text-neutral-500 transition-colors hover:bg-neutral-800/40 hover:text-white"
-                                title="Shuffle palette order"
-                              >
-                                <Shuffle className="w-3 h-3" />
-                              </button>
-                            </div>
-
-                            <AnimatePresence initial={false}>
-                              {paletteMenuOpen && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  className="border-t border-neutral-800"
-                                >
-                                  <div className="p-2 grid grid-cols-2 gap-2">
-                                    {Object.entries(PALETTES).map(([key, p]) => (
-                                      <button
-                                        key={key}
-                                        onClick={() => {
-                                          setPalette(key as PaletteKey);
-                                          setShuffledColors(null);
-                                          setPaletteMenuOpen(false);
-                                        }}
-                                        className={`flex items-center gap-2 p-2 rounded-lg text-[10px] font-medium transition-all border ${
-                                          palette === key
-                                            ? 'bg-neutral-800 border-neutral-700 text-white'
-                                            : 'bg-neutral-900/40 border-neutral-800/50 text-neutral-500 hover:bg-neutral-800/60'
-                                        }`}
-                                      >
-                                        <div className="flex -space-x-1">
-                                          {p.colors.slice(0, 3).map((c, i) => (
-                                            <div key={i} className="w-2 h-2 rounded-full border border-neutral-900" style={{ backgroundColor: c }} />
-                                          ))}
-                                        </div>
-                                        {p.name}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={() => setColorMode('role')}
-                              className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                                colorMode === 'role'
-                                  ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
-                                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
-                              }`}
-                            >
-                              By Role
-                            </button>
-                            <button
-                              onClick={() => setColorMode('sides')}
-                              className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                                colorMode === 'sides'
-                                  ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
-                                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
-                              }`}
-                            >
-                              By Sides
-                            </button>
-                          </div>
-                          {colorMode === 'role' && (
-                            <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Shape Basis</span>
-                                  <span className="font-mono text-neutral-300">
-                                    {roleShapeBasis === 'lengths-angles' ? 'Both' : roleShapeBasis}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-3 gap-1">
-                                  {[
-                                    ['sides', 'Sides'],
-                                    ['angles', 'Angles'],
-                                    ['lengths-angles', 'Both'],
-                                  ].map(([value, label]) => (
-                                    <button
-                                      key={value}
-                                      onClick={() => setRoleShapeBasis(value as RoleShapeBasis)}
-                                      className={`rounded-md border px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider transition-colors ${
-                                        roleShapeBasis === value
-                                          ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
-                                          : 'border-neutral-800 bg-neutral-950/40 text-neutral-500 hover:bg-neutral-800/60'
-                                      }`}
-                                    >
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Role Colors</span>
-                                  <SliderValueField
-                                    value={roleColorCount}
-                                    min={2}
-                                    max={(shuffledColors ?? selectedPalette.colors).length}
-                                    step={1}
-                                    precision={0}
-                                    onValueCommit={setRoleColorCount}
-                                  />
-                                </div>
-                                <input
-                                  type="range"
-                                  min={2}
-                                  max={(shuffledColors ?? selectedPalette.colors).length}
-                                  step={1}
-                                  value={Math.min(roleColorCount, (shuffledColors ?? selectedPalette.colors).length)}
-                                  onChange={(e) => setRoleColorCount(Number(e.target.value))}
-                                  className="w-full accent-blue-500"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Role Detail</span>
-                                  <SliderValueField
-                                    value={roleGeometryDetail}
-                                    min={0}
-                                    max={5}
-                                    step={1}
-                                    precision={0}
-                                    onValueCommit={setRoleGeometryDetail}
-                                  />
-                                </div>
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={5}
-                                  step={1}
-                                  value={roleGeometryDetail}
-                                  onChange={(e) => setRoleGeometryDetail(Number(e.target.value))}
-                                  className="w-full accent-blue-500"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {colorMode === 'sides' && (
-                            <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Side Modulo</span>
-                                  <SliderValueField
-                                    value={sideModulo}
-                                    min={2}
-                                    max={(shuffledColors ?? selectedPalette.colors).length}
-                                    step={1}
-                                    precision={0}
-                                    onValueCommit={(value) => {
-                                      setSideModulo(value);
-                                      setSideOffset((current) => current % value);
-                                    }}
-                                  />
-                                </div>
-                                <input
-                                  type="range"
-                                  min={2}
-                                  max={(shuffledColors ?? selectedPalette.colors).length}
-                                  step={1}
-                                  value={Math.min(sideModulo, (shuffledColors ?? selectedPalette.colors).length)}
-                                  onChange={(e) => {
-                                    const nextModulo = Number(e.target.value);
-                                    setSideModulo(nextModulo);
-                                    setSideOffset((current) => current % nextModulo);
-                                  }}
-                                  className="w-full accent-blue-500"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                  <span>Side Offset</span>
-                                  <SliderValueField
-                                    value={Math.min(sideOffset, Math.max(0, sideModulo - 1))}
-                                    min={0}
-                                    max={Math.max(0, sideModulo - 1)}
-                                    step={1}
-                                    precision={0}
-                                    onValueCommit={setSideOffset}
-                                  />
-                                </div>
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={Math.max(0, sideModulo - 1)}
-                                  step={1}
-                                  value={Math.min(sideOffset, Math.max(0, sideModulo - 1))}
-                                  onChange={(e) => setSideOffset(Number(e.target.value))}
-                                  className="w-full accent-blue-500"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
-                            <div className="mb-3 text-sm text-neutral-300">Emboss</div>
-                            <label className="flex items-center justify-between cursor-pointer group">
-                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Emboss Faces</span>
-                              <input
-                                type="checkbox"
-                                checked={embossEnabled}
-                                onChange={(e) => setEmbossEnabled(e.target.checked)}
-                                className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600"
-                              />
-                            </label>
-                            <div className={`mt-3 space-y-3 transition-opacity ${embossEnabled ? 'opacity-100' : 'opacity-50'}`}>
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                    <span>Emboss Width</span>
-                                    <SliderValueField
-                                      value={embossWidth}
-                                      min={0}
-                                      max={0.3}
-                                      step={0.005}
-                                      precision={3}
-                                      disabled={!embossEnabled}
-                                      onValueCommit={setEmbossWidth}
-                                    />
-                                  </div>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="0.3"
-                                  step="0.005"
-                                  value={embossWidth}
-                                  onChange={(e) => setEmbossWidth(parseFloat(e.target.value))}
-                                  disabled={!embossEnabled}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
-                                />
-                              </div>
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                    <span>Emboss Depth</span>
-                                    <SliderValueField
-                                      value={embossDepth}
-                                      min={-0.04}
-                                      max={0.04}
-                                      step={0.0025}
-                                      precision={3}
-                                      disabled={!embossEnabled}
-                                      onValueCommit={setEmbossDepth}
-                                    />
-                                  </div>
-                                <input
-                                  type="range"
-                                  min="-0.04"
-                                  max="0.04"
-                                  step="0.0025"
-                                  value={embossDepth}
-                                  onChange={(e) => setEmbossDepth(parseFloat(e.target.value))}
-                                  disabled={!embossEnabled}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
-                                />
-                              </div>
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                                    <span>Emboss Smoothness</span>
-                                    <SliderValueField
-                                      value={embossSmoothness}
-                                      min={0}
-                                      max={1}
-                                      step={0.05}
-                                      precision={2}
-                                      disabled={!embossEnabled}
-                                      onValueCommit={setEmbossSmoothness}
-                                    />
-                                  </div>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="1"
-                                  step="0.05"
-                                  value={embossSmoothness}
-                                  onChange={(e) => setEmbossSmoothness(parseFloat(e.target.value))}
-                                  disabled={!embossEnabled}
-                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                            </>
-                          )}
-                        </div>
-                        <div className="space-y-2.5 border-t border-neutral-800 pt-3">
-                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Debug</div>
-                          <div className="flex items-center justify-between gap-3 px-1 py-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Edge Colour</span>
-                            <label className="flex items-center gap-2">
-                              <span className="font-mono text-[10px] text-neutral-400">{edgeColor}</span>
-                              <input
-                                type="color"
-                                value={edgeColor}
-                                onChange={(e) => setEdgeColor(e.target.value)}
-                                className="h-8 w-10 cursor-pointer rounded border border-neutral-700 bg-transparent p-0"
-                              />
-                            </label>
-                          </div>
-                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
-                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Edges</span>
-                            <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                          </label>
-                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
-                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Vertices</span>
-                            <input type="checkbox" checked={showVertices} onChange={(e) => setShowVertices(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
-                          </label>
-                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
-                            <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Wireframe</span>
-                            <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
-                          </label>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </section>
-
-            <section>
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
-                <button
-                  onClick={() => setLightingMenuOpen(!lightingMenuOpen)}
-                  className="w-full p-3 text-left transition-colors hover:bg-neutral-800/40"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                        <Settings className="w-3 h-3" />
-                        Lighting
-                      </div>
-                    </div>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
-                      <ChevronRight className={`w-4 h-4 transition-transform ${lightingMenuOpen ? 'rotate-90 text-white' : ''}`} />
-                    </div>
-                  </div>
-                </button>
-
-                <AnimatePresence initial={false}>
-                  {lightingMenuOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-neutral-800"
-                    >
-                      <div className="p-3 space-y-3">
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                            <span>Ambient</span>
-                            <SliderValueField
-                              value={ambientLightIntensity}
-                              min={0}
-                              max={1.5}
-                              step={0.05}
-                              precision={2}
-                              onValueCommit={setAmbientLightIntensity}
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1.5"
-                            step="0.05"
-                            value={ambientLightIntensity}
-                            onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
-                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                            <span>Key Light</span>
-                            <SliderValueField
-                              value={keyLightIntensity}
-                              min={0}
-                              max={2}
-                              step={0.05}
-                              precision={2}
-                              onValueCommit={setKeyLightIntensity}
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="2"
-                            step="0.05"
-                            value={keyLightIntensity}
-                            onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
-                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                            <span>Key Azimuth</span>
-                            <SliderValueField
-                              value={keyLightAzimuth}
-                              min={-180}
-                              max={180}
-                              step={1}
-                              precision={0}
-                              suffix="°"
-                              onValueCommit={setKeyLightAzimuth}
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="-180"
-                            max="180"
-                            step="1"
-                            value={keyLightAzimuth}
-                            onChange={(e) => setKeyLightAzimuth(parseFloat(e.target.value))}
-                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                            <span>Key Elevation</span>
-                            <SliderValueField
-                              value={keyLightElevation}
-                              min={-85}
-                              max={85}
-                              step={1}
-                              precision={0}
-                              suffix="°"
-                              onValueCommit={setKeyLightElevation}
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="-85"
-                            max="85"
-                            step="1"
-                            value={keyLightElevation}
-                            onChange={(e) => setKeyLightElevation(parseFloat(e.target.value))}
-                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                            <span>Roughness</span>
-                            <SliderValueField
-                              value={faceRoughness}
-                              min={0}
-                              max={1}
-                              step={0.02}
-                              precision={2}
-                              onValueCommit={setFaceRoughness}
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.02"
-                            value={faceRoughness}
-                            onChange={(e) => setFaceRoughness(parseFloat(e.target.value))}
-                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                            <span>Opacity</span>
-                            <SliderValueField
-                              value={faceOpacity}
-                              min={0}
-                              max={1}
-                              step={0.02}
-                              precision={2}
-                              onValueCommit={setFaceOpacity}
-                            />
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.02"
-                            value={faceOpacity}
-                            onChange={(e) => setFaceOpacity(parseFloat(e.target.value))}
-                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </section>
 
             <section>
               <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -4624,6 +4067,563 @@ export default function App() {
                       </AnimatePresence>
                     </div>
                   </div>
+            </section>
+            <section>
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
+                <button
+                  onClick={() => setDisplayMenuOpen(!displayMenuOpen)}
+                  className="w-full p-3 text-left transition-colors hover:bg-neutral-800/40"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                        <Eye className="w-3 h-3" />
+                        Appearance
+                      </div>
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                      <ChevronRight className={`w-4 h-4 transition-transform ${displayMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                    </div>
+                  </div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {displayMenuOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-neutral-800"
+                    >
+                      <div className="p-3 space-y-4">
+                        <div className="space-y-2.5">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Faces</div>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Faces</span>
+                            <input type="checkbox" checked={showFaces} onChange={(e) => setShowFaces(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
+                          {showFaces && (
+                            <>
+                          <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
+                            <div className="flex items-stretch">
+                              <button
+                                onClick={() => setPaletteMenuOpen(!paletteMenuOpen)}
+                                className="min-w-0 flex-1 p-3 text-left transition-colors hover:bg-neutral-800/40"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-1">
+                                      Face Palette
+                                    </div>
+                                    <div className="text-xs font-semibold text-white truncate">{selectedPalette.name}</div>
+                                    <div className="mt-2 flex flex-wrap gap-y-1 pl-1">
+                                      {(shuffledColors ?? selectedPalette.colors).map((c, i) => (
+                                        <div
+                                          key={i}
+                                          className="-ml-1 h-3 w-3 rounded-full border border-neutral-900"
+                                          style={{ backgroundColor: c }}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                                    <ChevronRight className={`w-4 h-4 transition-transform ${paletteMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                                  </div>
+                                </div>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const colors = [...selectedPalette.colors];
+                                  for (let i = colors.length - 1; i > 0; i--) {
+                                    const j = Math.floor(Math.random() * (i + 1));
+                                    [colors[i], colors[j]] = [colors[j], colors[i]];
+                                  }
+                                  setShuffledColors(colors);
+                                }}
+                                className="flex w-10 shrink-0 items-center justify-center border-l border-neutral-800 text-neutral-500 transition-colors hover:bg-neutral-800/40 hover:text-white"
+                                title="Shuffle palette order"
+                              >
+                                <Shuffle className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            <AnimatePresence initial={false}>
+                              {paletteMenuOpen && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="border-t border-neutral-800"
+                                >
+                                  <div className="p-2 grid grid-cols-2 gap-2">
+                                    {Object.entries(PALETTES).map(([key, p]) => (
+                                      <button
+                                        key={key}
+                                        onClick={() => {
+                                          setPalette(key as PaletteKey);
+                                          setShuffledColors(null);
+                                          setPaletteMenuOpen(false);
+                                        }}
+                                        className={`flex items-center gap-2 p-2 rounded-lg text-[10px] font-medium transition-all border ${
+                                          palette === key
+                                            ? 'bg-neutral-800 border-neutral-700 text-white'
+                                            : 'bg-neutral-900/40 border-neutral-800/50 text-neutral-500 hover:bg-neutral-800/60'
+                                        }`}
+                                      >
+                                        <div className="flex -space-x-1">
+                                          {p.colors.slice(0, 3).map((c, i) => (
+                                            <div key={i} className="w-2 h-2 rounded-full border border-neutral-900" style={{ backgroundColor: c }} />
+                                          ))}
+                                        </div>
+                                        {p.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => setColorMode('role')}
+                              className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                colorMode === 'role'
+                                  ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
+                                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                              }`}
+                            >
+                              By Role
+                            </button>
+                            <button
+                              onClick={() => setColorMode('sides')}
+                              className={`rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                colorMode === 'sides'
+                                  ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
+                                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                              }`}
+                            >
+                              By Sides
+                            </button>
+                          </div>
+                          {colorMode === 'role' && (
+                            <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Shape Basis</span>
+                                  <span className="font-mono text-neutral-300">
+                                    {roleShapeBasis === 'lengths-angles' ? 'Both' : roleShapeBasis}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {[
+                                    ['sides', 'Sides'],
+                                    ['angles', 'Angles'],
+                                    ['lengths-angles', 'Both'],
+                                  ].map(([value, label]) => (
+                                    <button
+                                      key={value}
+                                      onClick={() => setRoleShapeBasis(value as RoleShapeBasis)}
+                                      className={`rounded-md border px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider transition-colors ${
+                                        roleShapeBasis === value
+                                          ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
+                                          : 'border-neutral-800 bg-neutral-950/40 text-neutral-500 hover:bg-neutral-800/60'
+                                      }`}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Role Colors</span>
+                                  <SliderValueField
+                                    value={roleColorCount}
+                                    min={2}
+                                    max={(shuffledColors ?? selectedPalette.colors).length}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={setRoleColorCount}
+                                  />
+                                </div>
+                                <input
+                                  type="range"
+                                  min={2}
+                                  max={(shuffledColors ?? selectedPalette.colors).length}
+                                  step={1}
+                                  value={Math.min(roleColorCount, (shuffledColors ?? selectedPalette.colors).length)}
+                                  onChange={(e) => setRoleColorCount(Number(e.target.value))}
+                                  className="w-full accent-blue-500"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Role Detail</span>
+                                  <SliderValueField
+                                    value={roleGeometryDetail}
+                                    min={0}
+                                    max={5}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={setRoleGeometryDetail}
+                                  />
+                                </div>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={5}
+                                  step={1}
+                                  value={roleGeometryDetail}
+                                  onChange={(e) => setRoleGeometryDetail(Number(e.target.value))}
+                                  className="w-full accent-blue-500"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {colorMode === 'sides' && (
+                            <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Side Modulo</span>
+                                  <SliderValueField
+                                    value={sideModulo}
+                                    min={2}
+                                    max={(shuffledColors ?? selectedPalette.colors).length}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={(value) => {
+                                      setSideModulo(value);
+                                      setSideOffset((current) => current % value);
+                                    }}
+                                  />
+                                </div>
+                                <input
+                                  type="range"
+                                  min={2}
+                                  max={(shuffledColors ?? selectedPalette.colors).length}
+                                  step={1}
+                                  value={Math.min(sideModulo, (shuffledColors ?? selectedPalette.colors).length)}
+                                  onChange={(e) => {
+                                    const nextModulo = Number(e.target.value);
+                                    setSideModulo(nextModulo);
+                                    setSideOffset((current) => current % nextModulo);
+                                  }}
+                                  className="w-full accent-blue-500"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                  <span>Side Offset</span>
+                                  <SliderValueField
+                                    value={Math.min(sideOffset, Math.max(0, sideModulo - 1))}
+                                    min={0}
+                                    max={Math.max(0, sideModulo - 1)}
+                                    step={1}
+                                    precision={0}
+                                    onValueCommit={setSideOffset}
+                                  />
+                                </div>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={Math.max(0, sideModulo - 1)}
+                                  step={1}
+                                  value={Math.min(sideOffset, Math.max(0, sideModulo - 1))}
+                                  onChange={(e) => setSideOffset(Number(e.target.value))}
+                                  className="w-full accent-blue-500"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-3">
+                            <div className="mb-3 text-sm text-neutral-300">Emboss</div>
+                            <label className="flex items-center justify-between cursor-pointer group">
+                              <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Emboss Faces</span>
+                              <input
+                                type="checkbox"
+                                checked={embossEnabled}
+                                onChange={(e) => setEmbossEnabled(e.target.checked)}
+                                className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600"
+                              />
+                            </label>
+                            <div className={`mt-3 space-y-3 transition-opacity ${embossEnabled ? 'opacity-100' : 'opacity-50'}`}>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                    <span>Emboss Width</span>
+                                    <SliderValueField
+                                      value={embossWidth}
+                                      min={0}
+                                      max={0.3}
+                                      step={0.005}
+                                      precision={3}
+                                      disabled={!embossEnabled}
+                                      onValueCommit={setEmbossWidth}
+                                    />
+                                  </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="0.3"
+                                  step="0.005"
+                                  value={embossWidth}
+                                  onChange={(e) => setEmbossWidth(parseFloat(e.target.value))}
+                                  disabled={!embossEnabled}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
+                                />
+                              </div>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                    <span>Emboss Depth</span>
+                                    <SliderValueField
+                                      value={embossDepth}
+                                      min={-0.04}
+                                      max={0.04}
+                                      step={0.0025}
+                                      precision={3}
+                                      disabled={!embossEnabled}
+                                      onValueCommit={setEmbossDepth}
+                                    />
+                                  </div>
+                                <input
+                                  type="range"
+                                  min="-0.04"
+                                  max="0.04"
+                                  step="0.0025"
+                                  value={embossDepth}
+                                  onChange={(e) => setEmbossDepth(parseFloat(e.target.value))}
+                                  disabled={!embossEnabled}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
+                                />
+                              </div>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                                    <span>Emboss Smoothness</span>
+                                    <SliderValueField
+                                      value={embossSmoothness}
+                                      min={0}
+                                      max={1}
+                                      step={0.05}
+                                      precision={2}
+                                      disabled={!embossEnabled}
+                                      onValueCommit={setEmbossSmoothness}
+                                    />
+                                  </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.05"
+                                  value={embossSmoothness}
+                                  onChange={(e) => setEmbossSmoothness(parseFloat(e.target.value))}
+                                  disabled={!embossEnabled}
+                                  className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                            </>
+                          )}
+                        </div>
+                        <div className="space-y-2.5 border-t border-neutral-800 pt-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Debug</div>
+                          <div className="flex items-center justify-between gap-3 px-1 py-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Edge Colour</span>
+                            <label className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] text-neutral-400">{edgeColor}</span>
+                              <input
+                                type="color"
+                                value={edgeColor}
+                                onChange={(e) => setEdgeColor(e.target.value)}
+                                className="h-8 w-10 cursor-pointer rounded border border-neutral-700 bg-transparent p-0"
+                              />
+                            </label>
+                          </div>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Edges</span>
+                            <input type="checkbox" checked={showEdges} onChange={(e) => setShowEdges(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-sm text-neutral-300 group-hover:text-white transition-colors">Show Vertices</span>
+                            <input type="checkbox" checked={showVertices} onChange={(e) => setShowVertices(e.target.checked)} className="w-4 h-4 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600" />
+                          </label>
+                          <label className="flex items-center justify-between cursor-pointer group px-1 py-1">
+                            <span className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">Wireframe</span>
+                            <input type="checkbox" checked={wireframe} onChange={(e) => setWireframe(e.target.checked)} className="w-3.5 h-3.5 rounded border-neutral-700 text-blue-600 bg-neutral-800 focus:ring-blue-600 opacity-60" />
+                          </label>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </section>
+            <section>
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
+                <button
+                  onClick={() => setLightingMenuOpen(!lightingMenuOpen)}
+                  className="w-full p-3 text-left transition-colors hover:bg-neutral-800/40"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                        <Settings className="w-3 h-3" />
+                        Lighting
+                      </div>
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900/70 text-neutral-400">
+                      <ChevronRight className={`w-4 h-4 transition-transform ${lightingMenuOpen ? 'rotate-90 text-white' : ''}`} />
+                    </div>
+                  </div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {lightingMenuOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-neutral-800"
+                    >
+                      <div className="p-3 space-y-3">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Ambient</span>
+                            <SliderValueField
+                              value={ambientLightIntensity}
+                              min={0}
+                              max={1.5}
+                              step={0.05}
+                              precision={2}
+                              onValueCommit={setAmbientLightIntensity}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1.5"
+                            step="0.05"
+                            value={ambientLightIntensity}
+                            onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Key Light</span>
+                            <SliderValueField
+                              value={keyLightIntensity}
+                              min={0}
+                              max={2}
+                              step={0.05}
+                              precision={2}
+                              onValueCommit={setKeyLightIntensity}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="2"
+                            step="0.05"
+                            value={keyLightIntensity}
+                            onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Key Azimuth</span>
+                            <SliderValueField
+                              value={keyLightAzimuth}
+                              min={-180}
+                              max={180}
+                              step={1}
+                              precision={0}
+                              suffix="°"
+                              onValueCommit={setKeyLightAzimuth}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min="-180"
+                            max="180"
+                            step="1"
+                            value={keyLightAzimuth}
+                            onChange={(e) => setKeyLightAzimuth(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Key Elevation</span>
+                            <SliderValueField
+                              value={keyLightElevation}
+                              min={-85}
+                              max={85}
+                              step={1}
+                              precision={0}
+                              suffix="°"
+                              onValueCommit={setKeyLightElevation}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min="-85"
+                            max="85"
+                            step="1"
+                            value={keyLightElevation}
+                            onChange={(e) => setKeyLightElevation(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Roughness</span>
+                            <SliderValueField
+                              value={faceRoughness}
+                              min={0}
+                              max={1}
+                              step={0.02}
+                              precision={2}
+                              onValueCommit={setFaceRoughness}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.02"
+                            value={faceRoughness}
+                            onChange={(e) => setFaceRoughness(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                            <span>Opacity</span>
+                            <SliderValueField
+                              value={faceOpacity}
+                              min={0}
+                              max={1}
+                              step={0.02}
+                              precision={2}
+                              onValueCommit={setFaceOpacity}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.02"
+                            value={faceOpacity}
+                            onChange={(e) => setFaceOpacity(parseFloat(e.target.value))}
+                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </section>
 
             {mode === '3d' && (
