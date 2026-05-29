@@ -1147,16 +1147,44 @@ export default function App() {
   const [initialHadOperators] = useState(() =>
     new URLSearchParams(window.location.search).has(URL_KEYS.operators) || new URLSearchParams(window.location.search).has('ops')
   );
+  const [showPresetTutorialStep, setShowPresetTutorialStep] = useState(() => initialHadOperators);
 
   const step1Complete = mode === '3d' ? shapeEverOpened : tilingEverOpened;
-  const step2Complete = initialHadOperators || operators.length > 0;
+  const step2Complete = !showPresetTutorialStep && operators.length > 0;
   const step3Complete = presetOrRandomUsed;
   const step4Complete = diagramOrGridClicked;
   const step5Complete = sliderMoved;
   const allOnboardingComplete = step1Complete && step2Complete && step3Complete && step4Complete && step5Complete;
   const showOnboarding = !onboardingDismissed;
-  const activeOnboardingStep = !step1Complete ? 1 : !step2Complete ? 2 : !step3Complete ? 3 : !step4Complete ? 4 : !step5Complete ? 5 : 6;
+  const isPresetTutorialStep = showOnboarding && showPresetTutorialStep;
+  const activeOnboardingStep = isPresetTutorialStep
+    ? 0
+    : !step1Complete
+      ? 1
+      : !step2Complete
+        ? 2
+        : !step3Complete
+          ? 3
+          : !step4Complete
+            ? 4
+            : !step5Complete
+              ? 5
+              : 6;
   const onboardingStep1Label = mode === '3d' ? 'Pick a shape' : 'Pick a tiling';
+  const onboardingStepItems = useMemo(() => {
+    const baseSteps = [
+      { step: 1, label: onboardingStep1Label, done: step1Complete },
+      { step: 2, label: 'Add an operator', done: step2Complete },
+      { step: 3, label: 'Choose a preset or click Random', done: step3Complete },
+      { step: 4, label: 'Edit the operator via diagram or grid', done: step4Complete },
+      { step: 5, label: 'Adjust the sliders', done: step5Complete },
+    ];
+
+    if (!isPresetTutorialStep) return baseSteps;
+    return [{ step: 0, label: 'Opened with a preset. Want a brief tutorial?', done: false }, ...baseSteps];
+  }, [isPresetTutorialStep, onboardingStep1Label, step1Complete, step2Complete, step3Complete, step4Complete, step5Complete]);
+
+  const isAddOperatorOnboardingLocked = showOnboarding && activeOnboardingStep === 2;
 
   const dismissOnboarding = () => {
     localStorage.setItem('polyhydra-onboarding-done', '1');
@@ -1183,6 +1211,76 @@ export default function App() {
   const setModeAndFit = (nextMode: '2d' | '3d') => {
     setMode(nextMode);
     requestFitToExtents();
+  };
+
+  const clearToDefaults = () => {
+    setMode(APP_DEFAULTS.mode);
+    setRadialType(APP_DEFAULTS.radialType);
+    setRadialSides(APP_DEFAULTS.radialSides);
+    setBoxXSegments(APP_DEFAULTS.boxXSegments);
+    setBoxYSegments(APP_DEFAULTS.boxYSegments);
+    setBoxZSegments(APP_DEFAULTS.boxZSegments);
+    setConeHeightSegments(APP_DEFAULTS.coneHeightSegments);
+    setConeTaper(APP_DEFAULTS.coneTaper);
+    setTorusProfileSides(APP_DEFAULTS.torusProfileSides);
+    setTilingType(APP_DEFAULTS.tilingType);
+    setRows(APP_DEFAULTS.rows);
+    setCols(APP_DEFAULTS.cols);
+    setShowEdges(APP_DEFAULTS.showEdges);
+    setShowVertices(APP_DEFAULTS.showVertices);
+    setShowFaces(APP_DEFAULTS.showFaces);
+    setWireframe(APP_DEFAULTS.wireframe);
+    setFinalization(APP_DEFAULTS.finalization);
+    setPalette(APP_DEFAULTS.palette);
+    setShuffledColors(null);
+    setColorMode(APP_DEFAULTS.colorMode);
+    setRoleColorCount(APP_DEFAULTS.roleColorCount);
+    setRoleGeometryDetail(APP_DEFAULTS.roleGeometryDetail);
+    setRoleShapeBasis(APP_DEFAULTS.roleShapeBasis);
+    setSideModulo(APP_DEFAULTS.sideModulo);
+    setSideOffset(APP_DEFAULTS.sideOffset);
+    setEdgeColor(APP_DEFAULTS.edgeColor);
+    setEmbossEnabled(APP_DEFAULTS.embossEnabled);
+    setEmbossWidth(APP_DEFAULTS.embossWidth);
+    setEmbossDepth(APP_DEFAULTS.embossDepth);
+    setEmbossSmoothness(APP_DEFAULTS.embossSmoothness);
+    setAmbientLightIntensity(APP_DEFAULTS.ambientLightIntensity);
+    setKeyLightIntensity(APP_DEFAULTS.keyLightIntensity);
+    setKeyLightAzimuth(APP_DEFAULTS.keyLightAzimuth);
+    setKeyLightElevation(APP_DEFAULTS.keyLightElevation);
+    setFaceRoughness(APP_DEFAULTS.faceRoughness);
+    setFaceOpacity(APP_DEFAULTS.faceOpacity);
+    setMultigridSettings({ ...MULTIGRID_DEFAULTS });
+    setOperators([]);
+    setSelectedOperatorId(null);
+    setPresetOrRandomUsed(false);
+    setSliderMoved(false);
+    setDiagramOrGridClicked(false);
+    setShapeEverOpened(false);
+    setTilingEverOpened(false);
+    setShowPresetTutorialStep(false);
+    setAddMenuOpen(false);
+    setShapeMenuOpen(false);
+    setTilingMenuOpen(false);
+    setDisplayMenuOpen(false);
+    setLightingMenuOpen(false);
+    setPaletteMenuOpen(false);
+    setAdvancedWallpaperOpen(false);
+    setRawEditorOpen(false);
+    setPresetPickerOpen(false);
+    setHoveredDotType(null);
+    setDotPopup(null);
+    setHoveredGridAtom(null);
+    requestFitToExtents();
+  };
+
+  const startPresetTutorial = () => {
+    clearToDefaults();
+  };
+
+  const skipPresetTutorial = () => {
+    setShowPresetTutorialStep(false);
+    dismissOnboarding();
   };
 
   useEffect(() => {
@@ -1521,6 +1619,7 @@ export default function App() {
   };
 
   const addDeformer = (mode: DeformerMode) => {
+    if (isAddOperatorOnboardingLocked) return;
     const nextDeformer = createDeformer(mode);
     setOperators((current) => [...current, nextDeformer]);
     setSelectedOperatorId(nextDeformer.id);
@@ -1528,6 +1627,7 @@ export default function App() {
   };
 
   const addCloner = (mode: ClonerMode) => {
+    if (isAddOperatorOnboardingLocked) return;
     const nextCloner = createCloner(mode);
     setOperators((current) => [...current, nextCloner]);
     setSelectedOperatorId(nextCloner.id);
@@ -4501,10 +4601,22 @@ export default function App() {
                             <button type="button" onClick={addBlankOperator} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
                               Operator
                             </button>
-                            <button type="button" onClick={() => addDeformer('stretch')} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
+                            <button
+                              type="button"
+                              onClick={() => addDeformer('stretch')}
+                              disabled={isAddOperatorOnboardingLocked}
+                              title={isAddOperatorOnboardingLocked ? 'Complete "Add an operator" first.' : 'Add a deformer'}
+                              className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
                               Deformer
                             </button>
-                            <button type="button" onClick={() => addCloner('array')} className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800">
+                            <button
+                              type="button"
+                              onClick={() => addCloner('array')}
+                              disabled={isAddOperatorOnboardingLocked}
+                              title={isAddOperatorOnboardingLocked ? 'Complete "Add an operator" first.' : 'Add a cloner'}
+                              className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-widest text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
                               Cloner
                             </button>
                           </motion.div>
@@ -4776,36 +4888,48 @@ export default function App() {
                 </button>
               </div>
               <div className="space-y-3">
-                {[
-                  { step: 1, label: onboardingStep1Label, done: step1Complete },
-                  ...(!initialHadOperators ? [{ step: 2, label: 'Add an operator', done: step2Complete }] : []),
-                  { step: initialHadOperators ? 2 : 3, label: 'Choose a preset or click Random', done: step3Complete },
-                  { step: initialHadOperators ? 3 : 4, label: 'Edit the operator via diagram or grid', done: step4Complete },
-                  { step: initialHadOperators ? 4 : 5, label: 'Adjust the sliders', done: step5Complete },
-                ].map(({ step, label, done }) => (
-                  <div key={step} className="flex items-start gap-3">
-                    <div
-                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
-                        done
-                          ? 'bg-emerald-600 text-white'
-                          : step === activeOnboardingStep
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-neutral-700 text-neutral-500'
-                      }`}
-                    >
-                      {done ? '✓' : step}
+                {onboardingStepItems.map(({ step, label, done }, index) => (
+                  <div key={`${step}-${index}`} className="flex flex-col gap-2">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
+                          done
+                            ? 'bg-emerald-600 text-white'
+                            : step === activeOnboardingStep
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-neutral-700 text-neutral-500'
+                        }`}
+                      >
+                        {step === 0 ? '?' : done ? '✓' : step}
+                      </div>
+                      <span
+                        className={`text-xs leading-relaxed transition-colors ${
+                          done
+                            ? 'text-neutral-600 line-through'
+                            : step === activeOnboardingStep
+                              ? 'text-white'
+                              : 'text-neutral-500'
+                        }`}
+                      >
+                        {label}
+                      </span>
                     </div>
-                    <span
-                      className={`text-xs leading-relaxed transition-colors ${
-                        done
-                          ? 'text-neutral-600 line-through'
-                          : step === activeOnboardingStep
-                            ? 'text-white'
-                            : 'text-neutral-500'
-                      }`}
-                    >
-                      {label}
-                    </span>
+                    {step === 0 && (
+                      <div className="flex flex-wrap gap-2 pl-8">
+                        <button
+                          onClick={startPresetTutorial}
+                          className="rounded-lg border border-yellow-600 bg-yellow-300/40 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-yellow-950 transition-colors hover:bg-yellow-300/60"
+                        >
+                          Start tutorial
+                        </button>
+                        <button
+                          onClick={skipPresetTutorial}
+                          className="rounded-lg border border-neutral-700 bg-neutral-900/50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+                        >
+                          Keep preset
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
