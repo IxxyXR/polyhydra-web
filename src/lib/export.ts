@@ -323,6 +323,7 @@ export function exportSvg(
   sideModulo: number,
   sideOffset: number,
   edgeColor: string,
+  showEdges: boolean,
   radialType: RadialPolyType,
   radialSides: number,
   radialBuildOptions?: RadialBuildOptions,
@@ -368,7 +369,9 @@ export function exportSvg(
   // Y-axis in SVG goes down, but math goes up, so we negate Y.
   let svg = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n`;
   svg += `<svg width="${width * 50}" height="${height * 50}" viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg">\n`;
-  svg += `<g stroke="${edgeColor}" stroke-width="0.05" stroke-linejoin="round">\n`;
+  if (showEdges) {
+    svg += `<g stroke="${edgeColor}" stroke-width="0.05" stroke-linejoin="round">\n`;
+  }
 
   for (let fIdx = 0; fIdx < mesh.faces.length; fIdx++) {
     const face = mesh.faces[fIdx];
@@ -387,7 +390,11 @@ export function exportSvg(
     svg += `  <path d="${d}" fill="${fill}" />\n`;
   }
 
-  svg += `</g>\n</svg>`;
+  if (showEdges) {
+    svg += `</g>\n`;
+  }
+
+  svg += `</svg>`;
 
   downloadString(svg, 'polyhydra-export.svg', 'image/svg+xml');
 }
