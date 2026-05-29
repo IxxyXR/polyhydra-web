@@ -1,7 +1,7 @@
 import { Mesh, OperatorSpec } from './conway-operators';
 import { MeshFinalizationMode, finalizeMesh } from './mesh-finalization';
 
-export type DeformerMode = 'stretch' | 'taper' | 'spherify' | 'planarize' | 'canonicalize';
+export type DeformerMode = 'stretch' | 'taper' | 'spherify' | 'cylinderize' | 'planarize' | 'canonicalize' | 'transform';
 export type DeformerAxis = 'x' | 'y' | 'z';
 export type ClonerMode = 'point' | 'wallpaper' | 'array';
 export type PointGroupSymmetry = 'Cn' | 'Cnv' | 'Cnh' | 'Sn' | 'Dn' | 'Dnh' | 'Dnd' | 'T' | 'Th' | 'Td' | 'O' | 'Oh' | 'I' | 'Ih';
@@ -28,6 +28,21 @@ export interface DeformerStackItem {
   mode: DeformerMode;
   amount: number;
   axis: DeformerAxis;
+  // Stretch mode
+  stretchStart: number;
+  stretchEnd: number;
+  // Transform mode
+  translateX: number;
+  translateY: number;
+  translateZ: number;
+  rotateX: number;
+  rotateY: number;
+  rotateZ: number;
+  scaleX: number;
+  scaleY: number;
+  scaleZ: number;
+  level: boolean;
+  center: boolean;
 }
 
 export interface ClonerStackItem {
@@ -138,6 +153,10 @@ export function applyDeformer(mesh: Mesh, deformer: DeformerStackItem): Mesh {
     return finalizeMesh(mesh, deformer.mode);
   }
 
+  if (deformer.mode === 'transform') {
+    return applyTransformDeformer(mesh, deformer);
+  }
+
   const next = cloneMesh(mesh);
   const axisIndex = getAxisIndex(deformer.axis);
   const amount = Math.min(Math.max(deformer.amount, -1), 1);
@@ -151,7 +170,15 @@ export function applyDeformer(mesh: Mesh, deformer: DeformerStackItem): Mesh {
 
   for (let index = 0; index < next.vertices.length; index += 3) {
     if (deformer.mode === 'stretch') {
-      next.vertices[index + axisIndex] = center[axisIndex] + (next.vertices[index + axisIndex] - center[axisIndex]) * (1 + amount);
+      const pos = next.vertices[index + axisIndex];
+      const startThreshold = min[axisIndex] + deformer.stretchStart * span;
+      const endThreshold = min[axisIndex] + deformer.stretchEnd * span;
+      const displacement = amount * span;
+      if (pos >= startThreshold) {
+        next.vertices[index + axisIndex] += displacement;
+      } else if (pos <= endThreshold) {
+        next.vertices[index + axisIndex] -= displacement;
+      }
     } else if (deformer.mode === 'taper') {
       const t = (next.vertices[index + axisIndex] - min[axisIndex]) / span;
       const scale = Math.max(0.05, 1 + amount * (t - 0.5) * 2);
@@ -172,6 +199,149 @@ export function applyDeformer(mesh: Mesh, deformer: DeformerStackItem): Mesh {
         next.vertices[index + 1] = center[1] + y * (1 - blend) + (y / length) * targetRadius * blend;
         next.vertices[index + 2] = center[2] + z * (1 - blend) + (z / length) * targetRadius * blend;
       }
+    } else if (deformer.mode === 'cylinderize') {
+      const axisPos = next.vertices[index + axisIndex];
+      const capEpsilon = span * 1e-4;
+      if (axisPos >= max[axisIndex] - capEpsilon || axisPos <= min[axisIndex] + capEpsilon) continue;
+      const perp1 = (axisIndex + 1) % 3;
+      const perp2 = (axisIndex + 2) % 3;
+      const dx = next.vertices[index + perp1] - center[perp1];
+      const dy = next.vertices[index + perp2] - center[perp2];
+      const length = Math.hypot(dx, dy);
+      if (length > 1e-6) {
+        const targetRadius = Math.max(max[perp1] - min[perp1], max[perp2] - min[perp2]) / 2;
+        const blend = Math.max(0, amount);
+        next.vertices[index + perp1] = center[perp1] + dx * (1 - blend) + (dx / length) * targetRadius * blend;
+        next.vertices[index + perp2] = center[perp2] + dy * (1 - blend) + (dy / length) * targetRadius * blend;
+      }
+    }
+  }
+
+  return next;
+}
+
+function getFaceNormal(mesh: Mesh, faceIndex: number): [number, number, number] {
+  const face = mesh.faces[faceIndex];
+  if (!face || face.length < 3) return [0, 1, 0];
+  const i0 = face[0] * 3, i1 = face[1] * 3, i2 = face[2] * 3;
+  const ax = mesh.vertices[i1] - mesh.vertices[i0];
+  const ay = mesh.vertices[i1 + 1] - mesh.vertices[i0 + 1];
+  const az = mesh.vertices[i1 + 2] - mesh.vertices[i0 + 2];
+  const bx = mesh.vertices[i2] - mesh.vertices[i0];
+  const by = mesh.vertices[i2 + 1] - mesh.vertices[i0 + 1];
+  const bz = mesh.vertices[i2 + 2] - mesh.vertices[i0 + 2];
+  const nx = ay * bz - az * by;
+  const ny = az * bx - ax * bz;
+  const nz = ax * by - ay * bx;
+  const len = Math.hypot(nx, ny, nz);
+  return len > 1e-9 ? [nx / len, ny / len, nz / len] : [0, 1, 0];
+}
+
+function makeRotationMatrix(rx: number, ry: number, rz: number): Matrix3 {
+  const toRad = Math.PI / 180;
+  const cx = Math.cos(rx * toRad), sx = Math.sin(rx * toRad);
+  const cy = Math.cos(ry * toRad), sy = Math.sin(ry * toRad);
+  const cz = Math.cos(rz * toRad), sz = Math.sin(rz * toRad);
+  // ZYX order
+  return [
+    cy * cz, cz * sx * sy - cx * sz, cx * cz * sy + sx * sz,
+    cy * sz, cx * cz + sx * sy * sz, cx * sy * sz - cz * sx,
+    -sy,     cy * sx,                cx * cy,
+  ];
+}
+
+function rotationAlignTo(from: [number, number, number], to: [number, number, number]): Matrix3 {
+  const dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+  if (dot > 1 - 1e-9) return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  if (dot < -1 + 1e-9) {
+    // 180-degree rotation around an arbitrary perpendicular axis
+    const ax = Math.abs(from[0]) < 0.9 ? 1 : 0;
+    const perpLen = Math.hypot(ax - from[0] * from[0], -from[1] * from[0], -from[2] * from[0]);
+    if (perpLen < 1e-9) return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    const px = (ax - from[0] * from[0]) / perpLen;
+    const py = (-from[1] * from[0]) / perpLen;
+    const pz = (-from[2] * from[0]) / perpLen;
+    return [
+      2 * px * px - 1, 2 * px * py, 2 * px * pz,
+      2 * py * px, 2 * py * py - 1, 2 * py * pz,
+      2 * pz * px, 2 * pz * py, 2 * pz * pz - 1,
+    ];
+  }
+  // Rodrigues: axis = from × to
+  const kx = from[1] * to[2] - from[2] * to[1];
+  const ky = from[2] * to[0] - from[0] * to[2];
+  const kz = from[0] * to[1] - from[1] * to[0];
+  const s = Math.hypot(kx, ky, kz);
+  const nx = kx / s, ny = ky / s, nz = kz / s;
+  const c = dot;
+  const t = 1 - c;
+  return [
+    t * nx * nx + c,      t * nx * ny - s * nz, t * nx * nz + s * ny,
+    t * ny * nx + s * nz, t * ny * ny + c,       t * ny * nz - s * nx,
+    t * nz * nx - s * ny, t * nz * ny + s * nx,  t * nz * nz + c,
+  ];
+}
+
+function applyMatrix3ToVertices(vertices: number[], m: Matrix3): void {
+  for (let i = 0; i < vertices.length; i += 3) {
+    const x = vertices[i], y = vertices[i + 1], z = vertices[i + 2];
+    vertices[i]     = m[0] * x + m[1] * y + m[2] * z;
+    vertices[i + 1] = m[3] * x + m[4] * y + m[5] * z;
+    vertices[i + 2] = m[6] * x + m[7] * y + m[8] * z;
+  }
+}
+
+function applyTransformDeformer(mesh: Mesh, deformer: DeformerStackItem): Mesh {
+  const next = cloneMesh(mesh);
+
+  if (deformer.center) {
+    const n = next.vertices.length / 3;
+    let cx = 0, cy = 0, cz = 0;
+    for (let i = 0; i < next.vertices.length; i += 3) {
+      cx += next.vertices[i] / n;
+      cy += next.vertices[i + 1] / n;
+      cz += next.vertices[i + 2] / n;
+    }
+    for (let i = 0; i < next.vertices.length; i += 3) {
+      next.vertices[i] -= cx;
+      next.vertices[i + 1] -= cy;
+      next.vertices[i + 2] -= cz;
+    }
+  }
+
+  if (deformer.level && mesh.faces.length > 0) {
+    const normal = getFaceNormal(mesh, 0);
+    const up: [number, number, number] = [0, 1, 0];
+    const rot = rotationAlignTo(normal, up);
+    applyMatrix3ToVertices(next.vertices, rot);
+  }
+
+  const sx = deformer.scaleX ?? 1;
+  const sy = deformer.scaleY ?? 1;
+  const sz = deformer.scaleZ ?? 1;
+  if (sx !== 1 || sy !== 1 || sz !== 1) {
+    for (let i = 0; i < next.vertices.length; i += 3) {
+      next.vertices[i] *= sx;
+      next.vertices[i + 1] *= sy;
+      next.vertices[i + 2] *= sz;
+    }
+  }
+
+  const rx = deformer.rotateX ?? 0;
+  const ry = deformer.rotateY ?? 0;
+  const rz = deformer.rotateZ ?? 0;
+  if (rx !== 0 || ry !== 0 || rz !== 0) {
+    applyMatrix3ToVertices(next.vertices, makeRotationMatrix(rx, ry, rz));
+  }
+
+  const tx = deformer.translateX ?? 0;
+  const ty = deformer.translateY ?? 0;
+  const tz = deformer.translateZ ?? 0;
+  if (tx !== 0 || ty !== 0 || tz !== 0) {
+    for (let i = 0; i < next.vertices.length; i += 3) {
+      next.vertices[i] += tx;
+      next.vertices[i + 1] += ty;
+      next.vertices[i + 2] += tz;
     }
   }
 

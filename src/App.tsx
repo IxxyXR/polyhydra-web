@@ -98,8 +98,10 @@ const DEFORMER_LABELS: Record<DeformerMode, string> = {
   stretch: 'Stretch',
   taper: 'Taper',
   spherify: 'Spherify',
+  cylinderize: 'Cylinder',
   planarize: 'Planarize',
   canonicalize: 'Canonical',
+  transform: 'Transform',
 };
 
 const CLONER_LABELS: Record<ClonerMode, string> = {
@@ -648,7 +650,7 @@ function serializeCompactOperator(operator: OperatorState) {
     : `${atomMask.toString(36)}.${encodedParams}`;
   const filterPayload = encodeFaceFilter(operator.faceFilter);
 
-  const finalizationPayload = operator.finalizationAfter === 'planarize' ? '|p' : operator.finalizationAfter === 'canonicalize' ? '|c' : '';
+  const finalizationPayload = operator.finalizationAfter === 'canonicalize' ? '|c' : operator.finalizationAfter === 'none' ? '|n' : '';
   return `${operator.enabled ? '' : '!'}${payload}${filterPayload ? `~${filterPayload}` : ''}${finalizationPayload}`;
 }
 
@@ -658,11 +660,31 @@ function serializeCompactStackItem(item: StackItemState) {
   }
 
   if (isDeformerStackItem(item)) {
-    const mode = item.mode === 'stretch' ? 's' : item.mode === 'taper' ? 't' : item.mode === 'spherify' ? 'p' : item.mode === 'planarize' ? 'q' : 'k';
+    const modeChar = item.mode === 'stretch' ? 's' : item.mode === 'taper' ? 't' : item.mode === 'spherify' ? 'p' : item.mode === 'planarize' ? 'q' : item.mode === 'canonicalize' ? 'k' : item.mode === 'cylinderize' ? 'z' : 'r';
+    const prefix = `${item.enabled ? '' : '!'}d${modeChar}`;
     if (item.mode === 'planarize' || item.mode === 'canonicalize') {
-      return `${item.enabled ? '' : '!'}d${mode}`;
+      return prefix;
     }
-    return `${item.enabled ? '' : '!'}d${mode}.${encodeOperatorParam(item.amount)}${item.axis}`;
+    if (item.mode === 'transform') {
+      const flags = (item.level ? 1 : 0) | (item.center ? 2 : 0);
+      return [
+        prefix,
+        encodeOperatorParam((item.translateX + 10) / 20),
+        encodeOperatorParam((item.translateY + 10) / 20),
+        encodeOperatorParam((item.translateZ + 10) / 20),
+        encodeOperatorParam((item.rotateX + 180) / 360),
+        encodeOperatorParam((item.rotateY + 180) / 360),
+        encodeOperatorParam((item.rotateZ + 180) / 360),
+        encodeOperatorParam(item.scaleX / 4),
+        encodeOperatorParam(item.scaleY / 4),
+        encodeOperatorParam(item.scaleZ / 4),
+        flags.toString(16),
+      ].join('.');
+    }
+    if (item.mode === 'stretch') {
+      return `${prefix}.${encodeOperatorParam(item.amount)}.${encodeOperatorParam(item.stretchStart)}.${encodeOperatorParam(item.stretchEnd)}.${item.axis}`;
+    }
+    return `${prefix}.${encodeOperatorParam(item.amount)}${item.axis}`;
   }
 
   const mode = item.mode === 'point' ? 'p' : item.mode === 'array' ? 'a' : 'w';
@@ -728,7 +750,7 @@ function parseCompactOperator(token: string): OperatorState | null {
       }
     : DEFAULT_OMNI_PARAMS;
 
-  const finalizationAfter: MeshFinalizationMode = finalizationRaw === 'p' ? 'planarize' : finalizationRaw === 'c' ? 'canonicalize' : 'none';
+  const finalizationAfter: MeshFinalizationMode = finalizationRaw === 'c' ? 'canonicalize' : finalizationRaw === 'n' ? 'none' : 'planarize';
   return {
     ...createOperator(joinAtomList(atoms), enabled, {
       ...params,
@@ -743,17 +765,49 @@ function parseCompactStackItem(token: string): StackItemState | null {
   const payload = enabled ? token : token.slice(1);
 
   if (payload.startsWith('d')) {
-    const [modeRaw, paramsRaw = ''] = payload.slice(1).split('.');
-    const mode: DeformerMode = modeRaw === 't' ? 'taper' : modeRaw === 'p' ? 'spherify' : modeRaw === 'q' ? 'planarize' : modeRaw === 'k' ? 'canonicalize' : 'stretch';
+    const parts = payload.slice(1).split('.');
+    const modeRaw = parts[0];
+    const mode: DeformerMode = modeRaw === 't' ? 'taper' : modeRaw === 'p' ? 'spherify' : modeRaw === 'q' ? 'planarize' : modeRaw === 'k' ? 'canonicalize' : modeRaw === 'z' ? 'cylinderize' : modeRaw === 'r' ? 'transform' : 'stretch';
     if (mode === 'planarize' || mode === 'canonicalize') {
       return { ...createDeformer(mode), enabled };
     }
+    if (mode === 'transform') {
+      const flags = Number.parseInt(parts[10] ?? '0', 16);
+      return {
+        ...createDeformer(mode),
+        enabled,
+        translateX: decodeOperatorParam(parts[1] ?? '', 0.5) * 20 - 10,
+        translateY: decodeOperatorParam(parts[2] ?? '', 0.5) * 20 - 10,
+        translateZ: decodeOperatorParam(parts[3] ?? '', 0.5) * 20 - 10,
+        rotateX: decodeOperatorParam(parts[4] ?? '', 0.5) * 360 - 180,
+        rotateY: decodeOperatorParam(parts[5] ?? '', 0.5) * 360 - 180,
+        rotateZ: decodeOperatorParam(parts[6] ?? '', 0.5) * 360 - 180,
+        scaleX: decodeOperatorParam(parts[7] ?? '', 0.25) * 4,
+        scaleY: decodeOperatorParam(parts[8] ?? '', 0.25) * 4,
+        scaleZ: decodeOperatorParam(parts[9] ?? '', 0.25) * 4,
+        level: !!(flags & 1),
+        center: !!(flags & 2),
+      };
+    }
+    if (mode === 'stretch' && parts.length >= 5) {
+      const axisRaw = parts[4];
+      const axis: DeformerAxis = axisRaw === 'x' || axisRaw === 'y' || axisRaw === 'z' ? axisRaw : 'y';
+      return {
+        ...createDeformer(mode),
+        enabled,
+        amount: decodeOperatorParam(parts[1] ?? '', 0.25),
+        stretchStart: decodeOperatorParam(parts[2] ?? '', 0.75),
+        stretchEnd: decodeOperatorParam(parts[3] ?? '', 0.25),
+        axis,
+      };
+    }
+    const paramsRaw = parts[1] ?? '';
     const axisRaw = paramsRaw.at(-1);
-    const axis: DeformerAxis = axisRaw === 'y' || axisRaw === 'z' ? axisRaw : 'x';
+    const axis: DeformerAxis = axisRaw === 'x' || axisRaw === 'y' || axisRaw === 'z' ? axisRaw : 'y';
     return {
       ...createDeformer(mode),
       enabled,
-      amount: decodeOperatorParam(paramsRaw.slice(0, 2), mode === 'spherify' ? 0.5 : 0.25),
+      amount: decodeOperatorParam(paramsRaw.slice(0, 2), mode === 'spherify' || mode === 'cylinderize' ? 0.5 : 0.25),
       axis,
     };
   }
@@ -851,8 +905,21 @@ function createDeformer(mode: DeformerMode = 'stretch'): DeformerStackItem {
     enabled: true,
     kind: 'deformer',
     mode,
-    amount: mode === 'spherify' ? 0.5 : 0.25,
-    axis: 'x',
+    amount: mode === 'spherify' || mode === 'cylinderize' ? 0.5 : 0.25,
+    axis: 'y',
+    stretchStart: 0.75,
+    stretchEnd: 0.25,
+    translateX: 0,
+    translateY: 0,
+    translateZ: 0,
+    rotateX: 0,
+    rotateY: 0,
+    rotateZ: 0,
+    scaleX: 1,
+    scaleY: 1,
+    scaleZ: 1,
+    level: false,
+    center: false,
   };
 }
 
@@ -2725,7 +2792,7 @@ export default function App() {
                                     {isOperatorStackItem(op)
                                       ? (resolveOperatorNotation(op.notation) || 'No atoms')
                                       : isDeformerStackItem(op)
-                                        ? (op.mode === 'planarize' || op.mode === 'canonicalize' ? 'Deformer' : `Deformer · ${op.axis.toUpperCase()} · ${op.amount.toFixed(2)}`)
+                                        ? (op.mode === 'planarize' || op.mode === 'canonicalize' || op.mode === 'transform' ? 'Deformer' : `Deformer · ${op.axis.toUpperCase()} · ${op.amount.toFixed(2)}`)
                                         : op.mode === 'point'
                                           ? `Point · ${op.pointGroup} · r ${op.radius.toFixed(1)}`
                                           : `Wallpaper · ${op.wallpaperGroup} · ${op.xRepeats}x${op.yRepeats}`}
@@ -2812,7 +2879,7 @@ export default function App() {
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <div className="grid grid-cols-3 gap-1">
-                                      {(['stretch', 'taper', 'spherify', 'planarize', 'canonicalize'] as DeformerMode[]).map((modeValue) => (
+                                      {(['stretch', 'taper', 'spherify', 'cylinderize', 'planarize', 'canonicalize', 'transform'] as DeformerMode[]).map((modeValue) => (
                                         <button
                                           key={modeValue}
                                           type="button"
@@ -2827,7 +2894,7 @@ export default function App() {
                                         </button>
                                       ))}
                                     </div>
-                                    {op.mode !== 'spherify' && op.mode !== 'planarize' && op.mode !== 'canonicalize' && (
+                                    {op.mode !== 'spherify' && op.mode !== 'planarize' && op.mode !== 'canonicalize' && op.mode !== 'transform' && (
                                       <div className="grid grid-cols-3 gap-1">
                                         {(['x', 'y', 'z'] as DeformerAxis[]).map((axis) => (
                                           <button
@@ -2845,30 +2912,82 @@ export default function App() {
                                         ))}
                                       </div>
                                     )}
-                                    {op.mode !== 'planarize' && op.mode !== 'canonicalize' && (
-                                      <label className="grid gap-1">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
-                                          <SliderValueField
+                                    {op.mode !== 'planarize' && op.mode !== 'canonicalize' && op.mode !== 'transform' && (
+                                      <>
+                                        <label className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
+                                            <SliderValueField
+                                              value={op.amount}
+                                              min={0}
+                                              max={1}
+                                              step={0.01}
+                                              precision={2}
+                                              onValueCommit={(value) => updateDeformer(op.id, { amount: value })}
+                                            />
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.01"
                                             value={op.amount}
-                                            min={0}
-                                            max={1}
-                                            step={0.01}
-                                            precision={2}
-                                            onValueCommit={(value) => updateDeformer(op.id, { amount: value })}
+                                            onChange={(e) => updateDeformer(op.id, { amount: Number.parseFloat(e.target.value) })}
+                                            className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
                                           />
-                                        </div>
-                                        <input
-                                          type="range"
-                                          min="0"
-                                          max="1"
-                                          step="0.01"
-                                          value={op.amount}
-                                          onChange={(e) => updateDeformer(op.id, { amount: Number.parseFloat(e.target.value) })}
-                                          className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
-                                        />
-                                      </label>
+                                        </label>
+                                        {op.mode === 'stretch' && (
+                                          <>
+                                            <label className="grid gap-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Start</span>
+                                                <SliderValueField value={op.stretchStart} min={0} max={1} step={0.01} precision={2} onValueCommit={(value) => updateDeformer(op.id, { stretchStart: value })} />
+                                              </div>
+                                              <input type="range" min="0" max="1" step="0.01" value={op.stretchStart} onChange={(e) => updateDeformer(op.id, { stretchStart: Number.parseFloat(e.target.value) })} className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700" />
+                                            </label>
+                                            <label className="grid gap-1">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">End</span>
+                                                <SliderValueField value={op.stretchEnd} min={0} max={1} step={0.01} precision={2} onValueCommit={(value) => updateDeformer(op.id, { stretchEnd: value })} />
+                                              </div>
+                                              <input type="range" min="0" max="1" step="0.01" value={op.stretchEnd} onChange={(e) => updateDeformer(op.id, { stretchEnd: Number.parseFloat(e.target.value) })} className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700" />
+                                            </label>
+                                          </>
+                                        )}
+                                      </>
                                     )}
+                                    {op.mode === 'transform' && (() => {
+                                      const toggleClass = (active: boolean) => `rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${active ? 'border-blue-700/60 bg-blue-950/30 text-blue-300' : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'}`;
+                                      const makeSlider = (label: string, value: number, min: number, max: number, step: number, key: keyof typeof op, precision = 2) => (
+                                        <label key={label} className="grid gap-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{label}</span>
+                                            <SliderValueField value={value} min={min} max={max} step={step} precision={precision} onValueCommit={(v) => updateDeformer(op.id, { [key]: v })} />
+                                          </div>
+                                          <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => updateDeformer(op.id, { [key]: Number.parseFloat(e.target.value) })} className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700" />
+                                        </label>
+                                      );
+                                      return (
+                                        <>
+                                          <div className="grid grid-cols-2 gap-1">
+                                            <button type="button" onClick={() => updateDeformer(op.id, { center: !op.center })} className={toggleClass(op.center)}>Center</button>
+                                            <button type="button" onClick={() => updateDeformer(op.id, { level: !op.level })} className={toggleClass(op.level)}>Level</button>
+                                          </div>
+                                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500 mt-1">Translate</div>
+                                          {makeSlider('X', op.translateX, -10, 10, 0.01, 'translateX')}
+                                          {makeSlider('Y', op.translateY, -10, 10, 0.01, 'translateY')}
+                                          {makeSlider('Z', op.translateZ, -10, 10, 0.01, 'translateZ')}
+                                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500 mt-1">Rotate (°)</div>
+                                          {makeSlider('X', op.rotateX, -180, 180, 1, 'rotateX', 0)}
+                                          {makeSlider('Y', op.rotateY, -180, 180, 1, 'rotateY', 0)}
+                                          {makeSlider('Z', op.rotateZ, -180, 180, 1, 'rotateZ', 0)}
+                                          <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500 mt-1">Scale</div>
+                                          {makeSlider('X', op.scaleX, 0.01, 4, 0.01, 'scaleX')}
+                                          {makeSlider('Y', op.scaleY, 0.01, 4, 0.01, 'scaleY')}
+                                          {makeSlider('Z', op.scaleZ, 0.01, 4, 0.01, 'scaleZ')}
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                 );
                               }
