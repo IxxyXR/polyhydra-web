@@ -4,7 +4,6 @@ import {
   Settings,
   Layers,
   Grid2X2,
-  Maximize,
   ChevronRight,
   Circle,
   Eye,
@@ -99,6 +98,8 @@ const DEFORMER_LABELS: Record<DeformerMode, string> = {
   stretch: 'Stretch',
   taper: 'Taper',
   spherify: 'Spherify',
+  planarize: 'Planarize',
+  canonicalize: 'Canonical',
 };
 
 const CLONER_LABELS: Record<ClonerMode, string> = {
@@ -219,7 +220,6 @@ const APP_DEFAULTS = {
   showVertices: false,
   showFaces: true,
   wireframe: false,
-  finalization: 'planarize' as MeshFinalizationMode,
   palette: 'vibrant' as PaletteKey,
   colorMode: 'role' as ColorMode,
   roleColorCount: 8,
@@ -301,7 +301,6 @@ const TILING_GROUP_ORDER = ['Regular', 'Uniform', '2-Uniform', 'Catalan/Laves', 
 
 const URL_KEYS = {
   mode: 'm',
-  finalization: 'fn',
   radialType: 'rt',
   radialSides: 'rs',
   boxXSegments: 'bx',
@@ -354,12 +353,6 @@ const URL_KEYS = {
 const MODE_TO_URL: Record<'2d' | '3d', string> = {
   '2d': '2',
   '3d': '3',
-};
-
-const FINALIZATION_TO_URL: Record<MeshFinalizationMode, string> = {
-  planarize: 'p',
-  canonicalize: 'c',
-  none: 'n',
 };
 
 const COLOR_MODE_TO_URL: Record<ColorMode, string> = {
@@ -655,7 +648,8 @@ function serializeCompactOperator(operator: OperatorState) {
     : `${atomMask.toString(36)}.${encodedParams}`;
   const filterPayload = encodeFaceFilter(operator.faceFilter);
 
-  return `${operator.enabled ? '' : '!'}${payload}${filterPayload ? `~${filterPayload}` : ''}`;
+  const finalizationPayload = operator.finalizationAfter === 'planarize' ? '|p' : operator.finalizationAfter === 'canonicalize' ? '|c' : '';
+  return `${operator.enabled ? '' : '!'}${payload}${filterPayload ? `~${filterPayload}` : ''}${finalizationPayload}`;
 }
 
 function serializeCompactStackItem(item: StackItemState) {
@@ -664,7 +658,10 @@ function serializeCompactStackItem(item: StackItemState) {
   }
 
   if (isDeformerStackItem(item)) {
-    const mode = item.mode === 'stretch' ? 's' : item.mode === 'taper' ? 't' : 'p';
+    const mode = item.mode === 'stretch' ? 's' : item.mode === 'taper' ? 't' : item.mode === 'spherify' ? 'p' : item.mode === 'planarize' ? 'q' : 'k';
+    if (item.mode === 'planarize' || item.mode === 'canonicalize') {
+      return `${item.enabled ? '' : '!'}d${mode}`;
+    }
     return `${item.enabled ? '' : '!'}d${mode}.${encodeOperatorParam(item.amount)}${item.axis}`;
   }
 
@@ -705,7 +702,8 @@ function serializeCompactStackItem(item: StackItemState) {
 function parseCompactOperator(token: string): OperatorState | null {
   const enabled = !token.startsWith('!');
   const fullPayload = enabled ? token : token.slice(1);
-  const [payload, filterRaw] = fullPayload.split('~');
+  const [mainPart, finalizationRaw] = fullPayload.split('|');
+  const [payload, filterRaw] = mainPart.split('~');
   const [maskRaw, paramRaw] = payload.split('.');
   if (!maskRaw) return null;
 
@@ -730,10 +728,14 @@ function parseCompactOperator(token: string): OperatorState | null {
       }
     : DEFAULT_OMNI_PARAMS;
 
-  return createOperator(joinAtomList(atoms), enabled, {
-    ...params,
-    faceFilter: filterRaw ? decodeFaceFilter(filterRaw) : undefined,
-  });
+  const finalizationAfter: MeshFinalizationMode = finalizationRaw === 'p' ? 'planarize' : finalizationRaw === 'c' ? 'canonicalize' : 'none';
+  return {
+    ...createOperator(joinAtomList(atoms), enabled, {
+      ...params,
+      faceFilter: filterRaw ? decodeFaceFilter(filterRaw) : undefined,
+    }),
+    finalizationAfter,
+  };
 }
 
 function parseCompactStackItem(token: string): StackItemState | null {
@@ -742,7 +744,10 @@ function parseCompactStackItem(token: string): StackItemState | null {
 
   if (payload.startsWith('d')) {
     const [modeRaw, paramsRaw = ''] = payload.slice(1).split('.');
-    const mode: DeformerMode = modeRaw === 't' ? 'taper' : modeRaw === 'p' ? 'spherify' : 'stretch';
+    const mode: DeformerMode = modeRaw === 't' ? 'taper' : modeRaw === 'p' ? 'spherify' : modeRaw === 'q' ? 'planarize' : modeRaw === 'k' ? 'canonicalize' : 'stretch';
+    if (mode === 'planarize' || mode === 'canonicalize') {
+      return { ...createDeformer(mode), enabled };
+    }
     const axisRaw = paramsRaw.at(-1);
     const axis: DeformerAxis = axisRaw === 'y' || axisRaw === 'z' ? axisRaw : 'x';
     return {
@@ -835,6 +840,7 @@ function createOperator(notation: string, enabled = true, overrides: Partial<Ope
     id: Math.random().toString(36).substring(7) + Date.now(),
     enabled,
     kind: 'operator',
+    finalizationAfter: 'planarize',
     ...createOperatorSpec(notation, overrides),
   };
 }
@@ -893,7 +899,6 @@ function createCloner(mode: ClonerMode = 'point'): ClonerStackItem {
 
 function buildAppSearchParams(state: {
   mode: '2d' | '3d';
-  finalization: MeshFinalizationMode;
   radialType: RadialPolyType;
   radialSides: number;
   boxXSegments: number;
@@ -933,7 +938,6 @@ function buildAppSearchParams(state: {
 }) {
   const params = new URLSearchParams();
   setParamIfNeeded(params, URL_KEYS.mode, MODE_TO_URL[state.mode], MODE_TO_URL[APP_DEFAULTS.mode]);
-  setParamIfNeeded(params, URL_KEYS.finalization, FINALIZATION_TO_URL[state.finalization], FINALIZATION_TO_URL[APP_DEFAULTS.finalization]);
   setParamIfNeeded(
     params,
     URL_KEYS.radialType,
@@ -1068,7 +1072,6 @@ export default function App() {
   const [showVertices, setShowVertices] = useState(APP_DEFAULTS.showVertices);
   const [showFaces, setShowFaces] = useState(APP_DEFAULTS.showFaces);
   const [wireframe, setWireframe] = useState(APP_DEFAULTS.wireframe);
-  const [finalization, setFinalization] = useState<MeshFinalizationMode>(APP_DEFAULTS.finalization);
   const [isReady, setIsReady] = useState(false);
   const isPopStateRef = useRef(false);
   const [operators, setOperators] = useState<StackItemState[]>([]);
@@ -1109,7 +1112,7 @@ export default function App() {
   const sendToBlenderNow = async () => {
     setBlenderStatus('sending');
     setBlenderError(null);
-    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, radialBuildOptions, generationOptions, finalization);
+    const result = await sendToBlender(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, radialBuildOptions, generationOptions);
     if (result.ok) {
       setBlenderStatus('ok');
       setTimeout(() => setBlenderStatus('idle'), 3000);
@@ -1230,7 +1233,6 @@ export default function App() {
     setShowVertices(APP_DEFAULTS.showVertices);
     setShowFaces(APP_DEFAULTS.showFaces);
     setWireframe(APP_DEFAULTS.wireframe);
-    setFinalization(APP_DEFAULTS.finalization);
     setPalette(APP_DEFAULTS.palette);
     setShuffledColors(null);
     setColorMode(APP_DEFAULTS.colorMode);
@@ -1320,19 +1322,6 @@ export default function App() {
           : urlMode === MODE_TO_URL['3d']
             ? '3d'
             : APP_DEFAULTS.mode
-    );
-
-    const urlFinalization = getUrlParam(params, URL_KEYS.finalization, 'finalization');
-    setFinalization(
-      urlFinalization === 'none' || urlFinalization === 'planarize' || urlFinalization === 'canonicalize'
-        ? urlFinalization
-        : urlFinalization === FINALIZATION_TO_URL.none
-          ? 'none'
-          : urlFinalization === FINALIZATION_TO_URL.planarize
-            ? 'planarize'
-            : urlFinalization === FINALIZATION_TO_URL.canonicalize
-              ? 'canonicalize'
-        : APP_DEFAULTS.finalization
     );
 
     const urlRadialType = decodeAliasedValue(
@@ -1530,7 +1519,6 @@ export default function App() {
   useEffect(() => {
     const params = buildAppSearchParams({
       mode,
-      finalization,
       radialType,
       radialSides,
       boxXSegments,
@@ -1577,7 +1565,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, finalization, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
+  }, [mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
 
 
   const applyPreset = (preset: AppPreset) => {
@@ -1590,7 +1578,7 @@ export default function App() {
 
   const saveCurrentPreset = () => {
     if (!newPresetName.trim()) return;
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
     setUserPresets(getUserPresets());
     setNewPresetName('');
@@ -1598,7 +1586,7 @@ export default function App() {
   };
 
   const copyCurrentAsExamplePreset = async () => {
-    const params = buildAppSearchParams({ mode, finalization, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     const entry = `{ name: 'name', params: '${params.toString()}'},`;
     await navigator.clipboard.writeText(entry);
   };
@@ -1726,6 +1714,12 @@ export default function App() {
         ? { ...op, faceFilter: normalizeFaceFilter({ ...normalizeFaceFilter(op.faceFilter), ...patch }) }
         : op
     )));
+  };
+
+  const updateOperatorFinalization = (id: string, finalizationAfter: MeshFinalizationMode) => {
+    setOperators((current) => current.map((op) =>
+      op.id === id && isOperatorStackItem(op) ? { ...op, finalizationAfter } : op
+    ));
   };
 
   const updateDeformer = (id: string, patch: Partial<Omit<DeformerStackItem, 'id' | 'kind'>>) => {
@@ -1920,7 +1914,6 @@ export default function App() {
     radialType,
     radialSides,
     radialBuildOptions,
-    finalization,
     fitRequestKey,
   ]);
   const tilingGroups = Object.entries(UNIFORM_TILINGS).reduce<Record<string, Array<[string, typeof selectedTiling]>>>((groups, [key, tiling]) => {
@@ -2732,7 +2725,7 @@ export default function App() {
                                     {isOperatorStackItem(op)
                                       ? (resolveOperatorNotation(op.notation) || 'No atoms')
                                       : isDeformerStackItem(op)
-                                        ? `Deformer · ${op.axis.toUpperCase()} · ${op.amount.toFixed(2)}`
+                                        ? (op.mode === 'planarize' || op.mode === 'canonicalize' ? 'Deformer' : `Deformer · ${op.axis.toUpperCase()} · ${op.amount.toFixed(2)}`)
                                         : op.mode === 'point'
                                           ? `Point · ${op.pointGroup} · r ${op.radius.toFixed(1)}`
                                           : `Wallpaper · ${op.wallpaperGroup} · ${op.xRepeats}x${op.yRepeats}`}
@@ -2819,7 +2812,7 @@ export default function App() {
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <div className="grid grid-cols-3 gap-1">
-                                      {(['stretch', 'taper', 'spherify'] as DeformerMode[]).map((modeValue) => (
+                                      {(['stretch', 'taper', 'spherify', 'planarize', 'canonicalize'] as DeformerMode[]).map((modeValue) => (
                                         <button
                                           key={modeValue}
                                           type="button"
@@ -2834,7 +2827,7 @@ export default function App() {
                                         </button>
                                       ))}
                                     </div>
-                                    {op.mode !== 'spherify' && (
+                                    {op.mode !== 'spherify' && op.mode !== 'planarize' && op.mode !== 'canonicalize' && (
                                       <div className="grid grid-cols-3 gap-1">
                                         {(['x', 'y', 'z'] as DeformerAxis[]).map((axis) => (
                                           <button
@@ -2852,28 +2845,30 @@ export default function App() {
                                         ))}
                                       </div>
                                     )}
-                                <label className="grid gap-1">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
-                                    <SliderValueField
-                                      value={op.amount}
-                                      min={0}
-                                      max={1}
-                                      step={0.01}
-                                      precision={2}
-                                      onValueCommit={(value) => updateDeformer(op.id, { amount: value })}
-                                    />
-                                  </div>
-                                      <input
-                                        type="range"
-                                        min="0"
-                                        max="1"
-                                        step="0.01"
-                                        value={op.amount}
-                                        onChange={(e) => updateDeformer(op.id, { amount: Number.parseFloat(e.target.value) })}
-                                        className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
-                                      />
-                                    </label>
+                                    {op.mode !== 'planarize' && op.mode !== 'canonicalize' && (
+                                      <label className="grid gap-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
+                                          <SliderValueField
+                                            value={op.amount}
+                                            min={0}
+                                            max={1}
+                                            step={0.01}
+                                            precision={2}
+                                            onValueCommit={(value) => updateDeformer(op.id, { amount: value })}
+                                          />
+                                        </div>
+                                        <input
+                                          type="range"
+                                          min="0"
+                                          max="1"
+                                          step="0.01"
+                                          value={op.amount}
+                                          onChange={(e) => updateDeformer(op.id, { amount: Number.parseFloat(e.target.value) })}
+                                          className="w-full accent-blue-600 h-1.5 cursor-pointer appearance-none rounded-lg bg-neutral-700"
+                                        />
+                                      </label>
+                                    )}
                                   </div>
                                 );
                               }
@@ -3956,6 +3951,30 @@ export default function App() {
                                         </p>
                                       )}
 
+                                      <div className="grid gap-1">
+                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Finalize After</span>
+                                        <div className="grid grid-cols-3 gap-1">
+                                          {([
+                                            ['none', 'Off'],
+                                            ['planarize', 'Planarize'],
+                                            ['canonicalize', 'Canonical'],
+                                          ] as Array<[MeshFinalizationMode, string]>).map(([value, label]) => (
+                                            <button
+                                              key={value}
+                                              type="button"
+                                              onClick={() => updateOperatorFinalization(op.id, value)}
+                                              className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                                (op.finalizationAfter ?? 'planarize') === value
+                                                  ? 'border-blue-700/60 bg-blue-950/30 text-blue-300'
+                                                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                              }`}
+                                            >
+                                              {label}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+
                                       <AnimatePresence>
                                         {dotPopup && (
                                           <>
@@ -4626,45 +4645,6 @@ export default function App() {
               </div>
             </section>
 
-            {mode === '3d' && (
-              <section>
-                <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <Maximize className="w-3 h-3" />
-                  Final Step
-                </h2>
-                <div className="space-y-3 bg-neutral-800/20 p-4 rounded-2xl border border-neutral-800">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Mesh Finalization</span>
-                    <span className="text-[10px] font-mono text-blue-400">
-                      {finalization === 'none' ? 'off' : finalization}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {([
-                      ['none', 'Off'],
-                      ['planarize', 'Planarize'],
-                      ['canonicalize', 'Canonical'],
-                    ] as Array<[MeshFinalizationMode, string]>).map(([value, label]) => (
-                      <button
-                        key={value}
-                        onClick={() => setFinalization(value)}
-                        className={`rounded-lg border px-2 py-2 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                          finalization === value
-                            ? 'border-blue-700/60 bg-blue-950/20 text-blue-300'
-                            : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] leading-4 text-neutral-500">
-                    Applied after the operator stack. Planarize only flattens faces. Canonical also drives edges toward unit-sphere tangency.
-                  </p>
-                </div>
-              </section>
-            )}
-
             <section>
               <AnimatePresence>
                 {showOnboarding && allOnboardingComplete && (
@@ -4689,20 +4669,20 @@ export default function App() {
               <div className={`grid gap-2 ${mode === '3d' ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 {mode === '2d' && (
                 <button
-                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, showEdges, radialType, radialSides, radialBuildOptions, generationOptions, finalization)}
+                  onClick={() => exportSvg(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, showEdges, radialType, radialSides, radialBuildOptions, generationOptions)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   .svg
                 </button>
                 )}
                 <button
-                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, radialBuildOptions, generationOptions, finalization)}
+                  onClick={() => exportObj(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, radialBuildOptions, generationOptions)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   .obj + .mtl
                 </button>
                 <button
-                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, radialBuildOptions, generationOptions, finalization)}
+                  onClick={() => exportOff(mode, tilingType, rows, cols, activeOperators, palette, renderColorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, radialBuildOptions, generationOptions)}
                   className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all border bg-neutral-800/40 border-neutral-700/50 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 >
                   .off
@@ -4751,7 +4731,6 @@ export default function App() {
                 onClick={async () => {
                   const params = buildAppSearchParams({
                     mode,
-                    finalization,
                     radialType,
                     radialSides,
                     boxXSegments,
@@ -4865,7 +4844,6 @@ export default function App() {
             radialType={radialType}
             radialSides={radialSides}
             radialBuildOptions={radialBuildOptions}
-            finalization={finalization}
             fitRequestKey={fitRequestKey}
             onGeometryGenerationChange={handleGeometryGenerationChange}
             xrPanel={xrPanel}

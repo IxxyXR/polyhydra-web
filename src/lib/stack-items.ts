@@ -1,6 +1,7 @@
 import { Mesh, OperatorSpec } from './conway-operators';
+import { MeshFinalizationMode, finalizeMesh } from './mesh-finalization';
 
-export type DeformerMode = 'stretch' | 'taper' | 'spherify';
+export type DeformerMode = 'stretch' | 'taper' | 'spherify' | 'planarize' | 'canonicalize';
 export type DeformerAxis = 'x' | 'y' | 'z';
 export type ClonerMode = 'point' | 'wallpaper' | 'array';
 export type PointGroupSymmetry = 'Cn' | 'Cnv' | 'Cnh' | 'Sn' | 'Dn' | 'Dnh' | 'Dnd' | 'T' | 'Th' | 'Td' | 'O' | 'Oh' | 'I' | 'Ih';
@@ -17,6 +18,7 @@ export interface OperatorStackItem extends OperatorSpec {
   id: string;
   enabled: boolean;
   kind: 'operator';
+  finalizationAfter?: MeshFinalizationMode;
 }
 
 export interface DeformerStackItem {
@@ -132,6 +134,10 @@ function getMeshBounds(vertices: number[]) {
 }
 
 export function applyDeformer(mesh: Mesh, deformer: DeformerStackItem): Mesh {
+  if (deformer.mode === 'planarize' || deformer.mode === 'canonicalize') {
+    return finalizeMesh(mesh, deformer.mode);
+  }
+
   const next = cloneMesh(mesh);
   const axisIndex = getAxisIndex(deformer.axis);
   const amount = Math.min(Math.max(deformer.amount, -1), 1);

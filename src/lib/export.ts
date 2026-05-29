@@ -1,6 +1,5 @@
 import { TilingGenerationOptions } from './tiling-geometries';
 import { Mesh, OperatorSpec, RoleShapeBasis } from './conway-operators';
-import { MeshFinalizationMode } from './mesh-finalization';
 import { PaletteKey } from './palettes';
 import { ColorMode, computeFaceColors } from './coloring';
 import { RadialBuildOptions, RadialPolyType } from './radial-solids';
@@ -30,9 +29,8 @@ export async function sendToBlender(
   radialSides: number,
   radialBuildOptions?: RadialBuildOptions,
   generationOptions?: TilingGenerationOptions,
-  finalization: MeshFinalizationMode = 'planarize',
 ): Promise<{ ok: boolean; error?: string }> {
-  const mesh = generateFinalMesh({ mode, tilingType, rows, cols, operators, radialType, radialSides, radialBuildOptions, roleGeometryDetail, roleShapeBasis, generationOptions, finalization });
+  const mesh = generateFinalMesh({ mode, tilingType, rows, cols, operators, radialType, radialSides, radialBuildOptions, roleGeometryDetail, roleShapeBasis, generationOptions });
   if (!mesh) return { ok: false, error: 'No mesh generated' };
 
   const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount, sideModulo, sideOffset });
@@ -72,7 +70,6 @@ export function exportObj(
   radialSides: number,
   radialBuildOptions?: RadialBuildOptions,
   generationOptions?: TilingGenerationOptions,
-  finalization: MeshFinalizationMode = 'planarize',
 ) {
   const mesh = generateFinalMesh({
     mode,
@@ -86,7 +83,6 @@ export function exportObj(
     roleGeometryDetail,
     roleShapeBasis,
     generationOptions,
-    finalization,
   });
   if (!mesh) return;
 
@@ -116,7 +112,6 @@ export function exportOff(
   radialSides: number,
   radialBuildOptions?: RadialBuildOptions,
   generationOptions?: TilingGenerationOptions,
-  finalization: MeshFinalizationMode = 'planarize',
 ) {
   const mesh = generateFinalMesh({
     mode,
@@ -130,7 +125,6 @@ export function exportOff(
     roleGeometryDetail,
     roleShapeBasis,
     generationOptions,
-    finalization,
   });
   if (!mesh) return;
 
@@ -328,7 +322,6 @@ export function exportSvg(
   radialSides: number,
   radialBuildOptions?: RadialBuildOptions,
   generationOptions?: TilingGenerationOptions,
-  finalization: MeshFinalizationMode = 'planarize',
 ) {
   const mesh = generateFinalMesh({
     mode,
@@ -342,7 +335,6 @@ export function exportSvg(
     roleGeometryDetail,
     roleShapeBasis,
     generationOptions,
-    finalization,
   });
   if (!mesh) return;
 

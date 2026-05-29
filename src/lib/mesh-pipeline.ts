@@ -1,5 +1,5 @@
 import { applyOperator, Mesh, OperatorSpec, RoleShapeBasis } from './conway-operators';
-import { MeshFinalizationMode, finalizeMesh } from './mesh-finalization';
+import { finalizeMesh } from './mesh-finalization';
 import { buildRadialSolid, RadialBuildOptions, RadialPolyType } from './radial-solids';
 import { applyCloner, applyDeformer, isClonerStackItem, isDeformerStackItem, isOperatorStackItem, StackItem } from './stack-items';
 import { TilingGenerationOptions, UNIFORM_TILINGS } from './tiling-geometries';
@@ -16,7 +16,6 @@ export interface FinalMeshOptions {
   roleGeometryDetail?: number;
   roleShapeBasis?: RoleShapeBasis;
   generationOptions?: TilingGenerationOptions;
-  finalization?: MeshFinalizationMode;
 }
 
 export function generateFinalMesh({
@@ -31,7 +30,6 @@ export function generateFinalMesh({
   roleGeometryDetail,
   roleShapeBasis,
   generationOptions,
-  finalization = 'planarize',
 }: FinalMeshOptions): Mesh | null {
   let mesh: Mesh;
 
@@ -50,6 +48,9 @@ export function generateFinalMesh({
     if ('kind' in item) {
       if (isOperatorStackItem(item)) {
         mesh = applyOperator(mesh, { ...item, roleGeometryDetail, roleShapeBasis });
+        if (item.finalizationAfter && item.finalizationAfter !== 'none') {
+          mesh = finalizeMesh(mesh, item.finalizationAfter);
+        }
       } else if (isDeformerStackItem(item)) {
         mesh = applyDeformer(mesh, item);
       } else if (isClonerStackItem(item)) {
@@ -58,10 +59,6 @@ export function generateFinalMesh({
     } else {
       mesh = applyOperator(mesh, { ...item, roleGeometryDetail, roleShapeBasis });
     }
-  }
-
-  if (mode === '3d' && finalization !== 'none') {
-    mesh = finalizeMesh(mesh, finalization);
   }
 
   return mesh;

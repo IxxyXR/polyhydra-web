@@ -10,7 +10,6 @@ import { RadialBuildOptions, RadialPolyType } from '../lib/radial-solids';
 
 import { OperatorSpec, RoleShapeBasis } from '../lib/conway-operators';
 import { ColorMode, computeFaceColors } from '../lib/coloring';
-import { MeshFinalizationMode } from '../lib/mesh-finalization';
 import { generateFinalMesh } from '../lib/mesh-pipeline';
 import { StackItem } from '../lib/stack-items';
 
@@ -980,7 +979,6 @@ interface TilingCanvasProps {
   radialType?: RadialPolyType;
   radialSides?: number;
   radialBuildOptions?: RadialBuildOptions;
-  finalization?: MeshFinalizationMode;
   fitRequestKey?: number;
   onGeometryGenerationChange?: (isGenerating: boolean) => void;
   xrPanel?: XRPanelControls;
@@ -1034,7 +1032,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   radialType = 'Prism' as RadialPolyType,
   radialSides = 5,
   radialBuildOptions,
-  finalization = 'planarize' as MeshFinalizationMode,
   fitRequestKey = 0,
   onGeometryGenerationChange,
   xrPanel,
@@ -1553,7 +1550,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         roleGeometryDetail,
         roleShapeBasis,
         generationOptions,
-        finalization,
       });
       if (!mesh) return;
       vertices = mesh.vertices;
@@ -1747,7 +1743,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         window.clearTimeout(embossTimeoutId);
       }
     };
-  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, radialBuildOptions, finalization, fitRequestKey, onGeometryGenerationChange]);
+  }, [tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, paletteColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, faceRoughness, faceOpacity, generationOptions, mode, radialType, radialSides, radialBuildOptions, fitRequestKey, onGeometryGenerationChange]);
 
   return <div id="canvas-container" ref={containerRef} className="w-full h-full" />;
 });
