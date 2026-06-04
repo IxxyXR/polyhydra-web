@@ -630,6 +630,17 @@ function decodeFaceFilter(value: string): FaceFilterSpec | undefined {
   });
 }
 
+function getAtomDegree(atoms: string[]) {
+  const baseClasses = new Set<string>();
+  atoms.forEach((atom) => {
+    atom.split('-').forEach((pointClass) => {
+      const withoutContinuation = pointClass.endsWith('!') ? pointClass.slice(0, -1) : pointClass;
+      baseClasses.add(withoutContinuation === 've0' || withoutContinuation === 've1' ? 've' : withoutContinuation);
+    });
+  });
+  return baseClasses.size;
+}
+
 function serializeCompactOperator(operator: OperatorState) {
   let atomMask = 0;
   const atoms = parseAtomList(resolveOperatorNotation(operator.notation));
@@ -1737,6 +1748,7 @@ export default function App() {
   const unknownSelectedAtoms = getUnknownAtoms(uniqueSelectedAtoms);
   const selectedOperatorIsComplete = unknownSelectedAtoms.length === 0 && isCompleteOperator(uniqueSelectedAtoms);
   const selectedOperatorIsValid = unknownSelectedAtoms.length === 0 && isValidSubset(uniqueSelectedAtoms);
+  const selectedOperatorDegree = unknownSelectedAtoms.length === 0 ? getAtomDegree(uniqueSelectedAtoms) : null;
   const selectedMatchingPresetName = unknownSelectedAtoms.length === 0 ? findPresetName(uniqueSelectedAtoms) : null;
   const selectedPresetValue = !selectedOperatorNotation.trim()
     ? NO_PRESET_VALUE
@@ -3802,19 +3814,21 @@ export default function App() {
                                                   }}
                                                   transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
                                                   className="rounded-full border px-2 py-1 font-semibold uppercase tracking-widest"
-                                                  title="Degree 2 operator"
+                                                  title={`Degree ${selectedOperatorDegree || 2} operator`}
                                                 >
-                                                  Degree 2
+                                                  Degree {selectedOperatorDegree || 2}
                                                 </motion.span>
                                               ) : (
                                                 <span
                                                   className={`rounded-full border px-2 py-1 font-semibold uppercase tracking-widest ${
                                                     selectedOperatorIsComplete
                                                       ? 'border-emerald-800/40 bg-emerald-900/30 text-emerald-300'
+                                                      : selectedOperatorDegree !== null
+                                                        ? 'border-amber-800/40 bg-amber-900/25 text-amber-300'
                                                       : 'border-red-800/40 bg-red-900/30 text-red-300'
                                                   }`}
                                                 >
-                                                  {selectedOperatorIsComplete ? 'Complete' : 'Invalid'}
+                                                  {selectedOperatorIsComplete ? 'Complete' : selectedOperatorDegree !== null ? `Degree ${selectedOperatorDegree}` : 'Invalid'}
                                                 </span>
                                               )}
                                               {selectedMatchingPresetName && (
