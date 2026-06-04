@@ -1768,10 +1768,8 @@ export default function App() {
     const nextAtoms = new Set(uniqueSelectedAtoms);
     if (nextAtoms.has(atom)) {
       nextAtoms.delete(atom);
-    } else if (isCompatibleSubset([...nextAtoms], atom)) {
-      nextAtoms.add(atom);
     } else {
-      return;
+      nextAtoms.add(atom);
     }
 
     updateSelectedOperatorNotation(joinAtomList(orderAtoms(nextAtoms)));
@@ -3881,7 +3879,7 @@ export default function App() {
                                                     ? 'bg-amber-500/70 border-amber-400/80 animate-pulse'
                                                     : isCompatible
                                                       ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
-                                                      : 'opacity-0 cursor-not-allowed pointer-events-none';
+                                                      : 'border-neutral-700/55 bg-neutral-800/35 opacity-60 hover:border-neutral-600/75 hover:bg-neutral-800/55 hover:opacity-80';
 
                                                 return (
                                                   <button
@@ -3890,7 +3888,6 @@ export default function App() {
                                                     onMouseEnter={() => setHoveredGridAtom(atom)}
                                                     onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
                                                     onClick={() => { setDiagramOrGridClicked(true); toggleGridAtom(atom); }}
-                                                    disabled={!isSelected && !isCompatible}
                                                     className={`aspect-square rounded-md border transition-colors ${baseClass}`}
                                                     title={atom}
                                                   />
@@ -4150,13 +4147,12 @@ export default function App() {
                                                           onMouseEnter={() => setHoveredGridAtom(atom)}
                                                           onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
                                                           onClick={() => { toggleGridAtom(atom); setDotPopup(null); setHoveredGridAtom(null); }}
-                                                          disabled={!compatible}
                                                           className={`w-full rounded-lg px-2 py-1.5 text-left text-[10px] font-mono transition-colors ${
                                                             alreadySelected
                                                               ? 'bg-blue-600/80 text-white'
                                                               : compatible
                                                                 ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
-                                                                : 'cursor-not-allowed text-neutral-600 opacity-40'
+                                                                : 'border border-neutral-700/55 bg-neutral-800/30 text-neutral-500 opacity-70 hover:border-neutral-600/75 hover:bg-neutral-800/50 hover:text-neutral-400 hover:opacity-85'
                                                           }`}
                                                         >
                                                           <span className="font-mono text-neutral-500 text-[9px]">{atom}</span>
