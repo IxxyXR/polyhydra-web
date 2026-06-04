@@ -584,6 +584,16 @@ function decodeOperatorParam(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed / 100 : fallback;
 }
 
+function encodeSignedDeformerAmount(value: number) {
+  return value < 0 ? `n${encodeOperatorParam(Math.abs(value))}` : encodeOperatorParam(value);
+}
+
+function decodeSignedDeformerAmount(value: string, fallback: number) {
+  return value.startsWith('n')
+    ? -decodeOperatorParam(value.slice(1), fallback)
+    : decodeOperatorParam(value, fallback);
+}
+
 const FACE_FILTER_PROPERTY_TO_URL: Record<FaceFilterProperty, string> = {
   sides: 's',
 };
@@ -701,7 +711,10 @@ function serializeCompactStackItem(item: StackItemState) {
     if (item.mode === 'stretch') {
       return `${prefix}.${encodeOperatorParam(item.amount)}.${encodeOperatorParam(item.stretchStart)}.${encodeOperatorParam(item.stretchEnd)}.${item.axis}`;
     }
-    return `${prefix}.${encodeOperatorParam(item.amount)}${item.axis}`;
+    const encodedAmount = item.mode === 'spherify' || item.mode === 'cylinderize'
+      ? encodeSignedDeformerAmount(item.amount)
+      : encodeOperatorParam(item.amount);
+    return `${prefix}.${encodedAmount}${item.axis}`;
   }
 
   const mode = item.mode === 'point' ? 'p' : item.mode === 'array' ? 'a' : 'w';
@@ -819,10 +832,13 @@ function parseCompactStackItem(token: string): StackItemState | null {
     const paramsRaw = parts[1] ?? '';
     const axisRaw = paramsRaw.at(-1);
     const axis: DeformerAxis = axisRaw === 'x' || axisRaw === 'y' || axisRaw === 'z' ? axisRaw : 'y';
+    const amountRaw = paramsRaw.slice(0, -1);
     return {
       ...createDeformer(mode),
       enabled,
-      amount: decodeOperatorParam(paramsRaw.slice(0, 2), mode === 'spherify' || mode === 'cylinderize' ? 0.5 : 0.25),
+      amount: mode === 'spherify' || mode === 'cylinderize'
+        ? decodeSignedDeformerAmount(amountRaw, 0.5)
+        : decodeOperatorParam(amountRaw.slice(0, 2), 0.25),
       axis,
     };
   }
@@ -2947,7 +2963,7 @@ export default function App() {
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Amount</span>
                                             <SliderValueField
                                               value={op.amount}
-                                              min={0}
+                                              min={op.mode === 'spherify' || op.mode === 'cylinderize' ? -1 : 0}
                                               max={1}
                                               step={0.01}
                                               precision={2}
@@ -2956,7 +2972,7 @@ export default function App() {
                                           </div>
                                           <input
                                             type="range"
-                                            min="0"
+                                            min={op.mode === 'spherify' || op.mode === 'cylinderize' ? -1 : 0}
                                             max="1"
                                             step="0.01"
                                             value={op.amount}

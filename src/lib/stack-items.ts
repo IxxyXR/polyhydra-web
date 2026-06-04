@@ -194,10 +194,16 @@ export function applyDeformer(mesh: Mesh, deformer: DeformerStackItem): Mesh {
       const length = Math.hypot(x, y, z);
       if (length > 1e-6) {
         const targetRadius = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2;
-        const blend = Math.max(0, amount);
-        next.vertices[index] = center[0] + x * (1 - blend) + (x / length) * targetRadius * blend;
-        next.vertices[index + 1] = center[1] + y * (1 - blend) + (y / length) * targetRadius * blend;
-        next.vertices[index + 2] = center[2] + z * (1 - blend) + (z / length) * targetRadius * blend;
+        const blend = Math.abs(amount);
+        const target = [
+          center[0] + (x / length) * targetRadius,
+          center[1] + (y / length) * targetRadius,
+          center[2] + (z / length) * targetRadius,
+        ];
+        const direction = amount >= 0 ? 1 : -1;
+        next.vertices[index] += (target[0] - next.vertices[index]) * blend * direction;
+        next.vertices[index + 1] += (target[1] - next.vertices[index + 1]) * blend * direction;
+        next.vertices[index + 2] += (target[2] - next.vertices[index + 2]) * blend * direction;
       }
     } else if (deformer.mode === 'cylinderize') {
       const axisPos = next.vertices[index + axisIndex];
@@ -210,9 +216,12 @@ export function applyDeformer(mesh: Mesh, deformer: DeformerStackItem): Mesh {
       const length = Math.hypot(dx, dy);
       if (length > 1e-6) {
         const targetRadius = Math.max(max[perp1] - min[perp1], max[perp2] - min[perp2]) / 2;
-        const blend = Math.max(0, amount);
-        next.vertices[index + perp1] = center[perp1] + dx * (1 - blend) + (dx / length) * targetRadius * blend;
-        next.vertices[index + perp2] = center[perp2] + dy * (1 - blend) + (dy / length) * targetRadius * blend;
+        const blend = Math.abs(amount);
+        const target1 = center[perp1] + (dx / length) * targetRadius;
+        const target2 = center[perp2] + (dy / length) * targetRadius;
+        const direction = amount >= 0 ? 1 : -1;
+        next.vertices[index + perp1] += (target1 - next.vertices[index + perp1]) * blend * direction;
+        next.vertices[index + perp2] += (target2 - next.vertices[index + perp2]) * blend * direction;
       }
     }
   }
