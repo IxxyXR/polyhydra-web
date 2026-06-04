@@ -1748,7 +1748,8 @@ export default function App() {
   const unknownSelectedAtoms = getUnknownAtoms(uniqueSelectedAtoms);
   const selectedOperatorIsComplete = unknownSelectedAtoms.length === 0 && isCompleteOperator(uniqueSelectedAtoms);
   const selectedOperatorIsValid = unknownSelectedAtoms.length === 0 && isValidSubset(uniqueSelectedAtoms);
-  const selectedOperatorDegree = unknownSelectedAtoms.length === 0 ? getAtomDegree(uniqueSelectedAtoms) : null;
+  const selectedOperatorDegree = unknownSelectedAtoms.length === 0 && uniqueSelectedAtoms.length > 0 ? getAtomDegree(uniqueSelectedAtoms) : null;
+  const selectedOperatorIsEmpty = uniqueSelectedAtoms.length === 0;
   const selectedMatchingPresetName = unknownSelectedAtoms.length === 0 ? findPresetName(uniqueSelectedAtoms) : null;
   const selectedPresetValue = !selectedOperatorNotation.trim()
     ? NO_PRESET_VALUE
@@ -3805,7 +3806,7 @@ export default function App() {
                                               dangerouslySetInnerHTML={{ __html: selectedOperatorDiagramSvg }}
                                             />
                                             <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                                              {selectedOperatorIsValid && !selectedOperatorIsComplete ? (
+                                              {selectedOperatorIsValid && !selectedOperatorIsComplete && selectedOperatorDegree !== null ? (
                                                 <motion.span
                                                   animate={{
                                                     backgroundColor: ['rgba(120,53,15,0.3)', 'rgba(180,83,9,0.55)', 'rgba(120,53,15,0.3)'],
@@ -3823,12 +3824,14 @@ export default function App() {
                                                   className={`rounded-full border px-2 py-1 font-semibold uppercase tracking-widest ${
                                                     selectedOperatorIsComplete
                                                       ? 'border-emerald-800/40 bg-emerald-900/30 text-emerald-300'
+                                                      : selectedOperatorIsEmpty
+                                                        ? 'border-neutral-700/60 bg-neutral-900/40 text-neutral-400'
                                                       : selectedOperatorDegree !== null
                                                         ? 'border-amber-800/40 bg-amber-900/25 text-amber-300'
                                                       : 'border-red-800/40 bg-red-900/30 text-red-300'
                                                   }`}
                                                 >
-                                                  {selectedOperatorIsComplete ? 'Complete' : selectedOperatorDegree !== null ? `Degree ${selectedOperatorDegree}` : 'Invalid'}
+                                                  {selectedOperatorIsComplete ? 'Complete' : selectedOperatorIsEmpty ? 'Empty' : selectedOperatorDegree !== null ? `Degree ${selectedOperatorDegree}` : 'Invalid'}
                                                 </span>
                                               )}
                                               {selectedMatchingPresetName && (
