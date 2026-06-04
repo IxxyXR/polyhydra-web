@@ -632,7 +632,13 @@ function decodeFaceFilter(value: string): FaceFilterSpec | undefined {
 
 function serializeCompactOperator(operator: OperatorState) {
   let atomMask = 0;
-  const selectedAtoms = new Set(parseAtomList(operator.notation));
+  const atoms = parseAtomList(resolveOperatorNotation(operator.notation));
+  if (atoms.length > 0 && getUnknownAtoms(atoms).length > 0) {
+    const serialized = serializeOperatorSpec(operator);
+    return `${operator.enabled ? '' : '!'}${serialized}`;
+  }
+
+  const selectedAtoms = new Set(atoms);
   OMNI_ATOMS.forEach((atom, index) => {
     if (selectedAtoms.has(atom)) {
       atomMask += 2 ** index;
@@ -739,8 +745,6 @@ function parseCompactOperator(token: string): OperatorState | null {
       atoms.push(atom);
     }
   });
-
-  if (atoms.length === 0) return null;
 
   const params = paramRaw && paramRaw.length === 6
     ? {
@@ -887,6 +891,22 @@ function parseCompactStackItem(token: string): StackItemState | null {
   }
 
   return parseCompactOperator(token);
+}
+
+function collapseRedundantEmptyOperators(items: StackItemState[]) {
+  let hasEmptyOperator = false;
+  return items.filter((item) => {
+    if (!isOperatorStackItem(item) || resolveOperatorNotation(item.notation).trim() !== '') {
+      return true;
+    }
+
+    if (hasEmptyOperator) {
+      return false;
+    }
+
+    hasEmptyOperator = true;
+    return true;
+  });
 }
 
 function createOperator(notation: string, enabled = true, overrides: Partial<OperatorSpec> = {}): OperatorState {
@@ -1074,16 +1094,14 @@ function buildAppSearchParams(state: {
 }
 
 function parseOperatorsFromUrlParam(urlOps: string): StackItemState[] {
-  const compactEntries = urlOps.split(';').filter(Boolean);
-  const compactOperatorPattern = /^!?(?:[0-9a-z]+(?:\.[0-9a-z]{6})?(?:~f[srv][elv][01][0-9a-z]{2}[01]?)?|d[stp]\.[0-9a-z]{2}[xyz]|c[apw](?:\.[a-z0-9]+)+)$/i;
-  if (compactEntries.length > 0 && compactEntries.every((entry) => compactOperatorPattern.test(entry))) {
-    const parsedCompact = compactEntries
-      .map(parseCompactStackItem)
-      .filter((operator): operator is StackItemState => operator !== null);
-    if (parsedCompact.length > 0) {
-      return parsedCompact;
-    }
-  }
+  const compactOperatorPattern = /^!?(?:[0-9a-z]+(?:\.[0-9a-z]{6})?(?:~f[srv][elv][01][0-9a-z]{2}[01]?)?(?:\|[cn])?|d[stpqkzr](?:\.[a-z0-9]+)*|c[apw](?:\.[a-z0-9]+)+)$/i;
+  const parseLegacyEntry = (entry: string) => {
+    const decoded = decodeURIComponent(entry);
+    const isEnabled = !decoded.startsWith('!');
+    const serialized = isEnabled ? decoded : decoded.substring(1);
+    const spec = parseOperatorSpec(serialized);
+    return createOperator(spec.notation, isEnabled, spec);
+  };
 
   const entries = urlOps.includes(';')
     ? urlOps.split(';').filter(Boolean)
@@ -1112,13 +1130,12 @@ function parseOperatorsFromUrlParam(urlOps: string): StackItemState[] {
         return grouped;
       })();
 
-  return entries.map((entry) => {
-    const decoded = decodeURIComponent(entry);
-    const isEnabled = !decoded.startsWith('!');
-    const serialized = isEnabled ? decoded : decoded.substring(1);
-    const spec = parseOperatorSpec(serialized);
-    return createOperator(spec.notation, isEnabled, spec);
-  });
+  return collapseRedundantEmptyOperators(entries.map((entry) => {
+    if (compactOperatorPattern.test(entry)) {
+      return parseCompactStackItem(entry) ?? parseLegacyEntry(entry);
+    }
+    return parseLegacyEntry(entry);
+  }));
 }
 
 export default function App() {
