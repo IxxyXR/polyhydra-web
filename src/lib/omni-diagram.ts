@@ -241,6 +241,12 @@ const taperingLinePath = (interior: Point, outside: Point, strokeWidth: number, 
 
 const EMPTY_DIAGRAM_TYPES = ['V', 'E', 'F', 've', 'vf', 'fe'] as const;
 
+const atomKey = (atom: string) => {
+  const [rawA, rawB] = atom.split('-').map((part) => part.trim());
+  if (!rawA || !rawB) return atom.trim();
+  return rawA.toUpperCase() > rawB.toUpperCase() ? `${rawB}-${rawA}` : `${rawA}-${rawB}`;
+};
+
 const renderPreviewSegments = (previewAtom: string, vfPts?: Point[], fePts?: Point[], existingSegments: Segment[] = []): string => {
   const previewData = createData(previewAtom, vfPts, fePts);
   const existingKeys = new Set(existingSegments.map((s) => `${pointKey(s.a)}|${pointKey(s.b)}`));
@@ -259,6 +265,29 @@ const renderPreviewSegments = (previewAtom: string, vfPts?: Point[], fePts?: Poi
       }
     } else {
       out += `<line x1="${segment.a[0]}" y1="${segment.a[1]}" x2="${segment.b[0]}" y2="${segment.b[1]}" stroke="#fbbf24" stroke-width="${LINE_WIDTH}" stroke-dasharray="0.05 0.035" opacity="0.75"/>`;
+    }
+  }
+  return out;
+};
+
+const renderRemovalSegments = (previewAtom: string, vfPts: Point[] | undefined, fePts: Point[] | undefined, existingSegments: Segment[]): string => {
+  const previewData = createData(previewAtom, vfPts, fePts);
+  const existingKeys = new Set(existingSegments.map((s) => `${pointKey(s.a)}|${pointKey(s.b)}`));
+  let out = '';
+  for (const segment of previewData.segments) {
+    const key = `${pointKey(segment.a)}|${pointKey(segment.b)}`;
+    if (!existingKeys.has(key)) continue;
+    const aOutside = isOutsidePoint(segment.a);
+    const bOutside = isOutsidePoint(segment.b);
+    if (aOutside || bOutside) {
+      const interior = aOutside ? segment.b : segment.a;
+      const outside = aOutside ? segment.a : segment.b;
+      const polygon = taperingLinePath(interior, outside, LINE_WIDTH);
+      if (polygon) {
+        out += `<polygon points="${polygon}" fill="#c2410c" stroke="none" opacity="0.82"/>`;
+      }
+    } else {
+      out += `<line x1="${segment.a[0]}" y1="${segment.a[1]}" x2="${segment.b[0]}" y2="${segment.b[1]}" stroke="#c2410c" stroke-width="${LINE_WIDTH * 1.15}" stroke-dasharray="0.055 0.035" stroke-linecap="round" opacity="0.92"/>`;
     }
   }
   return out;
@@ -283,7 +312,8 @@ export function createEmptyDiagramSvg(previewAtom: string | null = null): string
 }
 
 export function createOmniOperatorDiagramSvg(notation: string, previewAtom: string | null = null): string | null {
-  const cleaned = notation.split(',').map((part) => part.trim()).filter(Boolean).join(',');
+  const cleanedAtoms = notation.split(',').map((part) => part.trim()).filter(Boolean);
+  const cleaned = cleanedAtoms.join(',');
   if (!cleaned) {
     return null;
   }
@@ -314,6 +344,10 @@ export function createOmniOperatorDiagramSvg(notation: string, previewAtom: stri
     } else {
       svg += `<line x1="${segment.a[0]}" y1="${segment.a[1]}" x2="${segment.b[0]}" y2="${segment.b[1]}" stroke="#f5f5f5" stroke-width="${LINE_WIDTH}"/>`;
     }
+  }
+
+  if (previewAtom && new Set(cleanedAtoms.map(atomKey)).has(atomKey(previewAtom))) {
+    svg += renderRemovalSegments(previewAtom, vfPts, fePts, segments);
   }
 
   for (const { point: [x, y], type } of points) {
