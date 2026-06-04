@@ -3804,9 +3804,9 @@ export default function App() {
                                                   }}
                                                   transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
                                                   className="rounded-full border px-2 py-1 font-semibold uppercase tracking-widest"
-                                                  title="Choose more atoms to complete this operator"
+                                                  title="Degree 2 operator"
                                                 >
-                                                  Incomplete
+                                                  Degree 2
                                                 </motion.span>
                                               ) : (
                                                 <span
