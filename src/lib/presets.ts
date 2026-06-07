@@ -33,7 +33,6 @@ export const EXAMPLE_PRESETS: AppPreset[] = [
   { name: 'Crystal Web', params: 'm=3&rf=0.6666666666666667&o=cp.Cn.a.0g.1.2.08.08.1e.1e.0p.1e.1e.0p.0p.1.xz.1.01.edge.3.1c.1e.1e.1e.1e.1e.0m%3B1d91c%3Bds.0py' },
   { name: 'Ember Tetra', params: 'm=3&rt=0&t=t&r=4&c=6&p=midnight&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&gd=10&gv=4&go=-0.59&o=18ykg.1a0n16' },
   { name: 'Bauhaus Block', params: 'm=3&rt=1&t=p&s=4&p=bauhaus&po=12304567&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&o=6o74.141n15%3B6cg' },
-  { name: 'Gyro Lantern', params: 'm=3&rt=1e&po=04352617&rd=5&rb=sides&rf=0.6666666666666667&o=5fy80%3Bdp.2ry%3Bds.0ey%3Bdt.0vy' },
   { name: 'Iznik Spinner', params: 'm=3&rt=1e&rs=6&bx=5&by=5&bz=5&ch=6&s=2&p=isthmus&po=57342106&rc=6&rd=4&rb=sides&rf=0.6666666666666667&gv=2&go=1.09&gn=0.06&gx=0.43&o=48em8.0c1r0y%3Bdp.2ry' },
   { name: 'Whirling Gourd', params: 'm=3&rt=1g&rf=0.6666666666666667&o=cng%3Bdp.2ry' },
   { name: 'Mint Drum', params: 'm=3&rt=1h&rs=6&t=p&s=4&p=desert&po=67123504&cm=s&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&o=6qayo' },
