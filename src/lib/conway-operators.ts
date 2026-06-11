@@ -2312,6 +2312,26 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
   return false;
 }
 
+// Tests the operator at neutral params on a small square-grid patch.
+// A convex quad patch at tVe=tVf=tFe=0.5 is the maximally-favorable geometry;
+// any crossings here are structural (topology of the atom set), not parameter-induced.
+export function operatorHasInherentCrossings(notation: string): boolean {
+  if (!notation.trim()) return false;
+  const n = 4;
+  const vertices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i) / n;
+    vertices.push(Math.cos(a), Math.sin(a), 0);
+  }
+  const patch: Mesh = { vertices, faces: [Array.from({ length: n }, (_, i) => i)] };
+  try {
+    const result = applyOmni(patch, notation, 0.5, 0.5, 0.5);
+    return hasMeshEdgeCrossings(result);
+  } catch {
+    return false;
+  }
+}
+
 export function ortho(mesh: Mesh): Mesh {
   return applyOmni(mesh, OMNI_PRESETS.Ortho);
 }

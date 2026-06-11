@@ -59,6 +59,7 @@ import {
   serializeOperatorSpec,
   applyOperator,
   hasMeshEdgeCrossings,
+  operatorHasInherentCrossings,
   normalizeFaceFilter,
   operatorSupportsFaceFilter,
   OperatorSpec,
@@ -1973,6 +1974,14 @@ export default function App() {
       return false;
     }
   }, [operators, tilingType, selectedOperatorId]);
+
+  const selectedOperatorHasInherentCrossings = useMemo(() => {
+    if (!selectedOperatorId) return false;
+    const op = operators.find(o => o.id === selectedOperatorId);
+    if (!op || !isOperatorStackItem(op) || !op.enabled) return false;
+    return operatorHasInherentCrossings(op.notation);
+  }, [operators, selectedOperatorId]);
+
   const isMultigrid = tilingType === 'multigrid';
   const generationOptions: TilingGenerationOptions = useMemo(() => ({
     multigrid: multigridSettings,
@@ -3855,6 +3864,14 @@ export default function App() {
                                                   {selectedMatchingPresetName}
                                                 </span>
                                               )}
+                                              {selectedOperatorHasInherentCrossings && (
+                                                <span
+                                                  className="rounded-full border border-red-800/50 bg-red-950/50 px-2 py-1 font-semibold text-red-300 uppercase tracking-widest"
+                                                  title="This operator's atom connections always produce crossed edges regardless of input geometry or slider values"
+                                                >
+                                                  ⚠ Always crossing
+                                                </span>
+                                              )}
                                               {orderedSelectedAtoms.length > 0 && (
                                                 <span className="font-mono text-neutral-500">
                                                   {orderedSelectedAtoms.length} atoms
@@ -4095,7 +4112,7 @@ export default function App() {
                                       )}
 
                                       <AnimatePresence>
-                                        {selectedOperatorHasCrossings && (visibility.showP1 || visibility.showP2 || visibility.showP3) && (
+                                        {selectedOperatorHasCrossings && !selectedOperatorHasInherentCrossings && (visibility.showP1 || visibility.showP2 || visibility.showP3) && (
                                           <motion.div
                                             key="crossing-warning"
                                             initial={{ opacity: 0, height: 0 }}
