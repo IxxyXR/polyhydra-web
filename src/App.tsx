@@ -60,6 +60,7 @@ import {
   applyOperator,
   hasMeshEdgeCrossings,
   operatorHasInherentCrossings,
+  getInherentCrossingCulprits,
   getOperatorParamRanges,
   normalizeFaceFilter,
   operatorSupportsFaceFilter,
@@ -1988,6 +1989,26 @@ export default function App() {
   const selectedOperatorHasInherentCrossings = selectedOperatorCrossingAnalysis?.inherent ?? false;
   const selectedOperatorParamRanges = selectedOperatorCrossingAnalysis?.ranges ?? null;
 
+  const selectedOperatorCrossingCulprits = useMemo(() => {
+    if (!selectedOperatorHasInherentCrossings) return [];
+    return getInherentCrossingCulprits(selectedOperatorNotation);
+  }, [selectedOperatorHasInherentCrossings, selectedOperatorNotation]);
+
+  // Atoms which, added to the current selection, would make the operator
+  // always-crossing — so the matrix can warn before the state is entered.
+  const atomsEnteringCrossingState = useMemo(() => {
+    const result = new Set<string>();
+    if (!selectedOperatorEnabled) return result;
+    const selected = parseAtomList(selectedOperatorNotation);
+    for (const atom of OMNI_ATOMS) {
+      if (selected.includes(atom)) continue;
+      if (operatorHasInherentCrossings(joinAtomList(orderAtoms(new Set([...selected, atom]))))) {
+        result.add(atom);
+      }
+    }
+    return result;
+  }, [selectedOperatorNotation, selectedOperatorEnabled]);
+
   const isMultigrid = tilingType === 'multigrid';
   const generationOptions: TilingGenerationOptions = useMemo(() => ({
     multigrid: multigridSettings,
@@ -3880,6 +3901,11 @@ export default function App() {
                                                   title="This operator's atom connections always produce crossed edges regardless of input geometry or slider values"
                                                 >
                                                   ⚠ Always crossing
+                                                  {selectedOperatorCrossingCulprits.length > 0 && (
+                                                    <span className="ml-1 normal-case tracking-normal font-mono text-red-200/90">
+                                                      — remove {selectedOperatorCrossingCulprits.join(' or ')}
+                                                    </span>
+                                                  )}
                                                 </span>
                                               )}
                                               {orderedSelectedAtoms.length > 0 && (
@@ -3931,15 +3957,21 @@ export default function App() {
                                                 }
 
                                                 const isSelected = uniqueSelectedAtoms.includes(atom);
+                                                const isCulprit = isSelected && selectedOperatorCrossingCulprits.includes(atom);
+                                                const wouldAlwaysCross = !isSelected && atomsEnteringCrossingState.has(atom);
                                                 const isCompatible = isSelected || isCompatibleSubset(uniqueSelectedAtoms.filter((selected) => selected !== atom), atom);
-                                                const isDotHighlighted = !isSelected && isCompatible && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
-                                                const baseClass = isSelected
-                                                  ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-900/30'
-                                                  : isDotHighlighted
-                                                    ? 'bg-amber-500/70 border-amber-400/80 animate-pulse'
-                                                    : isCompatible
-                                                      ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
-                                                      : 'border-neutral-700/55 bg-neutral-800/35 opacity-60 hover:border-neutral-600/75 hover:bg-neutral-800/55 hover:opacity-80';
+                                                const isDotHighlighted = !isSelected && isCompatible && !wouldAlwaysCross && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
+                                                const baseClass = isCulprit
+                                                  ? 'bg-red-600 border-red-400 shadow-sm shadow-red-900/40 animate-pulse'
+                                                  : isSelected
+                                                    ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-900/30'
+                                                    : isDotHighlighted
+                                                      ? 'bg-amber-500/70 border-amber-400/80 animate-pulse'
+                                                      : wouldAlwaysCross
+                                                        ? 'border-red-800/70 bg-red-950/50 opacity-80 hover:border-red-600/80 hover:bg-red-900/50'
+                                                        : isCompatible
+                                                          ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
+                                                          : 'border-neutral-700/55 bg-neutral-800/35 opacity-60 hover:border-neutral-600/75 hover:bg-neutral-800/55 hover:opacity-80';
 
                                                 return (
                                                   <button
@@ -3949,7 +3981,11 @@ export default function App() {
                                                     onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
                                                     onClick={() => { setDiagramOrGridClicked(true); toggleGridAtom(atom); }}
                                                     className={`aspect-square rounded-md border transition-colors ${baseClass}`}
-                                                    title={atom}
+                                                    title={isCulprit
+                                                      ? `${atom} — involved in the crossing; remove to fix`
+                                                      : wouldAlwaysCross
+                                                        ? `${atom} — adding this would make edges always cross`
+                                                        : atom}
                                                   />
                                                 );
                                               })}
@@ -4200,6 +4236,8 @@ export default function App() {
                                                       if (!atom || seen.has(atom)) return [];
                                                       seen.add(atom);
                                                       const alreadySelected = uniqueSelectedAtoms.includes(atom);
+                                                      const culprit = alreadySelected && selectedOperatorCrossingCulprits.includes(atom);
+                                                      const entersCrossing = !alreadySelected && atomsEnteringCrossingState.has(atom);
                                                       const compatible = alreadySelected || isCompatibleSubset(uniqueSelectedAtoms.filter((a) => a !== atom), atom);
                                                       return [(
                                                         <button
@@ -4208,15 +4246,25 @@ export default function App() {
                                                           onMouseLeave={() => setHoveredGridAtom((current) => current === atom ? null : current)}
                                                           onClick={() => { toggleGridAtom(atom); setDotPopup(null); setHoveredGridAtom(null); }}
                                                           className={`w-full rounded-lg px-2 py-1.5 text-left text-[10px] font-mono transition-colors ${
-                                                            alreadySelected
-                                                              ? 'bg-blue-600/80 text-white'
-                                                              : compatible
-                                                                ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
-                                                                : 'border border-neutral-700/55 bg-neutral-800/30 text-neutral-500 opacity-70 hover:border-neutral-600/75 hover:bg-neutral-800/50 hover:text-neutral-400 hover:opacity-85'
+                                                            culprit
+                                                              ? 'bg-red-600/80 text-white'
+                                                              : alreadySelected
+                                                                ? 'bg-blue-600/80 text-white'
+                                                                : entersCrossing
+                                                                  ? 'border border-red-800/70 bg-red-950/40 text-red-300 hover:border-red-600/80 hover:bg-red-900/40'
+                                                                  : compatible
+                                                                    ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
+                                                                    : 'border border-neutral-700/55 bg-neutral-800/30 text-neutral-500 opacity-70 hover:border-neutral-600/75 hover:bg-neutral-800/50 hover:text-neutral-400 hover:opacity-85'
                                                           }`}
+                                                          title={culprit
+                                                            ? `${atom} — involved in the crossing; remove to fix`
+                                                            : entersCrossing
+                                                              ? `${atom} — adding this would make edges always cross`
+                                                              : atom}
                                                         >
                                                           <span className="font-mono text-neutral-500 text-[9px]">{atom}</span>
                                                           {alreadySelected && <span className="ml-1 text-blue-200">✓</span>}
+                                                          {culprit && <span className="ml-1 text-red-200">⚠</span>}
                                                         </button>
                                                       )];
                                                     })

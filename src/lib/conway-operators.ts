@@ -2414,6 +2414,17 @@ export function getOperatorParamRanges(notation: string): {
   };
 }
 
+// For an always-crossing configuration, returns the atoms whose individual
+// removal clears the state — the candidates to remove to fix it. Empty when
+// no single removal helps (the crossing comes from a multi-atom interaction).
+export function getInherentCrossingCulprits(notation: string): string[] {
+  const atoms = parseAtomList(notation);
+  if (atoms.length <= 1) return atoms;
+  return atoms.filter((_, index) =>
+    !operatorHasInherentCrossings(atoms.filter((__, j) => j !== index).join(','))
+  );
+}
+
 export function ortho(mesh: Mesh): Mesh {
   return applyOmni(mesh, OMNI_PRESETS.Ortho);
 }
