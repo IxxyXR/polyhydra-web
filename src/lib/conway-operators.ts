@@ -2303,9 +2303,12 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
       const d3 = cross2d(p2x - p1x, p2y - p1y, p3x - p1x, p3y - p1y);
       const d4 = cross2d(p2x - p1x, p2y - p1y, p4x - p1x, p4y - p1y);
 
-      // Proper crossing: endpoints strictly straddle each other
-      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+      // Proper crossing: endpoints strictly straddle each other. The
+      // tolerance matters: collinear but disjoint segments produce cross
+      // products of ±1e-19 float noise whose signs are effectively random,
+      // so a strict sign test reports phantom crossings.
+      if (((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
+          ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS))) {
         return true;
       }
 
@@ -2337,10 +2340,19 @@ function makeCanonicalQuad(): Mesh {
   return { vertices, faces: [[0, 1, 2, 3]] };
 }
 
+// Atoms referencing neighbouring faces (F!, vf!, fe!) collapse to their
+// own-face equivalents on an isolated patch (buildFacePoints falls back to
+// `pair?.face ?? face`), so a canonical-quad probe would test a different
+// operator than the one applied to a real tiling. Decline to analyse these
+// rather than report a verdict about the wrong geometry.
+function notationProbeableOnIsolatedPatch(notation: string): boolean {
+  return !notation.includes('!');
+}
+
 // Returns true only if both sides of the t=0.5 boundary produce crossings,
 // meaning no slider adjustment can fix it (structural/topological problem).
 export function operatorHasInherentCrossings(notation: string): boolean {
-  if (!notation.trim()) return false;
+  if (!notation.trim() || !notationProbeableOnIsolatedPatch(notation)) return false;
   const patch = makeCanonicalQuad();
   for (const t of [0.49, 0.51]) {
     try {
@@ -2352,16 +2364,25 @@ export function operatorHasInherentCrossings(notation: string): boolean {
   return true;
 }
 
-// For operators where crossings are parameter-induced, returns the valid [min, max]
-// range for each slider. The valid interval is always one of the two halves of [0,1]
-// split at 0.5 — determined by straddling that boundary at 0.49 and 0.51.
+// For operators whose crossings are trivially fixable by slider restriction,
+// returns the valid [min, max] range for each slider — one of the two halves
+// of [0, 1] split at 0.5. Operators outside that class (no 0.5 transition,
+// or a second geometry-dependent transition inside the candidate half, e.g.
+// ve1-ve1,ve-vf,vf-vf which also crosses for tVf < 0.25) are left
+// unconstrained; the live crossing warning covers them.
+// The returned bounds stop at 0.49/0.51 rather than 0.5 because the
+// midpoint itself is the degenerate position where points coincide and
+// edges overlap — for a third of restrictable operators t=0.5 is itself
+// a crossing configuration.
 export function getOperatorParamRanges(notation: string): {
   tVe: [number, number];
   tVf: [number, number];
   tFe: [number, number];
 } {
   const full: [number, number] = [0.01, 0.99];
-  if (!notation.trim()) return { tVe: full, tVf: full, tFe: full };
+  if (!notation.trim() || !notationProbeableOnIsolatedPatch(notation)) {
+    return { tVe: full, tVf: full, tFe: full };
+  }
 
   const patch = makeCanonicalQuad();
 
@@ -2377,9 +2398,13 @@ export function getOperatorParamRanges(notation: string): {
       }
     };
     const lowerOk = test(0.49), upperOk = test(0.51);
-    if (lowerOk && !upperOk) return [0.01, 0.5];
-    if (!lowerOk && upperOk) return [0.5, 0.99];
-    return full;
+    if (lowerOk === upperOk) return full;
+    const candidate: [number, number] = lowerOk ? [0.01, 0.49] : [0.51, 0.99];
+    // A clean probe next to the 0.5 boundary doesn't prove the whole half is
+    // clean: only restrict once interior probes confirm it.
+    const interiorProbes = lowerOk ? [0.05, 0.15, 0.25, 0.4] : [0.6, 0.75, 0.85, 0.95];
+    if (!interiorProbes.every(test)) return full;
+    return candidate;
   };
 
   return {

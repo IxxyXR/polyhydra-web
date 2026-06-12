@@ -70,7 +70,7 @@ for (const notation of notations) {
   const ranges = getOperatorParamRanges(notation);
   for (let p = 0 as 0 | 1 | 2; p <= 2; p++) {
     const [lo, hi] = ranges[PARAMS[p]];
-    const isHalf = (lo === 0.01 && hi === 0.5) || (lo === 0.5 && hi === 0.99);
+    const isHalf = (lo === 0.01 && hi === 0.49) || (lo === 0.51 && hi === 0.99);
     if (!isHalf) continue;
     restrictedSweeps++;
     const at = (t: number): [number, number, number] =>
@@ -85,9 +85,11 @@ for (const notation of notations) {
       interiorViolations.push(
         `[${bang}] ${notation} ${PARAMS[p]}: allowed [${lo},${hi}] but crossings at t=${bad.slice(0, 8).join(',')}${bad.length > 8 ? `… (${bad.length} samples)` : ''}`);
     }
-    // the 0.5 endpoint itself (reachable by the slider)
-    if (clean(notation, ...at(0.5)) === false) {
-      endpointViolations.push(`[${bang}] ${notation} ${PARAMS[p]}: allowed [${lo},${hi}], crossing at the t=0.5 endpoint`);
+    // both endpoints are reachable by the slider — verify they are clean
+    for (const t of [lo, hi]) {
+      if (clean(notation, ...at(t)) === false) {
+        endpointViolations.push(`[${bang}] ${notation} ${PARAMS[p]}: allowed [${lo},${hi}], crossing at the t=${t} endpoint`);
+      }
     }
   }
 }

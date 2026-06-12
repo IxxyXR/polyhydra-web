@@ -1976,20 +1976,17 @@ export default function App() {
     }
   }, [operators, tilingType, selectedOperatorId]);
 
-  const selectedOperatorHasInherentCrossings = useMemo(() => {
-    if (!selectedOperatorId) return false;
-    const op = operators.find(o => o.id === selectedOperatorId);
-    if (!op || !isOperatorStackItem(op) || !op.enabled) return false;
-    return operatorHasInherentCrossings(op.notation);
-  }, [operators, selectedOperatorId]);
-
-  const selectedOperatorParamRanges = useMemo(() => {
-    if (!selectedOperatorId) return null;
-    const op = operators.find(o => o.id === selectedOperatorId);
-    if (!op || !isOperatorStackItem(op) || !op.enabled) return null;
-    if (operatorHasInherentCrossings(op.notation)) return null;
-    return getOperatorParamRanges(op.notation);
-  }, [operators, selectedOperatorId]);
+  const selectedOperatorEnabled = selectedOperator?.enabled ?? false;
+  const selectedOperatorCrossingAnalysis = useMemo(() => {
+    if (!selectedOperatorEnabled || !selectedOperatorNotation) return null;
+    const inherent = operatorHasInherentCrossings(selectedOperatorNotation);
+    return {
+      inherent,
+      ranges: inherent ? null : getOperatorParamRanges(selectedOperatorNotation),
+    };
+  }, [selectedOperatorNotation, selectedOperatorEnabled]);
+  const selectedOperatorHasInherentCrossings = selectedOperatorCrossingAnalysis?.inherent ?? false;
+  const selectedOperatorParamRanges = selectedOperatorCrossingAnalysis?.ranges ?? null;
 
   const isMultigrid = tilingType === 'multigrid';
   const generationOptions: TilingGenerationOptions = useMemo(() => ({
@@ -3640,6 +3637,10 @@ export default function App() {
                               if (!visibility.showP1 && !visibility.showP2 && !visibility.showP3 && !isSelectedOperator) {
                                 return null;
                               }
+                              const paramRanges = isSelectedOperator ? selectedOperatorParamRanges : null;
+                              const [tVeMin, tVeMax] = paramRanges?.tVe ?? [0.01, 0.99];
+                              const [tVfMin, tVfMax] = paramRanges?.tVf ?? [0.01, 0.99];
+                              const [tFeMin, tFeMax] = paramRanges?.tFe ?? [0.01, 0.99];
 
                               return (
                                 <div
@@ -4044,8 +4045,8 @@ export default function App() {
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">ve</span>
                                             <SliderValueField
                                               value={op.tVe}
-                                              min={selectedOperatorParamRanges?.tVe[0] ?? 0.01}
-                                              max={selectedOperatorParamRanges?.tVe[1] ?? 0.99}
+                                              min={tVeMin}
+                                              max={tVeMax}
                                               step={0.01}
                                               precision={2}
                                               onValueCommit={(value) => {
@@ -4056,8 +4057,8 @@ export default function App() {
                                           </div>
                                           <input
                                             type="range"
-                                            min={selectedOperatorParamRanges?.tVe[0] ?? 0.01}
-                                            max={selectedOperatorParamRanges?.tVe[1] ?? 0.99}
+                                            min={tVeMin}
+                                            max={tVeMax}
                                             step="0.01"
                                             value={op.tVe}
                                             onChange={(e) => { setSliderMoved(true); updateOperatorParams(op.id, 'tVe', e.target.value); }}
@@ -4071,8 +4072,8 @@ export default function App() {
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">vf</span>
                                             <SliderValueField
                                               value={op.tVf}
-                                              min={selectedOperatorParamRanges?.tVf[0] ?? 0.01}
-                                              max={selectedOperatorParamRanges?.tVf[1] ?? 0.99}
+                                              min={tVfMin}
+                                              max={tVfMax}
                                               step={0.01}
                                               precision={2}
                                               onValueCommit={(value) => {
@@ -4083,8 +4084,8 @@ export default function App() {
                                           </div>
                                           <input
                                             type="range"
-                                            min={selectedOperatorParamRanges?.tVf[0] ?? 0.01}
-                                            max={selectedOperatorParamRanges?.tVf[1] ?? 0.99}
+                                            min={tVfMin}
+                                            max={tVfMax}
                                             step="0.01"
                                             value={op.tVf}
                                             onChange={(e) => { setSliderMoved(true); updateOperatorParams(op.id, 'tVf', e.target.value); }}
@@ -4098,8 +4099,8 @@ export default function App() {
                                             <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">fe</span>
                                             <SliderValueField
                                               value={op.tFe}
-                                              min={selectedOperatorParamRanges?.tFe[0] ?? 0.01}
-                                              max={selectedOperatorParamRanges?.tFe[1] ?? 0.99}
+                                              min={tFeMin}
+                                              max={tFeMax}
                                               step={0.01}
                                               precision={2}
                                               onValueCommit={(value) => {
@@ -4110,8 +4111,8 @@ export default function App() {
                                           </div>
                                           <input
                                             type="range"
-                                            min={selectedOperatorParamRanges?.tFe[0] ?? 0.01}
-                                            max={selectedOperatorParamRanges?.tFe[1] ?? 0.99}
+                                            min={tFeMin}
+                                            max={tFeMax}
                                             step="0.01"
                                             value={op.tFe}
                                             onChange={(e) => { setSliderMoved(true); updateOperatorParams(op.id, 'tFe', e.target.value); }}

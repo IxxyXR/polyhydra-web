@@ -72,3 +72,42 @@ The original `hasMeshEdgeCrossings` used strict-sign cross products, which retur
 - "⚠ Always crossing" badge in diagram status area
 - "Adjust sliders to fix" warning gated on `!selectedOperatorHasInherentCrossings`
 - Slider `min`/`max` props driven by `selectedOperatorParamRanges` (falls back to `[0.01, 0.99]` when null)
+
+## Revision: verified class membership (review follow-up)
+
+An exhaustive sweep of `OMNI_VALID_OPERATORS` on the canonical quad
+(`sweep-check.mts`) showed the original assumptions held for most but not
+all operators: of 89 half-interval restrictions issued, 83 were correct,
+6 had a second crossing transition *inside* the chosen half (e.g.
+`ve1-ve1,ve-vf,vf-vf` also crosses for tVf < 0.25 because the vf chord
+sweeps past the stationary ve1-ve1 segment — a transition whose position
+depends on tVe, not on the 0.5 symmetry), and 34 included a t=0.5 endpoint
+that is itself a crossing configuration.
+
+Changes:
+
+1. **Membership is verified, not assumed.** After the 0.49/0.51 probes pick
+   a candidate half, four interior probes must also be clean before a
+   restriction is issued. Operators with a second transition fall back to
+   unconstrained — the live crossing warning covers them. The trivially
+   fixable class keeps its fast path; membership costs at most ~6 extra
+   `applyOmni` calls on a single quad, once per notation change.
+2. **Range endpoints are 0.49/0.51, not 0.5.** The midpoint is the
+   degenerate position where points coincide; the slider can no longer
+   reach it.
+3. **Bang-atom notations (`F!`, `vf!`, `fe!`) are not analysed.** On an
+   isolated patch `buildFacePoints` falls back to `pair?.face ?? face`, so
+   these atoms collapse to their own-face equivalents and any verdict would
+   describe a different operator. Both probe functions return their neutral
+   result for such notations.
+4. **The proper-crossing straddle test uses an epsilon.** Collinear but
+   disjoint segments produce cross products of ±1e-19 float noise with
+   random signs; the previous strict sign test reported phantom crossings
+   (e.g. `E-E,E-fe,F-fe,fe-fe` at t≈0.08/0.22/0.6).
+5. **App.tsx memos are keyed on the resolved notation** (single combined
+   memo). This also fixes alias-named operators ("Ortho" etc.), whose raw
+   notation previously failed to parse inside the probes, silently
+   disabling the analysis.
+
+`sweep-check.mts` is the regression check: it must report zero interior,
+zero endpoint, and zero inherent-false-positive violations.
