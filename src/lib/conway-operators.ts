@@ -2328,19 +2328,22 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
   return false;
 }
 
+function makeCanonicalQuad(): Mesh {
+  const vertices: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a = (2 * Math.PI * i) / 4;
+    vertices.push(Math.cos(a), Math.sin(a), 0);
+  }
+  return { vertices, faces: [[0, 1, 2, 3]] };
+}
+
 // Returns true only if the operator produces crossings for every sampled parameter
 // value — meaning no slider adjustment can fix it (structural/topological problem).
 // Sampling at 0.1 steps is fine-grained enough to catch any resolvable operator:
 // a delta of 0.1 is below the geometry-dependence threshold for convex quads.
 export function operatorHasInherentCrossings(notation: string): boolean {
   if (!notation.trim()) return false;
-  const n = 4;
-  const vertices: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const a = (2 * Math.PI * i) / n;
-    vertices.push(Math.cos(a), Math.sin(a), 0);
-  }
-  const patch: Mesh = { vertices, faces: [Array.from({ length: n }, (_, i) => i)] };
+  const patch = makeCanonicalQuad();
   for (let step = 1; step <= 9; step++) {
     const t = step * 0.1;
     try {
@@ -2351,6 +2354,44 @@ export function operatorHasInherentCrossings(notation: string): boolean {
     }
   }
   return true;
+}
+
+// For operators where crossings are parameter-induced, returns the valid [min, max]
+// range for each slider. The valid interval is always one of the two halves of [0,1]
+// split at 0.5 — determined by testing at 0.25 and 0.75 on a canonical convex quad.
+export function getOperatorParamRanges(notation: string): {
+  tVe: [number, number];
+  tVf: [number, number];
+  tFe: [number, number];
+} {
+  const full: [number, number] = [0.01, 0.99];
+  if (!notation.trim()) return { tVe: full, tVf: full, tFe: full };
+
+  const patch = makeCanonicalQuad();
+
+  const halfRange = (paramIndex: 0 | 1 | 2): [number, number] => {
+    const test = (t: number): boolean => {
+      const tVe = paramIndex === 0 ? t : 0.5;
+      const tVf = paramIndex === 1 ? t : 0.5;
+      const tFe = paramIndex === 2 ? t : 0.5;
+      try {
+        return !hasMeshEdgeCrossings(applyOmni(patch, notation, tVe, tVf, tFe));
+      } catch {
+        return true;
+      }
+    };
+    const lowerOk = test(0.25);
+    const upperOk = test(0.75);
+    if (lowerOk && !upperOk) return [0.01, 0.5];
+    if (!lowerOk && upperOk) return [0.5, 0.99];
+    return full;
+  };
+
+  return {
+    tVe: halfRange(0),
+    tVf: halfRange(1),
+    tFe: halfRange(2),
+  };
 }
 
 export function ortho(mesh: Mesh): Mesh {
