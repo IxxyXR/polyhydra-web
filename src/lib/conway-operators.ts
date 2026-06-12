@@ -2347,30 +2347,44 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
   return segmentListHasCrossings(segments);
 }
 
-function makeCanonicalQuad(): Mesh {
-  const vertices: number[] = [];
-  for (let i = 0; i < 4; i++) {
-    const a = (2 * Math.PI * i) / 4;
-    vertices.push(Math.cos(a), Math.sin(a), 0);
+// The canonical probe geometry is a 5×5 grid of unit quads. Operators are
+// probed on the central face and its ring-1 neighbours: every one of those
+// nine faces has a complete set of real neighbours, so F!/vf!/fe! atoms
+// resolve to genuine adjacent-face geometry (on an isolated face they
+// collapse to own-face equivalents via the `pair?.face ?? face` fallback),
+// and edges that only close into loops across faces (e.g. F-V) are present.
+const PATCH_SIZE = 5;
+const PATCH_PROBE_FACE_IDS = (() => {
+  const ids: number[] = [];
+  for (let cy = 1; cy <= 3; cy++) {
+    for (let cx = 1; cx <= 3; cx++) ids.push(cy * PATCH_SIZE + cx);
   }
-  return { vertices, faces: [[0, 1, 2, 3]] };
-}
+  return ids;
+})();
 
-// Atoms referencing neighbouring faces (F!, vf!, fe!) collapse to their
-// own-face equivalents on an isolated patch (buildFacePoints falls back to
-// `pair?.face ?? face`), so a canonical-quad probe would test a different
-// operator than the one applied to a real tiling. Decline to analyse these
-// rather than report a verdict about the wrong geometry.
-function notationProbeableOnIsolatedPatch(notation: string): boolean {
-  return !notation.includes('!');
+function makeCanonicalPatch(): Mesh {
+  const vertices: number[] = [];
+  for (let y = 0; y <= PATCH_SIZE; y++) {
+    for (let x = 0; x <= PATCH_SIZE; x++) {
+      vertices.push(x - PATCH_SIZE / 2, y - PATCH_SIZE / 2, 0);
+    }
+  }
+  const v = (x: number, y: number) => y * (PATCH_SIZE + 1) + x;
+  const faces: number[][] = [];
+  for (let cy = 0; cy < PATCH_SIZE; cy++) {
+    for (let cx = 0; cx < PATCH_SIZE; cx++) {
+      faces.push([v(cx, cy), v(cx + 1, cy), v(cx + 1, cy + 1), v(cx, cy + 1)]);
+    }
+  }
+  return { vertices, faces };
 }
 
 // Tests the operator's defined edge set (the raw atom connections) on the
-// canonical quad. This deliberately bypasses applyOmni/buildMeshFromEdges:
+// canonical patch. This deliberately bypasses applyOmni/buildMeshFromEdges:
 // edge sets that don't close into faces produce an empty mesh there, hiding
 // crossings and overlaps that exist among the edges themselves — e.g.
 // E-F,F-fe, whose F-fe edges lie inside the E-F edges by construction.
-function canonicalPatchEdgesCross(notation: string, tVe: number, tVf: number, tFe: number): boolean {
+export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: number, tFe: number): boolean {
   const atoms = parseOperatorNotation(notation);
   if (atoms.length === 0) return false;
 
@@ -2389,14 +2403,22 @@ function canonicalPatchEdgesCross(notation: string, tVe: number, tVf: number, tF
     classesNeeded.add(classB);
   });
 
-  const sourceMesh = buildHalfedgeMesh(makeCanonicalQuad());
+  const sourceMesh = buildHalfedgeMesh(makeCanonicalPatch());
+  const probeFaces = sourceMesh.faces.filter((face) => PATCH_PROBE_FACE_IDS.includes(face.id));
   const cache = new OperatorVertexCache();
   const segments: CrossingSegment[] = [];
-  for (const face of sourceMesh.faces) {
+  // The same edge can be generated from two adjacent probe faces (e.g. a
+  // vf-vf! edge and its mirror); identical id pairs must be deduped or the
+  // duplicate would read as a full collinear overlap of itself.
+  const seen = new Set<string>();
+  for (const face of probeFaces) {
     const edges = buildOperatorEdgesForFace(
       face, atoms, classesNeeded, cache, resolvedTVe, resolvedTVf, resolvedTFe
     );
     for (const edge of edges) {
+      const key = edge.a.id <= edge.b.id ? `${edge.a.id}_${edge.b.id}` : `${edge.b.id}_${edge.a.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       segments.push({
         ax: edge.a.position.x, ay: edge.a.position.y,
         bx: edge.b.position.x, by: edge.b.position.y,
@@ -2407,18 +2429,39 @@ function canonicalPatchEdgesCross(notation: string, tVe: number, tVf: number, tF
   return segmentListHasCrossings(segments);
 }
 
-// Returns true only if both sides of the t=0.5 boundary produce crossings,
+// Returns true only if no probed parameter combination is free of crossings,
 // meaning no slider adjustment can fix it (structural/topological problem).
+// Probes the diagonal first (the common clean case exits after one test),
+// then a coarse 5×5×5 grid: several curated operators (e.g. the vf-vf!
+// family) are only clean away from the diagonal, so diagonal probes alone
+// would mislabel them as unfixable.
+const inherentCrossingCache = new Map<string, boolean>();
+const INHERENT_GRID_VALUES = [0.1, 0.3, 0.5, 0.7, 0.9];
+
 export function operatorHasInherentCrossings(notation: string): boolean {
-  if (!notation.trim() || !notationProbeableOnIsolatedPatch(notation)) return false;
-  for (const t of [0.49, 0.51]) {
+  if (!notation.trim()) return false;
+  const cached = inherentCrossingCache.get(notation);
+  if (cached !== undefined) return cached;
+
+  const verdict = (() => {
     try {
-      if (!canonicalPatchEdgesCross(notation, t, t, t)) return false;
+      for (const t of [0.49, 0.51]) {
+        if (!operatorPatchHasCrossings(notation, t, t, t)) return false;
+      }
+      for (const tVe of INHERENT_GRID_VALUES) {
+        for (const tVf of INHERENT_GRID_VALUES) {
+          for (const tFe of INHERENT_GRID_VALUES) {
+            if (!operatorPatchHasCrossings(notation, tVe, tVf, tFe)) return false;
+          }
+        }
+      }
+      return true;
     } catch {
       return false;
     }
-  }
-  return true;
+  })();
+  inherentCrossingCache.set(notation, verdict);
+  return verdict;
 }
 
 // For operators whose crossings are trivially fixable by slider restriction,
@@ -2437,7 +2480,7 @@ export function getOperatorParamRanges(notation: string): {
   tFe: [number, number];
 } {
   const full: [number, number] = [0.01, 0.99];
-  if (!notation.trim() || !notationProbeableOnIsolatedPatch(notation)) {
+  if (!notation.trim()) {
     return { tVe: full, tVf: full, tFe: full };
   }
 
@@ -2447,7 +2490,7 @@ export function getOperatorParamRanges(notation: string): {
       const tVf = paramIndex === 1 ? t : 0.5;
       const tFe = paramIndex === 2 ? t : 0.5;
       try {
-        return !canonicalPatchEdgesCross(notation, tVe, tVf, tFe);
+        return !operatorPatchHasCrossings(notation, tVe, tVf, tFe);
       } catch {
         return true;
       }

@@ -12,26 +12,15 @@
    2. Whenever operatorHasInherentCrossings flags a notation, scan a coarse
       3D parameter grid for any clean point: finding one = false "inherent". */
 import {
-  applyOmni,
-  hasMeshEdgeCrossings,
   OMNI_VALID_OPERATORS,
   operatorHasInherentCrossings,
+  operatorPatchHasCrossings,
   getOperatorParamRanges,
 } from './src/lib/conway-operators';
 
-function makeCanonicalQuad() {
-  const vertices: number[] = [];
-  for (let i = 0; i < 4; i++) {
-    const a = (2 * Math.PI * i) / 4;
-    vertices.push(Math.cos(a), Math.sin(a), 0);
-  }
-  return { vertices, faces: [[0, 1, 2, 3]] };
-}
-const quad = makeCanonicalQuad();
-
 function clean(notation: string, tVe: number, tVf: number, tFe: number): boolean | 'ERR' {
   try {
-    return !hasMeshEdgeCrossings(applyOmni(quad, notation, tVe, tVf, tFe));
+    return !operatorPatchHasCrossings(notation, tVe, tVf, tFe);
   } catch {
     return 'ERR';
   }
