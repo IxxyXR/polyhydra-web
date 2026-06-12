@@ -2464,6 +2464,76 @@ export function operatorHasInherentCrossings(notation: string): boolean {
   return verdict;
 }
 
+// Analytical operator validation: measured properties of the notation
+// itself, evaluated on the canonical patch — no curated list involved.
+// - parses: every atom is in the vocabulary
+// - buildsFaces: the edge set closes into faces (cross-face loops included)
+// - inherentCrossings: no parameter combination avoids crossed edges
+// - unusedAtoms: atoms whose removal leaves the output mesh unchanged
+//   (their edges dangle and are discarded by face reconstruction)
+export interface OperatorAnalysis {
+  parses: boolean;
+  buildsFaces: boolean;
+  inherentCrossings: boolean;
+  unusedAtoms: string[];
+}
+
+const operatorAnalysisCache = new Map<string, OperatorAnalysis>();
+
+function meshSignature(mesh: Mesh): string {
+  let sideSum = 0;
+  for (const face of mesh.faces) sideSum += face.length;
+  return `${mesh.vertices.length}|${mesh.faces.length}|${sideSum}`;
+}
+
+export function analyzeOperator(notation: string): OperatorAnalysis {
+  const cached = operatorAnalysisCache.get(notation);
+  if (cached) return cached;
+
+  const analysis: OperatorAnalysis = {
+    parses: false,
+    buildsFaces: false,
+    inherentCrossings: false,
+    unusedAtoms: [],
+  };
+
+  let atoms: string[] = [];
+  try {
+    parseOperatorNotation(notation);
+    atoms = [...new Set(parseAtomList(notation))];
+    analysis.parses = atoms.length > 0;
+  } catch {
+    // analysis.parses stays false
+  }
+
+  if (analysis.parses) {
+    const patch = makeCanonicalPatch();
+    try {
+      const full = applyOmni(patch, notation);
+      analysis.buildsFaces = full.faces.length > 0;
+      if (analysis.buildsFaces && atoms.length > 1) {
+        const fullSignature = meshSignature(full);
+        for (const atom of atoms) {
+          const reduced = atoms.filter((a) => a !== atom).join(',');
+          try {
+            if (meshSignature(applyOmni(patch, reduced)) === fullSignature) {
+              analysis.unusedAtoms.push(atom);
+            }
+          } catch {
+            // removal breaks the operator → the atom is load-bearing
+          }
+        }
+      }
+    } catch {
+      // analysis.buildsFaces stays false
+    }
+    analysis.inherentCrossings = operatorHasInherentCrossings(notation);
+  }
+
+  operatorAnalysisCache.set(notation, analysis);
+  return analysis;
+}
+
 // For operators whose crossings are trivially fixable by slider restriction,
 // returns the valid [min, max] range for each slider — one of the two halves
 // of [0, 1] split at 0.5. Operators outside that class (no 0.5 transition,
