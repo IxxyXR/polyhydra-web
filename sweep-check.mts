@@ -1,15 +1,22 @@
-/* Empirical check of the t=0.5 half-split assumption (review point 4).
-   For every OMNI_VALID_OPERATORS combo, on the canonical quad:
-   - replicate halfRange's 2-sample probe (0.49 / 0.51, others at 0.5)
-   - fine-sweep each param (others at 0.5) and the all-equal diagonal
-   - report any notation where crossings occur INSIDE the range the
-     shipped logic would allow, or where the valid set is not a clean
-     half-interval split at 0.5. */
+/* Contract-accurate check of the slider-restriction feature.
+   The design contract (per IxxyXR):
+   - operators whose crossings are trivially fixable by slider restriction
+     form a class where the valid range is always one of the two halves of
+     [0,1] split at 0.5;
+   - operators outside that class are left unconstrained (live crossing
+     warning covers them) or flagged inherent.
+   This verifies exactly that, using the shipped exports:
+   1. Whenever getOperatorParamRanges restricts a param to a half-interval,
+      sweep the INTERIOR of that half: any crossing = contract violation.
+      The 0.5 endpoint is reported separately.
+   2. Whenever operatorHasInherentCrossings flags a notation, scan a coarse
+      3D parameter grid for any clean point: finding one = false "inherent". */
 import {
   applyOmni,
   hasMeshEdgeCrossings,
   OMNI_VALID_OPERATORS,
   operatorHasInherentCrossings,
+  getOperatorParamRanges,
 } from './src/lib/conway-operators';
 
 function makeCanonicalQuad() {
@@ -20,7 +27,6 @@ function makeCanonicalQuad() {
   }
   return { vertices, faces: [[0, 1, 2, 3]] };
 }
-
 const quad = makeCanonicalQuad();
 
 function clean(notation: string, tVe: number, tVf: number, tFe: number): boolean | 'ERR' {
@@ -31,78 +37,72 @@ function clean(notation: string, tVe: number, tVf: number, tFe: number): boolean
   }
 }
 
-const STEP = 0.02;
-const ts: number[] = [];
-for (let t = 0.02; t <= 0.981; t += STEP) ts.push(Number(t.toFixed(3)));
-
-type Anomaly = { notation: string; bang: boolean; kind: string; detail: string };
-const anomalies: Anomaly[] = [];
 const notations = [...new Set(OMNI_VALID_OPERATORS.map((atoms: readonly string[]) => atoms.join(',')))];
+const PARAMS = ['tVe', 'tVf', 'tFe'] as const;
 
-let cleanSplits = 0;
+let restrictedSweeps = 0;
+let inherentCount = 0;
+const interiorViolations: string[] = [];
+const endpointViolations: string[] = [];
+const inherentFalsePositives: string[] = [];
+
 for (const notation of notations) {
-  const bang = notation.includes('!');
-  for (let p = 0 as 0 | 1 | 2 | 3; p <= 3; p++) {
-    const at = (t: number): [number, number, number] =>
-      p === 3 ? [t, t, t] : ([0, 1, 2].map((i) => (i === p ? t : 0.5)) as [number, number, number]);
+  const bang = notation.includes('!') ? 'bang' : 'pure';
 
-    // shipped 2-sample logic
-    const lo = clean(notation, ...at(0.49));
-    const hi = clean(notation, ...at(0.51));
-    let allowed: [number, number];
-    if (p === 3) {
-      // operatorHasInherentCrossings: inherent iff both sides cross
-      allowed = lo === false && hi === false ? [NaN, NaN] : [0.01, 0.99];
-    } else {
-      if (lo === true && hi === false) allowed = [0.01, 0.5];
-      else if (lo === false && hi === true) allowed = [0.5, 0.99];
-      else allowed = [0.01, 0.99];
+  const inherent = operatorHasInherentCrossings(notation);
+  if (inherent) {
+    inherentCount++;
+    // scan coarse 3D grid for any clean point
+    outer: for (let a = 0.05; a < 0.96; a += 0.09) {
+      for (let b = 0.05; b < 0.96; b += 0.09) {
+        for (let c = 0.05; c < 0.96; c += 0.09) {
+          if (clean(notation, a, b, c) === true) {
+            inherentFalsePositives.push(
+              `[${bang}] ${notation}: flagged inherent but clean at (${a.toFixed(2)},${b.toFixed(2)},${c.toFixed(2)})`);
+            break outer;
+          }
+        }
+      }
     }
-
-    const results = ts.map((t) => ({ t, ok: clean(notation, ...at(t)) }));
-    const errs = results.filter((r) => r.ok === 'ERR');
-    if (errs.length) {
-      anomalies.push({ notation, bang, kind: 'ERROR', detail: `param ${p}: applyOmni threw at t=${errs[0].t}` });
-      continue;
-    }
-    // crossings inside the allowed range?
-    const leaked = results.filter((r) => !r.ok && r.t > allowed[0] && r.t < allowed[1]);
-    // transitions located away from 0.5?
-    const transitions: number[] = [];
-    for (let i = 1; i < results.length; i++) {
-      if (results[i].ok !== results[i - 1].ok) transitions.push((results[i].t + results[i - 1].t) / 2);
-    }
-    const offCenter = transitions.filter((x) => Math.abs(x - 0.5) > 0.03);
-    if (leaked.length && !Number.isNaN(allowed[0])) {
-      anomalies.push({
-        notation, bang,
-        kind: p === 3 ? 'DIAG-LEAK' : 'LEAK',
-        detail: `param ${['tVe', 'tVf', 'tFe', 'diag'][p]}: shipped logic allows [${allowed}], but crossings at t=${leaked.slice(0, 6).map((r) => r.t).join(',')}${leaked.length > 6 ? '…' : ''} (transitions at ${transitions.map((x) => x.toFixed(2)).join(',') || 'none'})`,
-      });
-    } else if (offCenter.length) {
-      anomalies.push({
-        notation, bang, kind: 'OFF-CENTER',
-        detail: `param ${['tVe', 'tVf', 'tFe', 'diag'][p]}: transition(s) at ${transitions.map((x) => x.toFixed(2)).join(',')} (no leak: allowed=[${allowed}])`,
-      });
-    } else {
-      cleanSplits++;
-    }
+    continue; // App.tsx skips getOperatorParamRanges for inherent ops
   }
-  // sanity: exported inherent check agrees with diagonal probe
-  const inh = operatorHasInherentCrossings(notation);
-  const diagAll = ts.every((t) => clean(notation, t, t, t) === false);
-  if (inh && !diagAll) {
-    anomalies.push({ notation, bang, kind: 'INHERENT-FP', detail: 'flagged inherent, but some diagonal t is clean' });
+
+  const ranges = getOperatorParamRanges(notation);
+  for (let p = 0 as 0 | 1 | 2; p <= 2; p++) {
+    const [lo, hi] = ranges[PARAMS[p]];
+    const isHalf = (lo === 0.01 && hi === 0.5) || (lo === 0.5 && hi === 0.99);
+    if (!isHalf) continue;
+    restrictedSweeps++;
+    const at = (t: number): [number, number, number] =>
+      [0, 1, 2].map((i) => (i === p ? t : 0.5)) as [number, number, number];
+    // interior of the allowed half, fine-grained
+    const bad: number[] = [];
+    for (let t = lo + 0.005; t < hi - 0.0049; t += 0.005) {
+      const tt = Number(t.toFixed(4));
+      if (clean(notation, ...at(tt)) === false) bad.push(tt);
+    }
+    if (bad.length) {
+      interiorViolations.push(
+        `[${bang}] ${notation} ${PARAMS[p]}: allowed [${lo},${hi}] but crossings at t=${bad.slice(0, 8).join(',')}${bad.length > 8 ? `… (${bad.length} samples)` : ''}`);
+    }
+    // the 0.5 endpoint itself (reachable by the slider)
+    if (clean(notation, ...at(0.5)) === false) {
+      endpointViolations.push(`[${bang}] ${notation} ${PARAMS[p]}: allowed [${lo},${hi}], crossing at the t=0.5 endpoint`);
+    }
   }
 }
 
-console.log(`notations: ${notations.length}, sweeps clean: ${cleanSplits}, anomalies: ${anomalies.length}`);
-const byKind = new Map<string, Anomaly[]>();
-for (const a of anomalies) byKind.set(a.kind, [...(byKind.get(a.kind) ?? []), a]);
-for (const [kind, list] of byKind) {
-  const nonBang = list.filter((a) => !a.bang);
-  console.log(`\n== ${kind}: ${list.length} (${nonBang.length} without bang atoms) ==`);
-  for (const a of [...nonBang, ...list.filter((a) => a.bang)].slice(0, 15)) {
-    console.log(`  [${a.bang ? 'bang' : 'pure'}] ${a.notation} :: ${a.detail}`);
-  }
+console.log(`notations: ${notations.length}`);
+console.log(`flagged inherent: ${inherentCount}, false positives: ${inherentFalsePositives.length}`);
+console.log(`half-interval restrictions issued: ${restrictedSweeps}`);
+console.log(`interior violations (crossings inside the allowed half): ${interiorViolations.length}`);
+console.log(`t=0.5 endpoint violations: ${endpointViolations.length}`);
+for (const [title, list] of [
+  ['INHERENT FALSE POSITIVES', inherentFalsePositives],
+  ['INTERIOR VIOLATIONS', interiorViolations],
+  ['ENDPOINT VIOLATIONS', endpointViolations],
+] as const) {
+  if (!list.length) continue;
+  console.log(`\n== ${title} (${list.length}) ==`);
+  for (const line of list.slice(0, 25)) console.log(`  ${line}`);
 }
