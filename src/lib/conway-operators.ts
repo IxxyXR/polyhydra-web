@@ -2266,37 +2266,28 @@ export function join(mesh: Mesh): Mesh {
   return applyOmni(mesh, OMNI_PRESETS.Join);
 }
 
-export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
-  const { vertices, faces } = mesh;
+interface CrossingSegment {
+  ax: number; ay: number;
+  bx: number; by: number;
+  aId: number; bId: number;
+}
 
-  const edgeSet = new Set<string>();
-  const edges: [number, number][] = [];
-  for (const face of faces) {
-    for (let i = 0; i < face.length; i++) {
-      const a = face[i];
-      const b = face[(i + 1) % face.length];
-      const key = a < b ? `${a},${b}` : `${b},${a}`;
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        edges.push([a, b]);
-      }
-    }
-  }
-
+function segmentListHasCrossings(segments: CrossingSegment[]): boolean {
   const EPS = 1e-10;
   const cross2d = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 
-  for (let i = 0; i < edges.length; i++) {
-    const [a1, b1] = edges[i];
-    const p1x = vertices[a1 * 3], p1y = vertices[a1 * 3 + 1];
-    const p2x = vertices[b1 * 3], p2y = vertices[b1 * 3 + 1];
+  for (let i = 0; i < segments.length; i++) {
+    const s1 = segments[i];
+    const p1x = s1.ax, p1y = s1.ay, p2x = s1.bx, p2y = s1.by;
 
-    for (let j = i + 1; j < edges.length; j++) {
-      const [a2, b2] = edges[j];
-      if (a1 === a2 || a1 === b2 || b1 === a2 || b1 === b2) continue;
+    for (let j = i + 1; j < segments.length; j++) {
+      const s2 = segments[j];
+      // Sharing an endpoint rules out a proper crossing but NOT a collinear
+      // overlap: e.g. an F-fe edge lies entirely inside an E-F edge of the
+      // same face, sharing the F vertex.
+      const sharesVertex = s1.aId === s2.aId || s1.aId === s2.bId || s1.bId === s2.aId || s1.bId === s2.bId;
 
-      const p3x = vertices[a2 * 3], p3y = vertices[a2 * 3 + 1];
-      const p4x = vertices[b2 * 3], p4y = vertices[b2 * 3 + 1];
+      const p3x = s2.ax, p3y = s2.ay, p4x = s2.bx, p4y = s2.by;
 
       const d1 = cross2d(p4x - p3x, p4y - p3y, p1x - p3x, p1y - p3y);
       const d2 = cross2d(p4x - p3x, p4y - p3y, p2x - p3x, p2y - p3y);
@@ -2307,7 +2298,8 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
       // tolerance matters: collinear but disjoint segments produce cross
       // products of ±1e-19 float noise whose signs are effectively random,
       // so a strict sign test reports phantom crossings.
-      if (((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
+      if (!sharesVertex &&
+          ((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
           ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS))) {
         return true;
       }
@@ -2331,6 +2323,30 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
   return false;
 }
 
+export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
+  const { vertices, faces } = mesh;
+
+  const edgeSet = new Set<string>();
+  const segments: CrossingSegment[] = [];
+  for (const face of faces) {
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i];
+      const b = face[(i + 1) % face.length];
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        segments.push({
+          ax: vertices[a * 3], ay: vertices[a * 3 + 1],
+          bx: vertices[b * 3], by: vertices[b * 3 + 1],
+          aId: a, bId: b,
+        });
+      }
+    }
+  }
+
+  return segmentListHasCrossings(segments);
+}
+
 function makeCanonicalQuad(): Mesh {
   const vertices: number[] = [];
   for (let i = 0; i < 4; i++) {
@@ -2349,14 +2365,55 @@ function notationProbeableOnIsolatedPatch(notation: string): boolean {
   return !notation.includes('!');
 }
 
+// Tests the operator's defined edge set (the raw atom connections) on the
+// canonical quad. This deliberately bypasses applyOmni/buildMeshFromEdges:
+// edge sets that don't close into faces produce an empty mesh there, hiding
+// crossings and overlaps that exist among the edges themselves — e.g.
+// E-F,F-fe, whose F-fe edges lie inside the E-F edges by construction.
+function canonicalPatchEdgesCross(notation: string, tVe: number, tVf: number, tFe: number): boolean {
+  const atoms = parseOperatorNotation(notation);
+  if (atoms.length === 0) return false;
+
+  // Same nudge applyOmni applies: coincident parameter values place point
+  // classes on top of each other, which would read as overlaps.
+  let resolvedTVe = tVe;
+  let resolvedTVf = tVf;
+  let resolvedTFe = tFe;
+  if (Math.abs(resolvedTVe - resolvedTVf) < EPSILON) resolvedTVf += EPSILON;
+  if (Math.abs(resolvedTVe - resolvedTFe) < EPSILON) resolvedTFe += EPSILON;
+  if (Math.abs(resolvedTVf - resolvedTFe) < EPSILON) resolvedTFe += EPSILON;
+
+  const classesNeeded = new Set<OmniPointClass>();
+  atoms.forEach(([classA, classB]) => {
+    classesNeeded.add(classA);
+    classesNeeded.add(classB);
+  });
+
+  const sourceMesh = buildHalfedgeMesh(makeCanonicalQuad());
+  const cache = new OperatorVertexCache();
+  const segments: CrossingSegment[] = [];
+  for (const face of sourceMesh.faces) {
+    const edges = buildOperatorEdgesForFace(
+      face, atoms, classesNeeded, cache, resolvedTVe, resolvedTVf, resolvedTFe
+    );
+    for (const edge of edges) {
+      segments.push({
+        ax: edge.a.position.x, ay: edge.a.position.y,
+        bx: edge.b.position.x, by: edge.b.position.y,
+        aId: edge.a.id, bId: edge.b.id,
+      });
+    }
+  }
+  return segmentListHasCrossings(segments);
+}
+
 // Returns true only if both sides of the t=0.5 boundary produce crossings,
 // meaning no slider adjustment can fix it (structural/topological problem).
 export function operatorHasInherentCrossings(notation: string): boolean {
   if (!notation.trim() || !notationProbeableOnIsolatedPatch(notation)) return false;
-  const patch = makeCanonicalQuad();
   for (const t of [0.49, 0.51]) {
     try {
-      if (!hasMeshEdgeCrossings(applyOmni(patch, notation, t, t, t))) return false;
+      if (!canonicalPatchEdgesCross(notation, t, t, t)) return false;
     } catch {
       return false;
     }
@@ -2384,15 +2441,13 @@ export function getOperatorParamRanges(notation: string): {
     return { tVe: full, tVf: full, tFe: full };
   }
 
-  const patch = makeCanonicalQuad();
-
   const halfRange = (paramIndex: 0 | 1 | 2): [number, number] => {
     const test = (t: number): boolean => {
       const tVe = paramIndex === 0 ? t : 0.5;
       const tVf = paramIndex === 1 ? t : 0.5;
       const tFe = paramIndex === 2 ? t : 0.5;
       try {
-        return !hasMeshEdgeCrossings(applyOmni(patch, notation, tVe, tVf, tFe));
+        return !canonicalPatchEdgesCross(notation, tVe, tVf, tFe);
       } catch {
         return true;
       }
