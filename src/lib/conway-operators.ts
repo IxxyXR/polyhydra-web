@@ -2337,18 +2337,14 @@ function makeCanonicalQuad(): Mesh {
   return { vertices, faces: [[0, 1, 2, 3]] };
 }
 
-// Returns true only if the operator produces crossings for every sampled parameter
-// value — meaning no slider adjustment can fix it (structural/topological problem).
-// Sampling at 0.1 steps is fine-grained enough to catch any resolvable operator:
-// a delta of 0.1 is below the geometry-dependence threshold for convex quads.
+// Returns true only if both sides of the t=0.5 boundary produce crossings,
+// meaning no slider adjustment can fix it (structural/topological problem).
 export function operatorHasInherentCrossings(notation: string): boolean {
   if (!notation.trim()) return false;
   const patch = makeCanonicalQuad();
-  for (let step = 1; step <= 9; step++) {
-    const t = step * 0.1;
+  for (const t of [0.49, 0.51]) {
     try {
-      const result = applyOmni(patch, notation, t, t, t);
-      if (!hasMeshEdgeCrossings(result)) return false;
+      if (!hasMeshEdgeCrossings(applyOmni(patch, notation, t, t, t))) return false;
     } catch {
       return false;
     }
@@ -2358,7 +2354,7 @@ export function operatorHasInherentCrossings(notation: string): boolean {
 
 // For operators where crossings are parameter-induced, returns the valid [min, max]
 // range for each slider. The valid interval is always one of the two halves of [0,1]
-// split at 0.5 — determined by testing at 0.25 and 0.75 on a canonical convex quad.
+// split at 0.5 — determined by straddling that boundary at 0.49 and 0.51.
 export function getOperatorParamRanges(notation: string): {
   tVe: [number, number];
   tVf: [number, number];
@@ -2380,8 +2376,7 @@ export function getOperatorParamRanges(notation: string): {
         return true;
       }
     };
-    const lowerOk = test(0.25);
-    const upperOk = test(0.75);
+    const lowerOk = test(0.49), upperOk = test(0.51);
     if (lowerOk && !upperOk) return [0.01, 0.5];
     if (!lowerOk && upperOk) return [0.5, 0.99];
     return full;
