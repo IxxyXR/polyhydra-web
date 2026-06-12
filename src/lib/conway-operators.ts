@@ -2435,33 +2435,43 @@ export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: nu
 // then a coarse 5×5×5 grid: several curated operators (e.g. the vf-vf!
 // family) are only clean away from the diagonal, so diagonal probes alone
 // would mislabel them as unfixable.
-const inherentCrossingCache = new Map<string, boolean>();
+const cleanParamsCache = new Map<string, [number, number, number] | null>();
 const INHERENT_GRID_VALUES = [0.1, 0.3, 0.5, 0.7, 0.9];
 
-export function operatorHasInherentCrossings(notation: string): boolean {
-  if (!notation.trim()) return false;
-  const cached = inherentCrossingCache.get(notation);
+// Finds a crossing-free parameter combination, or null when none of the
+// probed points is clean. Used both for the inherent-crossing verdict and
+// to measure other properties (e.g. coverage) at a parameter point where
+// the operator is actually well-formed.
+export function findCleanOperatorParams(notation: string): [number, number, number] | null {
+  if (!notation.trim()) return null;
+  const cached = cleanParamsCache.get(notation);
   if (cached !== undefined) return cached;
 
-  const verdict = (() => {
+  const result = ((): [number, number, number] | null => {
     try {
       for (const t of [0.49, 0.51]) {
-        if (!operatorPatchHasCrossings(notation, t, t, t)) return false;
+        if (!operatorPatchHasCrossings(notation, t, t, t)) return [t, t, t];
       }
       for (const tVe of INHERENT_GRID_VALUES) {
         for (const tVf of INHERENT_GRID_VALUES) {
           for (const tFe of INHERENT_GRID_VALUES) {
-            if (!operatorPatchHasCrossings(notation, tVe, tVf, tFe)) return false;
+            if (!operatorPatchHasCrossings(notation, tVe, tVf, tFe)) return [tVe, tVf, tFe];
           }
         }
       }
-      return true;
+      return null;
     } catch {
-      return false;
+      // unanalysable → treat as clean at defaults rather than condemn
+      return [0.5, 0.5, 0.5];
     }
   })();
-  inherentCrossingCache.set(notation, verdict);
-  return verdict;
+  cleanParamsCache.set(notation, result);
+  return result;
+}
+
+export function operatorHasInherentCrossings(notation: string): boolean {
+  if (!notation.trim()) return false;
+  return findCleanOperatorParams(notation) === null;
 }
 
 // Analytical operator validation: measured properties of the notation
@@ -2476,6 +2486,11 @@ export interface OperatorAnalysis {
   buildsFaces: boolean;
   inherentCrossings: boolean;
   unusedAtoms: string[];
+  // Total area of output faces clipped to the patch's central cell, as a
+  // multiple of the cell area. ≈1 for a proper planar subdivision, >1 for
+  // overlapping coverage (e.g. E-E,V-V double-covers: quad + inscribed
+  // diamond), <1 for gaps.
+  centralCellCoverage: number;
 }
 
 const operatorAnalysisCache = new Map<string, OperatorAnalysis>();
@@ -2484,6 +2499,54 @@ function meshSignature(mesh: Mesh): string {
   let sideSum = 0;
   for (const face of mesh.faces) sideSum += face.length;
   return `${mesh.vertices.length}|${mesh.faces.length}|${sideSum}`;
+}
+
+// Sutherland–Hodgman clip of a polygon against the central cell of the
+// canonical patch ([-0.5, 0.5]²), followed by shoelace area.
+function areaInCentralCell(points: Array<[number, number]>): number {
+  let polygon = points;
+  const clipEdges: Array<(p: [number, number]) => number> = [
+    (p) => p[0] + 0.5,
+    (p) => 0.5 - p[0],
+    (p) => p[1] + 0.5,
+    (p) => 0.5 - p[1],
+  ];
+  for (const inside of clipEdges) {
+    if (polygon.length === 0) return 0;
+    const next: Array<[number, number]> = [];
+    for (let i = 0; i < polygon.length; i++) {
+      const current = polygon[i];
+      const previous = polygon[(i + polygon.length - 1) % polygon.length];
+      const currentIn = inside(current) >= 0;
+      const previousIn = inside(previous) >= 0;
+      if (currentIn !== previousIn) {
+        const t = inside(previous) / (inside(previous) - inside(current));
+        next.push([
+          previous[0] + t * (current[0] - previous[0]),
+          previous[1] + t * (current[1] - previous[1]),
+        ]);
+      }
+      if (currentIn) next.push(current);
+    }
+    polygon = next;
+  }
+  let doubleArea = 0;
+  for (let i = 0; i < polygon.length; i++) {
+    const [ax, ay] = polygon[i];
+    const [bx, by] = polygon[(i + 1) % polygon.length];
+    doubleArea += ax * by - ay * bx;
+  }
+  return Math.abs(doubleArea) / 2;
+}
+
+function meshCentralCellCoverage(mesh: Mesh): number {
+  let total = 0;
+  for (const face of mesh.faces) {
+    const points = face.map((index): [number, number] =>
+      [mesh.vertices[index * 3], mesh.vertices[index * 3 + 1]]);
+    total += areaInCentralCell(points);
+  }
+  return total; // cell area is 1
 }
 
 export function analyzeOperator(notation: string): OperatorAnalysis {
@@ -2495,6 +2558,7 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
     buildsFaces: false,
     inherentCrossings: false,
     unusedAtoms: [],
+    centralCellCoverage: 0,
   };
 
   let atoms: string[] = [];
@@ -2509,14 +2573,19 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
   if (analysis.parses) {
     const patch = makeCanonicalPatch();
     try {
-      const full = applyOmni(patch, notation);
+      // Measure at a crossing-free parameter point when one exists: at the
+      // 0.5 defaults some valid operators (the off-diagonal vf-vf! family)
+      // are in a crossing state and would report overlapping coverage.
+      const [tVe, tVf, tFe] = findCleanOperatorParams(notation) ?? [0.5, 0.5, 0.5];
+      const full = applyOmni(patch, notation, tVe, tVf, tFe);
       analysis.buildsFaces = full.faces.length > 0;
+      analysis.centralCellCoverage = meshCentralCellCoverage(full);
       if (analysis.buildsFaces && atoms.length > 1) {
         const fullSignature = meshSignature(full);
         for (const atom of atoms) {
           const reduced = atoms.filter((a) => a !== atom).join(',');
           try {
-            if (meshSignature(applyOmni(patch, reduced)) === fullSignature) {
+            if (meshSignature(applyOmni(patch, reduced, tVe, tVf, tFe)) === fullSignature) {
               analysis.unusedAtoms.push(atom);
             }
           } catch {
