@@ -2283,6 +2283,7 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
     }
   }
 
+  const EPS = 1e-10;
   const cross2d = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 
   for (let i = 0; i < edges.length; i++) {
@@ -2302,9 +2303,24 @@ export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
       const d3 = cross2d(p2x - p1x, p2y - p1y, p3x - p1x, p3y - p1y);
       const d4 = cross2d(p2x - p1x, p2y - p1y, p4x - p1x, p4y - p1y);
 
+      // Proper crossing: endpoints strictly straddle each other
       if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
           ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
         return true;
+      }
+
+      // Collinear overlap: all cross products ~0, segments share a stretch
+      if (Math.abs(d1) <= EPS && Math.abs(d2) <= EPS &&
+          Math.abs(d3) <= EPS && Math.abs(d4) <= EPS) {
+        const dx = p2x - p1x, dy = p2y - p1y;
+        const len2 = dx * dx + dy * dy;
+        if (len2 < EPS) continue;
+        // Project p3 and p4 onto p1->p2 line; overlap exists if intervals interleave
+        const t3 = ((p3x - p1x) * dx + (p3y - p1y) * dy) / len2;
+        const t4 = ((p4x - p1x) * dx + (p4y - p1y) * dy) / len2;
+        const lo = Math.min(t3, t4), hi = Math.max(t3, t4);
+        // Intervals [0,1] and [lo,hi] overlap with interior extent (not just touching)
+        if (lo < 1 - EPS && hi > EPS && hi - lo > EPS) return true;
       }
     }
   }
