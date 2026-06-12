@@ -62,6 +62,8 @@ import {
   operatorHasInherentCrossings,
   getInherentCrossingCulprits,
   getOperatorParamRanges,
+  generateRandomValidOperator,
+  findCleanOperatorParams,
   normalizeFaceFilter,
   operatorSupportsFaceFilter,
   OperatorSpec,
@@ -1750,11 +1752,15 @@ export default function App() {
 
   const randomizeSelectedOperator = () => {
     if (!selectedOperatorId) return;
-    const randomIndex = Math.floor(Math.random() * OMNI_VALID_OPERATORS.length);
-    const randomAtoms = orderAtoms(OMNI_VALID_OPERATORS[randomIndex]);
-    const notation = joinAtomList(randomAtoms);
+    // Sample the full analytically-valid space; fall back to the curated
+    // list in the (vanishingly rare) case sampling finds nothing in time.
+    const notation = generateRandomValidOperator()
+      ?? joinAtomList(orderAtoms(OMNI_VALID_OPERATORS[Math.floor(Math.random() * OMNI_VALID_OPERATORS.length)]));
+    // Start at a crossing-free parameter point: some valid operators are
+    // mid-crossing at the 0.5 defaults.
+    const [tVe, tVf, tFe] = findCleanOperatorParams(notation) ?? [0.5, 0.5, 0.5];
     setOperators((current) => current.map((op) =>
-      op.id === selectedOperatorId && isOperatorStackItem(op) ? { ...op, notation } : op
+      op.id === selectedOperatorId && isOperatorStackItem(op) ? { ...op, notation, tVe, tVf, tFe } : op
     ));
   };
 

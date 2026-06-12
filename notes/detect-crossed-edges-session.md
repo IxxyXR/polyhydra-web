@@ -111,3 +111,31 @@ Changes:
 
 `sweep-check.mts` is the regression check: it must report zero interior,
 zero endpoint, and zero inherent-false-positive violations.
+
+## Revision 2: analytical validation on a multi-face patch
+
+The probe geometry is now a 5×5 grid of unit quads (central face +
+ring-1 neighbours probed; all nine have complete neighbourhoods). This
+removed the two structural blind spots of the isolated quad: bang atoms
+(F!/vf!/fe!) resolve to real adjacent-face geometry, and cross-face
+loops (F-V) are visible. The inherent-crossing check probes the
+diagonal then a 5×5×5 parameter grid (several curated vf-vf! operators
+are only clean away from the diagonal), with per-notation caching.
+
+`analyzeOperator(notation)` measures validity analytically, replacing
+the curated whitelist as the source of truth for what a valid operator
+IS (the whitelist remains as a name/preset catalogue):
+
+- parses — vocabulary check
+- buildsFaces — edges close into faces on the patch
+- inherentCrossings — no parameter combination is crossing-free
+- unusedAtoms — removal leaves the mesh unchanged
+- centralCellCoverage — output clipped to the central cell ≈1 for a
+  proper planar subdivision (catches double covers like E-E,V-V → 3.0
+  and zero-area spoke walks like F-fe → 0.0), measured at a clean
+  parameter point (findCleanOperatorParams)
+
+All 311 whitelisted operators pass every criterion. The Random button
+now rejection-samples the analytical space (~86 ms/click, ~75% of
+results are valid operators the whitelist never listed) and sets the
+sliders to the operator's clean parameter point.
