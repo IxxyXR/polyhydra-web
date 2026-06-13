@@ -171,3 +171,32 @@ validity is the only cheap, catalogue-free option.
 Still whitelist-backed (intentionally, as a name/recognition registry,
 not a validity gate): the "Complete / Degree N" status badge and preset
 name matching.
+
+## Revision 4: complete vs valid via vertex valence
+
+Completeness is now defined by minimum output vertex valence, not coverage:
+- valence 1 (stray/dangling vertex) → Invalid (still buildable — later
+  atoms can raise it — but not a finished operator)
+- valence 2 → "Degree 2": renders identically, but the 2-valent vertices
+  are real vertices that change topology for subsequent operators, so
+  they are flagged specifically (pulsing amber badge; amber matrix dots)
+- valence ≥ 3 → Complete
+
+This matches the curated whitelist exactly (all 311 have min valence ≥ 3,
+none have a degree-2 interior vertex) and fixes the earlier coverage-based
+mislabel of E-vf / E-V as Complete (they have degree-2 vertices).
+
+Double covers (E-E,V-V) are treated as crossing/overlap via T-junction
+detection: a vertex lying strictly interior to a non-incident edge. This
+only flags *inevitable* overlaps — it runs inside the parameter-swept
+inherent-crossing check, so an operator is 'crossing' only when no
+parameter combination is overlap-free. Contingent overlaps leave a clean
+point and fall through to slider restriction, exactly like contingent
+edge crossings. (Coverage was deliberately not used for invalidity:
+coverage>1 is common and transient during construction.)
+
+classifyOperator (empty/crossing/invalid/degree2/complete) is the single
+source of truth for the status badge, the matrix dot tiers (green =
+completes a complete operator, amber = completes a degree-2 operator, red
+= crossing/overlap), and the Random button (generates complete operators
+only). The old atom-degree label and isOperatorAnalyticallyValid are gone.

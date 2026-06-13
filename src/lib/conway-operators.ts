@@ -2686,16 +2686,6 @@ export function isOperatorComplete(notation: string): boolean {
   return classifyOperator(notation) === 'complete';
 }
 
-// Deprecated: superseded by classifyOperator. Retained until the UI is
-// fully migrated. "Valid" here means complete-or-degree-2 and tidy.
-export function isOperatorAnalyticallyValid(notation: string): boolean {
-  const status = classifyOperator(notation);
-  if (status !== 'complete' && status !== 'degree2') return false;
-  const analysis = analyzeOperator(notation);
-  return analysis.unusedAtoms.length === 0
-    && Math.abs(analysis.centralCellCoverage - 1) <= 0.01;
-}
-
 // Rejection-samples random atom sets until one is complete (valence ≥ 3, no
 // crossings) and tidy (no dead atoms, no gaps/overlaps). The complete space
 // is far larger than the curated whitelist; cost is typically a few hundred
