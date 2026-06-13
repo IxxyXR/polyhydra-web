@@ -1702,6 +1702,23 @@ export default function App() {
     setAddMenuOpen(false);
   };
 
+  const getSaneOperatorParams = (notation: string): Pick<OperatorSpec, 'tVe' | 'tVf' | 'tFe'> => {
+    const [tVe, tVf, tFe] = findCleanOperatorParams(notation) ?? [
+      DEFAULT_OMNI_PARAMS.tVe,
+      DEFAULT_OMNI_PARAMS.tVf,
+      DEFAULT_OMNI_PARAMS.tFe,
+    ];
+    return { tVe, tVf, tFe };
+  };
+
+  const getRandomOperatorNotation = (): string => {
+    const generated = generateRandomValidOperator();
+    if (generated) return generated;
+
+    const randomIndex = Math.floor(Math.random() * OMNI_VALID_OPERATORS.length);
+    return joinAtomList(orderAtoms(OMNI_VALID_OPERATORS[randomIndex]));
+  };
+
   const addBlankOperator = () => {
     const nextOperator = createOperator('', true);
     setOperators((current) => [...current, nextOperator]);
@@ -1739,15 +1756,10 @@ export default function App() {
 
   const randomizeSelectedOperator = () => {
     if (!selectedOperatorId) return;
-    // Sample the full analytically-valid space; fall back to the curated
-    // list in the (vanishingly rare) case sampling finds nothing in time.
-    const notation = generateRandomValidOperator()
-      ?? joinAtomList(orderAtoms(OMNI_VALID_OPERATORS[Math.floor(Math.random() * OMNI_VALID_OPERATORS.length)]));
-    // Start at a crossing-free parameter point: some valid operators are
-    // mid-crossing at the 0.5 defaults.
-    const [tVe, tVf, tFe] = findCleanOperatorParams(notation) ?? [0.5, 0.5, 0.5];
+    const notation = getRandomOperatorNotation();
+    const params = getSaneOperatorParams(notation);
     setOperators((current) => current.map((op) =>
-      op.id === selectedOperatorId && isOperatorStackItem(op) ? { ...op, notation, tVe, tVf, tFe } : op
+      op.id === selectedOperatorId && isOperatorStackItem(op) ? { ...op, notation, ...params } : op
     ));
   };
 
@@ -1914,9 +1926,8 @@ export default function App() {
       setShuffledColors(colors);
     },
     onAddRandomOperator: () => {
-      const randomIndex = Math.floor(Math.random() * OMNI_VALID_OPERATORS.length);
-      const randomAtoms = orderAtoms(OMNI_VALID_OPERATORS[randomIndex]);
-      addOperator(joinAtomList(randomAtoms));
+      const notation = getRandomOperatorNotation();
+      addOperator(notation, getSaneOperatorParams(notation));
       setPresetOrRandomUsed(true);
     },
     onRandomizeSelectedOperator: () => {
@@ -2915,11 +2926,10 @@ export default function App() {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedOperatorId(op.id);
-                                      const randomIndex = Math.floor(Math.random() * OMNI_VALID_OPERATORS.length);
-                                    const randomAtoms = orderAtoms(OMNI_VALID_OPERATORS[randomIndex]);
-                                    const notation = joinAtomList(randomAtoms);
-                                    setOperators((current) => current.map((item) =>
-                                      item.id === op.id && isOperatorStackItem(item) ? { ...item, notation } : item
+                                      const notation = getRandomOperatorNotation();
+                                      const params = getSaneOperatorParams(notation);
+                                      setOperators((current) => current.map((item) =>
+                                        item.id === op.id && isOperatorStackItem(item) ? { ...item, notation, ...params } : item
                                       ));
                                       setRawEditorOpen(false);
                                       setPresetPickerOpen(false);
