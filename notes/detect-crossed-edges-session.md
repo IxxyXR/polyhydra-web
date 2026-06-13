@@ -200,3 +200,33 @@ source of truth for the status badge, the matrix dot tiers (green =
 completes a complete operator, amber = completes a degree-2 operator, red
 = crossing/overlap), and the Random button (generates complete operators
 only). The old atom-degree label and isOperatorAnalyticallyValid are gone.
+
+## Revision 5: overlaps determined analytically, not by sweeping
+
+Overlaps (collinear overlaps and T-junctions) are collinearity facts fixed
+by the point-class geometry — each atom-edge lies on a fixed supporting
+line (the original edge, a V→F or E→F spoke, or the atom's own chord), so
+whether another vertex/edge lies on it is parameter-invariant. Deciding
+them by the 125-point inherent-crossing sweep was wasteful and slightly
+fragile (relied on the grid landing on the exact-collinear config).
+
+operatorHasInevitableOverlap(notation) now decides this with no sweep:
+evaluate the operator's edge segments at two generic, distinct parameter
+points and check for overlap at both. A structural overlap survives both
+(it is present at every parameter value); a coincidental alignment at one
+point will not recur at the other. operatorHasInherentCrossings short-
+circuits on this before falling back to the sweep.
+
+Proper crossings are NOT all structural — interior points (vf/fe/F) move
+with the sliders — so the sweep is retained for them. An audit confirmed
+the split is real: across 311 curated + 886 reachable + ~2000 random
+combos, the analytical overlap check is a strict subset of the swept
+verdict (zero cases where it flagged something the sweep missed), and
+~15% of random combos are inherent via a proper crossing with no overlap
+(e.g. E-E,F-ve,ve-vf) — these genuinely need the sweep. So overlaps are
+analytical; the sweep now only answers the crossing question it must.
+
+Segment tests split into segmentsHaveProperCrossing (contingent) and
+segmentsHaveCollinearOverlap + segmentsHaveTJunction (structural);
+segmentListHasCrossings and operatorPatchHasCrossings are unchanged in
+behavior. Slider-range sweep regression unchanged (180 issued, 0 violations).

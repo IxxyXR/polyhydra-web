@@ -2272,55 +2272,65 @@ interface CrossingSegment {
   aId: number; bId: number;
 }
 
-function segmentListHasCrossings(segments: CrossingSegment[]): boolean {
-  const EPS = 1e-10;
-  const cross2d = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
+const CROSS_EPS = 1e-10;
+const cross2d = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 
+// Proper crossing: two non-incident segments strictly straddle each other.
+// Whether this happens depends in general on the parameter values (interior
+// points like vf/fe slide as the sliders move), so it is the *contingent*
+// part of invalidity. The tolerance matters: collinear but disjoint segments
+// produce cross products of ±1e-19 float noise with effectively random
+// signs, so a strict sign test would report phantom crossings.
+function segmentsHaveProperCrossing(segments: CrossingSegment[]): boolean {
   for (let i = 0; i < segments.length; i++) {
     const s1 = segments[i];
-    const p1x = s1.ax, p1y = s1.ay, p2x = s1.bx, p2y = s1.by;
-
     for (let j = i + 1; j < segments.length; j++) {
       const s2 = segments[j];
-      // Sharing an endpoint rules out a proper crossing but NOT a collinear
-      // overlap: e.g. an F-fe edge lies entirely inside an E-F edge of the
-      // same face, sharing the F vertex.
-      const sharesVertex = s1.aId === s2.aId || s1.aId === s2.bId || s1.bId === s2.aId || s1.bId === s2.bId;
-
-      const p3x = s2.ax, p3y = s2.ay, p4x = s2.bx, p4y = s2.by;
-
-      const d1 = cross2d(p4x - p3x, p4y - p3y, p1x - p3x, p1y - p3y);
-      const d2 = cross2d(p4x - p3x, p4y - p3y, p2x - p3x, p2y - p3y);
-      const d3 = cross2d(p2x - p1x, p2y - p1y, p3x - p1x, p3y - p1y);
-      const d4 = cross2d(p2x - p1x, p2y - p1y, p4x - p1x, p4y - p1y);
-
-      // Proper crossing: endpoints strictly straddle each other. The
-      // tolerance matters: collinear but disjoint segments produce cross
-      // products of ±1e-19 float noise whose signs are effectively random,
-      // so a strict sign test reports phantom crossings.
-      if (!sharesVertex &&
-          ((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
-          ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS))) {
+      if (s1.aId === s2.aId || s1.aId === s2.bId || s1.bId === s2.aId || s1.bId === s2.bId) continue;
+      const d1 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.ax - s2.ax, s1.ay - s2.ay);
+      const d2 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.bx - s2.ax, s1.by - s2.ay);
+      const d3 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.ax - s1.ax, s2.ay - s1.ay);
+      const d4 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.bx - s1.ax, s2.by - s1.ay);
+      if (((d1 > CROSS_EPS && d2 < -CROSS_EPS) || (d1 < -CROSS_EPS && d2 > CROSS_EPS)) &&
+          ((d3 > CROSS_EPS && d4 < -CROSS_EPS) || (d3 < -CROSS_EPS && d4 > CROSS_EPS))) {
         return true;
-      }
-
-      // Collinear overlap: all cross products ~0, segments share a stretch
-      if (Math.abs(d1) <= EPS && Math.abs(d2) <= EPS &&
-          Math.abs(d3) <= EPS && Math.abs(d4) <= EPS) {
-        const dx = p2x - p1x, dy = p2y - p1y;
-        const len2 = dx * dx + dy * dy;
-        if (len2 < EPS) continue;
-        // Project p3 and p4 onto p1->p2 line; overlap exists if intervals interleave
-        const t3 = ((p3x - p1x) * dx + (p3y - p1y) * dy) / len2;
-        const t4 = ((p4x - p1x) * dx + (p4y - p1y) * dy) / len2;
-        const lo = Math.min(t3, t4), hi = Math.max(t3, t4);
-        // Intervals [0,1] and [lo,hi] overlap with interior extent (not just touching)
-        if (lo < 1 - EPS && hi > EPS && hi - lo > EPS) return true;
       }
     }
   }
-
   return false;
+}
+
+// Collinear overlap: two edges share a stretch of a common line. This is a
+// collinearity fixed by the point-class definitions (e.g. a V-E edge lies on
+// the original edge line, as does the V-V edge), so it is parameter-invariant
+// — the *structural* part of invalidity. Unlike proper crossings, edges
+// sharing an endpoint can still collinearly overlap.
+function segmentsHaveCollinearOverlap(segments: CrossingSegment[]): boolean {
+  for (let i = 0; i < segments.length; i++) {
+    const s1 = segments[i];
+    for (let j = i + 1; j < segments.length; j++) {
+      const s2 = segments[j];
+      const d1 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.ax - s2.ax, s1.ay - s2.ay);
+      const d2 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.bx - s2.ax, s1.by - s2.ay);
+      const d3 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.ax - s1.ax, s2.ay - s1.ay);
+      const d4 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.bx - s1.ax, s2.by - s1.ay);
+      if (Math.abs(d1) <= CROSS_EPS && Math.abs(d2) <= CROSS_EPS &&
+          Math.abs(d3) <= CROSS_EPS && Math.abs(d4) <= CROSS_EPS) {
+        const dx = s1.bx - s1.ax, dy = s1.by - s1.ay;
+        const len2 = dx * dx + dy * dy;
+        if (len2 < CROSS_EPS) continue;
+        const t3 = ((s2.ax - s1.ax) * dx + (s2.ay - s1.ay) * dy) / len2;
+        const t4 = ((s2.bx - s1.ax) * dx + (s2.by - s1.ay) * dy) / len2;
+        const lo = Math.min(t3, t4), hi = Math.max(t3, t4);
+        if (lo < 1 - CROSS_EPS && hi > CROSS_EPS && hi - lo > CROSS_EPS) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function segmentListHasCrossings(segments: CrossingSegment[]): boolean {
+  return segmentsHaveProperCrossing(segments) || segmentsHaveCollinearOverlap(segments);
 }
 
 // A T-junction: a vertex lying strictly in the interior of a non-incident
@@ -2349,6 +2359,12 @@ function segmentsHaveTJunction(segments: CrossingSegment[]): boolean {
     }
   }
   return false;
+}
+
+// Overlap = collinear edge overlap OR T-junction. Both are collinearity
+// facts fixed by the point-class geometry, hence parameter-invariant.
+function segmentsHaveOverlap(segments: CrossingSegment[]): boolean {
+  return segmentsHaveCollinearOverlap(segments) || segmentsHaveTJunction(segments);
 }
 
 export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
@@ -2407,14 +2423,14 @@ function makeCanonicalPatch(): Mesh {
   return { vertices, faces };
 }
 
-// Tests the operator's defined edge set (the raw atom connections) on the
-// canonical patch. This deliberately bypasses applyOmni/buildMeshFromEdges:
-// edge sets that don't close into faces produce an empty mesh there, hiding
-// crossings and overlaps that exist among the edges themselves — e.g.
-// E-F,F-fe, whose F-fe edges lie inside the E-F edges by construction.
-export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: number, tFe: number): boolean {
+// Builds the operator's defined edge set (the raw atom connections) on the
+// canonical patch, as 2D segments. This deliberately bypasses applyOmni/
+// buildMeshFromEdges: edge sets that don't close into faces produce an empty
+// mesh there, hiding crossings and overlaps that exist among the edges
+// themselves — e.g. E-F,F-fe, whose F-fe edges lie inside the E-F edges.
+function buildOperatorPatchSegments(notation: string, tVe: number, tVf: number, tFe: number): CrossingSegment[] {
   const atoms = parseOperatorNotation(notation);
-  if (atoms.length === 0) return false;
+  if (atoms.length === 0) return [];
 
   // Same nudge applyOmni applies: coincident parameter values place point
   // classes on top of each other, which would read as overlaps.
@@ -2454,7 +2470,33 @@ export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: nu
       });
     }
   }
-  return segmentListHasCrossings(segments) || segmentsHaveTJunction(segments);
+  return segments;
+}
+
+export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: number, tFe: number): boolean {
+  const segments = buildOperatorPatchSegments(notation, tVe, tVf, tFe);
+  return segmentsHaveProperCrossing(segments) || segmentsHaveOverlap(segments);
+}
+
+// Overlaps (collinear / T-junctions) are collinearity facts fixed by the
+// point-class geometry, so they are present at every parameter value or
+// none — no sweep needed. Evaluating at two generic, mutually-distinct
+// parameter points reveals exactly the structural overlaps: a real one
+// survives both, while a coincidental alignment at one point will not recur
+// at the other. This is the "can never be valid" verdict.
+const OVERLAP_PROBE_PARAMS: ReadonlyArray<readonly [number, number, number]> = [
+  [0.37, 0.53, 0.71],
+  [0.61, 0.29, 0.83],
+];
+
+export function operatorHasInevitableOverlap(notation: string): boolean {
+  if (!notation.trim()) return false;
+  try {
+    return OVERLAP_PROBE_PARAMS.every(([a, b, c]) =>
+      segmentsHaveOverlap(buildOperatorPatchSegments(notation, a, b, c)));
+  } catch {
+    return false;
+  }
 }
 
 // Returns true only if no probed parameter combination is free of crossings,
@@ -2497,8 +2539,18 @@ export function findCleanOperatorParams(notation: string): [number, number, numb
   return result;
 }
 
+// An operator can never be valid for two distinct reasons:
+//   - an inevitable overlap (collinear / T-junction) — a structural
+//     collinearity, decided analytically with no parameter sweep;
+//   - an inevitable proper crossing — two segments that straddle each other
+//     at every parameter value. Unlike overlaps these are NOT all structural
+//     (interior points move), so confirming one is unavoidable requires
+//     checking that no parameter combination is crossing-free — the sweep.
+// Overlaps short-circuit first, so the sweep is only ever reached for the
+// crossing question it actually needs to answer.
 export function operatorHasInherentCrossings(notation: string): boolean {
   if (!notation.trim()) return false;
+  if (operatorHasInevitableOverlap(notation)) return true;
   return findCleanOperatorParams(notation) === null;
 }
 
