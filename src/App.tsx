@@ -1770,8 +1770,8 @@ export default function App() {
   const orderedSelectedAtoms = orderAtoms(selectedAtoms);
   const uniqueSelectedAtoms = Array.from(new Set(selectedAtoms));
   const unknownSelectedAtoms = getUnknownAtoms(uniqueSelectedAtoms);
-  // Single source of truth for the status badge: empty / invalid / degree2
-  // / complete / crossing (vertex-valence based; see classifyOperator).
+  // Single source of truth for the status badge: empty / invalid / degree1 /
+  // degree2 / complete / crossing (vertex-valence based; see classifyOperator).
   const selectedOperatorStatus = classifyOperator(selectedOperatorNotation);
   const selectedMatchingPresetName = unknownSelectedAtoms.length === 0 ? findPresetName(uniqueSelectedAtoms) : null;
   const selectedPresetValue = !selectedOperatorNotation.trim()
@@ -3877,7 +3877,20 @@ export default function App() {
                                               dangerouslySetInnerHTML={{ __html: selectedOperatorDiagramSvg }}
                                             />
                                             <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                                              {selectedOperatorStatus === 'degree2' ? (
+                                              {selectedOperatorStatus === 'degree1' ? (
+                                                <motion.span
+                                                  animate={{
+                                                    backgroundColor: ['rgba(127,29,29,0.35)', 'rgba(185,28,28,0.6)', 'rgba(127,29,29,0.35)'],
+                                                    color: ['rgb(252,165,165)', 'rgb(255,255,255)', 'rgb(252,165,165)'],
+                                                    borderColor: ['rgba(153,27,27,0.45)', 'rgba(248,113,113,0.8)', 'rgba(153,27,27,0.45)'],
+                                                  }}
+                                                  transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+                                                  className="rounded-full border px-2 py-1 font-semibold uppercase tracking-widest"
+                                                  title="Renders, but has a degree-1 (dangling) vertex — e.g. an unpaired fe-fe! whose edge has two loose ends. Not a finished operator; a later atom can still close it."
+                                                >
+                                                  Degree 1
+                                                </motion.span>
+                                              ) : selectedOperatorStatus === 'degree2' ? (
                                                 <motion.span
                                                   animate={{
                                                     backgroundColor: ['rgba(120,53,15,0.3)', 'rgba(180,83,9,0.55)', 'rgba(120,53,15,0.3)'],

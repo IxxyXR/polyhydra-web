@@ -230,3 +230,26 @@ Segment tests split into segmentsHaveProperCrossing (contingent) and
 segmentsHaveCollinearOverlap + segmentsHaveTJunction (structural);
 segmentListHasCrossings and operatorPatchHasCrossings are unchanged in
 behavior. Slider-range sweep regression unchanged (180 issued, 0 violations).
+
+## Revision 6: degree-1 detection via the raw edge graph
+
+minInteriorVertexValence counts incident edges per vertex on the *built
+face-mesh*. buildMeshFromEdges drops dangling edges — a vertex with a single
+incident half-edge forms a degenerate <3 loop and is discarded — so the face
+count can never observe a degree-1 vertex; it silently reports the valence of
+whatever surviving vertex sits nearby. Concretely F-ve,fe-fe!,ve1-ve1 has fe
+points wired only through an unpaired fe-fe! (its edge has two loose ends),
+yet the patch face-count read 4 and mislabelled it Complete.
+
+analyzeOperator now also computes minInteriorEdgeDegree: it generates the
+operator's raw atom edges over the full 5×5 patch, dedupes by vertex-id pair,
+and counts degree per interior vertex (|x|,|y| < 1.3, same cut). minVertexValence
+is the min of the two — the face count still catches degree-2 false vertices
+the edge graph closes; the edge graph catches degree-1 danglers the face count
+drops. For a well-formed operator the two agree, so the 311-operator whitelist
+is undisturbed (still all Complete).
+
+classifyOperator gains a 'degree1' tier between invalid and degree2 (valence 1,
+builds but unfinished — a later atom can still close it); the status badge shows
+a pulsing red "Degree 1". The Random generator is unaffected (it already
+required Complete).
