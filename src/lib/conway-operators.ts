@@ -2272,55 +2272,99 @@ interface CrossingSegment {
   aId: number; bId: number;
 }
 
-function segmentListHasCrossings(segments: CrossingSegment[]): boolean {
-  const EPS = 1e-10;
-  const cross2d = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
+const CROSS_EPS = 1e-10;
+const cross2d = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
 
+// Proper crossing: two non-incident segments strictly straddle each other.
+// Whether this happens depends in general on the parameter values (interior
+// points like vf/fe slide as the sliders move), so it is the *contingent*
+// part of invalidity. The tolerance matters: collinear but disjoint segments
+// produce cross products of ±1e-19 float noise with effectively random
+// signs, so a strict sign test would report phantom crossings.
+function segmentsHaveProperCrossing(segments: CrossingSegment[]): boolean {
   for (let i = 0; i < segments.length; i++) {
     const s1 = segments[i];
-    const p1x = s1.ax, p1y = s1.ay, p2x = s1.bx, p2y = s1.by;
-
     for (let j = i + 1; j < segments.length; j++) {
       const s2 = segments[j];
-      // Sharing an endpoint rules out a proper crossing but NOT a collinear
-      // overlap: e.g. an F-fe edge lies entirely inside an E-F edge of the
-      // same face, sharing the F vertex.
-      const sharesVertex = s1.aId === s2.aId || s1.aId === s2.bId || s1.bId === s2.aId || s1.bId === s2.bId;
-
-      const p3x = s2.ax, p3y = s2.ay, p4x = s2.bx, p4y = s2.by;
-
-      const d1 = cross2d(p4x - p3x, p4y - p3y, p1x - p3x, p1y - p3y);
-      const d2 = cross2d(p4x - p3x, p4y - p3y, p2x - p3x, p2y - p3y);
-      const d3 = cross2d(p2x - p1x, p2y - p1y, p3x - p1x, p3y - p1y);
-      const d4 = cross2d(p2x - p1x, p2y - p1y, p4x - p1x, p4y - p1y);
-
-      // Proper crossing: endpoints strictly straddle each other. The
-      // tolerance matters: collinear but disjoint segments produce cross
-      // products of ±1e-19 float noise whose signs are effectively random,
-      // so a strict sign test reports phantom crossings.
-      if (!sharesVertex &&
-          ((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
-          ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS))) {
+      if (s1.aId === s2.aId || s1.aId === s2.bId || s1.bId === s2.aId || s1.bId === s2.bId) continue;
+      const d1 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.ax - s2.ax, s1.ay - s2.ay);
+      const d2 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.bx - s2.ax, s1.by - s2.ay);
+      const d3 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.ax - s1.ax, s2.ay - s1.ay);
+      const d4 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.bx - s1.ax, s2.by - s1.ay);
+      if (((d1 > CROSS_EPS && d2 < -CROSS_EPS) || (d1 < -CROSS_EPS && d2 > CROSS_EPS)) &&
+          ((d3 > CROSS_EPS && d4 < -CROSS_EPS) || (d3 < -CROSS_EPS && d4 > CROSS_EPS))) {
         return true;
-      }
-
-      // Collinear overlap: all cross products ~0, segments share a stretch
-      if (Math.abs(d1) <= EPS && Math.abs(d2) <= EPS &&
-          Math.abs(d3) <= EPS && Math.abs(d4) <= EPS) {
-        const dx = p2x - p1x, dy = p2y - p1y;
-        const len2 = dx * dx + dy * dy;
-        if (len2 < EPS) continue;
-        // Project p3 and p4 onto p1->p2 line; overlap exists if intervals interleave
-        const t3 = ((p3x - p1x) * dx + (p3y - p1y) * dy) / len2;
-        const t4 = ((p4x - p1x) * dx + (p4y - p1y) * dy) / len2;
-        const lo = Math.min(t3, t4), hi = Math.max(t3, t4);
-        // Intervals [0,1] and [lo,hi] overlap with interior extent (not just touching)
-        if (lo < 1 - EPS && hi > EPS && hi - lo > EPS) return true;
       }
     }
   }
-
   return false;
+}
+
+// Collinear overlap: two edges share a stretch of a common line. This is a
+// collinearity fixed by the point-class definitions (e.g. a V-E edge lies on
+// the original edge line, as does the V-V edge), so it is parameter-invariant
+// — the *structural* part of invalidity. Unlike proper crossings, edges
+// sharing an endpoint can still collinearly overlap.
+function segmentsHaveCollinearOverlap(segments: CrossingSegment[]): boolean {
+  for (let i = 0; i < segments.length; i++) {
+    const s1 = segments[i];
+    for (let j = i + 1; j < segments.length; j++) {
+      const s2 = segments[j];
+      const d1 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.ax - s2.ax, s1.ay - s2.ay);
+      const d2 = cross2d(s2.bx - s2.ax, s2.by - s2.ay, s1.bx - s2.ax, s1.by - s2.ay);
+      const d3 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.ax - s1.ax, s2.ay - s1.ay);
+      const d4 = cross2d(s1.bx - s1.ax, s1.by - s1.ay, s2.bx - s1.ax, s2.by - s1.ay);
+      if (Math.abs(d1) <= CROSS_EPS && Math.abs(d2) <= CROSS_EPS &&
+          Math.abs(d3) <= CROSS_EPS && Math.abs(d4) <= CROSS_EPS) {
+        const dx = s1.bx - s1.ax, dy = s1.by - s1.ay;
+        const len2 = dx * dx + dy * dy;
+        if (len2 < CROSS_EPS) continue;
+        const t3 = ((s2.ax - s1.ax) * dx + (s2.ay - s1.ay) * dy) / len2;
+        const t4 = ((s2.bx - s1.ax) * dx + (s2.by - s1.ay) * dy) / len2;
+        const lo = Math.min(t3, t4), hi = Math.max(t3, t4);
+        if (lo < 1 - CROSS_EPS && hi > CROSS_EPS && hi - lo > CROSS_EPS) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function segmentListHasCrossings(segments: CrossingSegment[]): boolean {
+  return segmentsHaveProperCrossing(segments) || segmentsHaveCollinearOverlap(segments);
+}
+
+// A T-junction: a vertex lying strictly in the interior of a non-incident
+// edge (collinear, 0 < t < 1). Edge-vs-edge tests miss these — a proper
+// crossing needs both endpoints straddling, a collinear overlap needs all
+// four endpoints collinear — but a vertex sitting on another edge's interior
+// is a genuine overlap. E.g. E-E,V-V: every V-V edge runs straight through
+// an E (edge-midpoint) vertex. Treated as a crossing/overlap.
+function segmentsHaveTJunction(segments: CrossingSegment[]): boolean {
+  const verts = new Map<number, [number, number]>();
+  for (const s of segments) {
+    verts.set(s.aId, [s.ax, s.ay]);
+    verts.set(s.bId, [s.bx, s.by]);
+  }
+  for (const s of segments) {
+    const dx = s.bx - s.ax, dy = s.by - s.ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) continue;
+    const len = Math.sqrt(len2);
+    for (const [id, [px, py]] of verts) {
+      if (id === s.aId || id === s.bId) continue;
+      const perp = (px - s.ax) * dy - (py - s.ay) * dx;
+      if (Math.abs(perp) > 1e-6 * len) continue; // not on the line
+      const t = ((px - s.ax) * dx + (py - s.ay) * dy) / len2;
+      if (t > 1e-9 && t < 1 - 1e-9) return true; // strictly interior
+    }
+  }
+  return false;
+}
+
+// Overlap = collinear edge overlap OR T-junction. Both are collinearity
+// facts fixed by the point-class geometry, hence parameter-invariant.
+function segmentsHaveOverlap(segments: CrossingSegment[]): boolean {
+  return segmentsHaveCollinearOverlap(segments) || segmentsHaveTJunction(segments);
 }
 
 export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
@@ -2379,14 +2423,14 @@ function makeCanonicalPatch(): Mesh {
   return { vertices, faces };
 }
 
-// Tests the operator's defined edge set (the raw atom connections) on the
-// canonical patch. This deliberately bypasses applyOmni/buildMeshFromEdges:
-// edge sets that don't close into faces produce an empty mesh there, hiding
-// crossings and overlaps that exist among the edges themselves — e.g.
-// E-F,F-fe, whose F-fe edges lie inside the E-F edges by construction.
-export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: number, tFe: number): boolean {
+// Builds the operator's defined edge set (the raw atom connections) on the
+// canonical patch, as 2D segments. This deliberately bypasses applyOmni/
+// buildMeshFromEdges: edge sets that don't close into faces produce an empty
+// mesh there, hiding crossings and overlaps that exist among the edges
+// themselves — e.g. E-F,F-fe, whose F-fe edges lie inside the E-F edges.
+function buildOperatorPatchSegments(notation: string, tVe: number, tVf: number, tFe: number): CrossingSegment[] {
   const atoms = parseOperatorNotation(notation);
-  if (atoms.length === 0) return false;
+  if (atoms.length === 0) return [];
 
   // Same nudge applyOmni applies: coincident parameter values place point
   // classes on top of each other, which would read as overlaps.
@@ -2426,7 +2470,33 @@ export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: nu
       });
     }
   }
-  return segmentListHasCrossings(segments);
+  return segments;
+}
+
+export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: number, tFe: number): boolean {
+  const segments = buildOperatorPatchSegments(notation, tVe, tVf, tFe);
+  return segmentsHaveProperCrossing(segments) || segmentsHaveOverlap(segments);
+}
+
+// Overlaps (collinear / T-junctions) are collinearity facts fixed by the
+// point-class geometry, so they are present at every parameter value or
+// none — no sweep needed. Evaluating at two generic, mutually-distinct
+// parameter points reveals exactly the structural overlaps: a real one
+// survives both, while a coincidental alignment at one point will not recur
+// at the other. This is the "can never be valid" verdict.
+const OVERLAP_PROBE_PARAMS: ReadonlyArray<readonly [number, number, number]> = [
+  [0.37, 0.53, 0.71],
+  [0.61, 0.29, 0.83],
+];
+
+export function operatorHasInevitableOverlap(notation: string): boolean {
+  if (!notation.trim()) return false;
+  try {
+    return OVERLAP_PROBE_PARAMS.every(([a, b, c]) =>
+      segmentsHaveOverlap(buildOperatorPatchSegments(notation, a, b, c)));
+  } catch {
+    return false;
+  }
 }
 
 // Returns true only if no probed parameter combination is free of crossings,
@@ -2469,8 +2539,18 @@ export function findCleanOperatorParams(notation: string): [number, number, numb
   return result;
 }
 
+// An operator can never be valid for two distinct reasons:
+//   - an inevitable overlap (collinear / T-junction) — a structural
+//     collinearity, decided analytically with no parameter sweep;
+//   - an inevitable proper crossing — two segments that straddle each other
+//     at every parameter value. Unlike overlaps these are NOT all structural
+//     (interior points move), so confirming one is unavoidable requires
+//     checking that no parameter combination is crossing-free — the sweep.
+// Overlaps short-circuit first, so the sweep is only ever reached for the
+// crossing question it actually needs to answer.
 export function operatorHasInherentCrossings(notation: string): boolean {
   if (!notation.trim()) return false;
+  if (operatorHasInevitableOverlap(notation)) return true;
   return findCleanOperatorParams(notation) === null;
 }
 
@@ -2491,6 +2571,12 @@ export interface OperatorAnalysis {
   // overlapping coverage (e.g. E-E,V-V double-covers: quad + inscribed
   // diamond), <1 for gaps.
   centralCellCoverage: number;
+  // Smallest vertex valence among output vertices well inside the patch
+  // (boundary-cut artifacts excluded). A proper polyhedral vertex has
+  // valence ≥ 3; valence 2 is a "false" vertex that renders identically but
+  // carries hidden topology for later operators; valence 1 is a stray
+  // dangling vertex. Infinity when no interior vertex exists.
+  minVertexValence: number;
 }
 
 const operatorAnalysisCache = new Map<string, OperatorAnalysis>();
@@ -2549,6 +2635,28 @@ function meshCentralCellCoverage(mesh: Mesh): number {
   return total; // cell area is 1
 }
 
+// Minimum vertex valence among output vertices well inside the patch
+// (|x|,|y| < 1.3), so vertices on the patch's cut boundary — which have
+// artificially low valence — are excluded.
+function minInteriorVertexValence(mesh: Mesh): number {
+  const incident = new Map<number, Set<number>>();
+  const touch = (a: number, b: number) => {
+    let sa = incident.get(a); if (!sa) { sa = new Set(); incident.set(a, sa); }
+    let sb = incident.get(b); if (!sb) { sb = new Set(); incident.set(b, sb); }
+    sa.add(b); sb.add(a);
+  };
+  for (const face of mesh.faces) {
+    for (let i = 0; i < face.length; i++) touch(face[i], face[(i + 1) % face.length]);
+  }
+  let min = Infinity;
+  for (const [v, neighbours] of incident) {
+    const x = mesh.vertices[v * 3], y = mesh.vertices[v * 3 + 1];
+    if (Math.abs(x) >= 1.3 || Math.abs(y) >= 1.3) continue;
+    if (neighbours.size < min) min = neighbours.size;
+  }
+  return min;
+}
+
 export function analyzeOperator(notation: string): OperatorAnalysis {
   const cached = operatorAnalysisCache.get(notation);
   if (cached) return cached;
@@ -2559,6 +2667,7 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
     inherentCrossings: false,
     unusedAtoms: [],
     centralCellCoverage: 0,
+    minVertexValence: Infinity,
   };
 
   let atoms: string[] = [];
@@ -2580,6 +2689,7 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
       const full = applyOmni(patch, notation, tVe, tVf, tFe);
       analysis.buildsFaces = full.faces.length > 0;
       analysis.centralCellCoverage = meshCentralCellCoverage(full);
+      analysis.minVertexValence = minInteriorVertexValence(full);
       if (analysis.buildsFaces && atoms.length > 1) {
         const fullSignature = meshSignature(full);
         for (const atom of atoms) {
@@ -2603,19 +2713,36 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
   return analysis;
 }
 
-export function isOperatorAnalyticallyValid(notation: string): boolean {
-  const analysis = analyzeOperator(notation);
-  return analysis.parses
-    && analysis.buildsFaces
-    && !analysis.inherentCrossings
-    && analysis.unusedAtoms.length === 0
-    && Math.abs(analysis.centralCellCoverage - 1) <= 0.01;
+// Coarse status of an operator, the single source of truth for the UI:
+//   empty    — no atoms
+//   crossing — edges always cross or overlap (incl. T-junctions / double
+//              covers); the one truly invalid geometric state
+//   invalid  — unknown atoms, builds nothing, or a stray degree-1 vertex
+//   degree2  — builds cleanly but its lowest vertex valence is 2 (renders,
+//              but the 2-valent vertices change topology for later operators)
+//   complete — builds cleanly with every vertex valence ≥ 3
+export type OperatorStatus = 'empty' | 'crossing' | 'invalid' | 'degree2' | 'complete';
+
+export function classifyOperator(notation: string): OperatorStatus {
+  if (!notation.trim()) return 'empty';
+  const a = analyzeOperator(notation);
+  if (!a.parses || !a.buildsFaces) return 'invalid';
+  if (a.inherentCrossings) return 'crossing';
+  if (a.minVertexValence < 2) return 'invalid';
+  if (a.minVertexValence === 2) return 'degree2';
+  return 'complete';
 }
 
-// Rejection-samples random atom sets until one passes analytical validation.
-// The valid space is far larger than the curated whitelist (~25% of all
-// 3-atom combos pass); typical cost is a few hundred ms, cached thereafter.
-export function generateRandomValidOperator(maxAttempts = 40): string | null {
+// True for finished operators only: every vertex valence ≥ 3, no crossings.
+export function isOperatorComplete(notation: string): boolean {
+  return classifyOperator(notation) === 'complete';
+}
+
+// Rejection-samples random atom sets until one is complete (valence ≥ 3, no
+// crossings) and tidy (no dead atoms, no gaps/overlaps). The complete space
+// is far larger than the curated whitelist; cost is typically a few hundred
+// ms, cached thereafter.
+export function generateRandomValidOperator(maxAttempts = 60): string | null {
   const sizeWeights = [1, 2, 2, 3, 3, 3, 4, 4, 5];
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const size = sizeWeights[Math.floor(Math.random() * sizeWeights.length)];
@@ -2624,7 +2751,12 @@ export function generateRandomValidOperator(maxAttempts = 40): string | null {
       pick.add(OMNI_ATOMS[Math.floor(Math.random() * OMNI_ATOMS.length)]);
     }
     const notation = joinAtomList(orderAtoms(pick));
-    if (isOperatorAnalyticallyValid(notation)) return notation;
+    const a = analyzeOperator(notation);
+    if (classifyOperator(notation) === 'complete'
+      && a.unusedAtoms.length === 0
+      && Math.abs(a.centralCellCoverage - 1) <= 0.01) {
+      return notation;
+    }
   }
   return null;
 }

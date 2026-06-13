@@ -139,3 +139,94 @@ All 311 whitelisted operators pass every criterion. The Random button
 now rejection-samples the analytical space (~86 ms/click, ~75% of
 results are valid operators the whitelist never listed) and sets the
 sliders to the operator's clean parameter point.
+
+## Revision 3: matrix green hints from analytical validation
+
+The matrix compatibility colouring no longer consults the curated
+whitelist (isCompatibleSubset). Each unselected atom is classified by
+analysing selected ∪ {atom} directly:
+
+- green   — the result is a complete, analytically-valid operator
+            (isOperatorAnalyticallyValid): clicking finishes a valid op
+- red      — the result is always-crossing (operatorHasInherentCrossings)
+- neutral — builds something but isn't a finished valid operator, or
+            doesn't build; we can't cheaply prove whether it extends to
+            valid, so it makes no promise
+
+This replaces the previous binary "subset of a known operator" green.
+The semantic shift is deliberate: green now means "valid operator right
+now" rather than "on the path to a recognised one", so it lights up less
+during early construction and converges as the set fills in. The red
+always-crossing tier and culprit highlighting are unchanged; the three
+tiers are now computed in one memo (atomCompatibilityTiers), one
+analyzeOperator call per atom, memoised per selection and cached
+per-notation in the library.
+
+Why not the faithful "extends to a valid operator" semantic: a live
+reachability search costs ~260s cold, a precomputed catalogue needs
+size-6 enumeration (~10^5 combos), and coverage is not a usable
+extendability proxy (142/886 extendable subsets over-cover). Per-dot
+validity is the only cheap, catalogue-free option.
+
+Still whitelist-backed (intentionally, as a name/recognition registry,
+not a validity gate): the "Complete / Degree N" status badge and preset
+name matching.
+
+## Revision 4: complete vs valid via vertex valence
+
+Completeness is now defined by minimum output vertex valence, not coverage:
+- valence 1 (stray/dangling vertex) → Invalid (still buildable — later
+  atoms can raise it — but not a finished operator)
+- valence 2 → "Degree 2": renders identically, but the 2-valent vertices
+  are real vertices that change topology for subsequent operators, so
+  they are flagged specifically (pulsing amber badge; amber matrix dots)
+- valence ≥ 3 → Complete
+
+This matches the curated whitelist exactly (all 311 have min valence ≥ 3,
+none have a degree-2 interior vertex) and fixes the earlier coverage-based
+mislabel of E-vf / E-V as Complete (they have degree-2 vertices).
+
+Double covers (E-E,V-V) are treated as crossing/overlap via T-junction
+detection: a vertex lying strictly interior to a non-incident edge. This
+only flags *inevitable* overlaps — it runs inside the parameter-swept
+inherent-crossing check, so an operator is 'crossing' only when no
+parameter combination is overlap-free. Contingent overlaps leave a clean
+point and fall through to slider restriction, exactly like contingent
+edge crossings. (Coverage was deliberately not used for invalidity:
+coverage>1 is common and transient during construction.)
+
+classifyOperator (empty/crossing/invalid/degree2/complete) is the single
+source of truth for the status badge, the matrix dot tiers (green =
+completes a complete operator, amber = completes a degree-2 operator, red
+= crossing/overlap), and the Random button (generates complete operators
+only). The old atom-degree label and isOperatorAnalyticallyValid are gone.
+
+## Revision 5: overlaps determined analytically, not by sweeping
+
+Overlaps (collinear overlaps and T-junctions) are collinearity facts fixed
+by the point-class geometry — each atom-edge lies on a fixed supporting
+line (the original edge, a V→F or E→F spoke, or the atom's own chord), so
+whether another vertex/edge lies on it is parameter-invariant. Deciding
+them by the 125-point inherent-crossing sweep was wasteful and slightly
+fragile (relied on the grid landing on the exact-collinear config).
+
+operatorHasInevitableOverlap(notation) now decides this with no sweep:
+evaluate the operator's edge segments at two generic, distinct parameter
+points and check for overlap at both. A structural overlap survives both
+(it is present at every parameter value); a coincidental alignment at one
+point will not recur at the other. operatorHasInherentCrossings short-
+circuits on this before falling back to the sweep.
+
+Proper crossings are NOT all structural — interior points (vf/fe/F) move
+with the sliders — so the sweep is retained for them. An audit confirmed
+the split is real: across 311 curated + 886 reachable + ~2000 random
+combos, the analytical overlap check is a strict subset of the swept
+verdict (zero cases where it flagged something the sweep missed), and
+~15% of random combos are inherent via a proper crossing with no overlap
+(e.g. E-E,F-ve,ve-vf) — these genuinely need the sweep. So overlaps are
+analytical; the sweep now only answers the crossing question it must.
+
+Segment tests split into segmentsHaveProperCrossing (contingent) and
+segmentsHaveCollinearOverlap + segmentsHaveTJunction (structural);
+segmentListHasCrossings and operatorPatchHasCrossings are unchanged in
+behavior. Slider-range sweep regression unchanged (180 issued, 0 violations).

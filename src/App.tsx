@@ -48,9 +48,6 @@ import {
   findPresetName,
   getOmniParamVisibility,
   getUnknownAtoms,
-  isCompatibleSubset,
-  isCompleteOperator,
-  isValidSubset,
   joinAtomList,
   orderAtoms,
   parseOperatorSpec,
@@ -64,6 +61,7 @@ import {
   getOperatorParamRanges,
   generateRandomValidOperator,
   findCleanOperatorParams,
+  classifyOperator,
   normalizeFaceFilter,
   operatorSupportsFaceFilter,
   OperatorSpec,
@@ -643,17 +641,6 @@ function decodeFaceFilter(value: string): FaceFilterSpec | undefined {
     negate: value[3] === '1',
     value: parsedValue,
   });
-}
-
-function getAtomDegree(atoms: string[]) {
-  const baseClasses = new Set<string>();
-  atoms.forEach((atom) => {
-    atom.split('-').forEach((pointClass) => {
-      const withoutContinuation = pointClass.endsWith('!') ? pointClass.slice(0, -1) : pointClass;
-      baseClasses.add(withoutContinuation === 've0' || withoutContinuation === 've1' ? 've' : withoutContinuation);
-    });
-  });
-  return baseClasses.size;
 }
 
 function serializeCompactOperator(operator: OperatorState) {
@@ -1771,10 +1758,9 @@ export default function App() {
   const orderedSelectedAtoms = orderAtoms(selectedAtoms);
   const uniqueSelectedAtoms = Array.from(new Set(selectedAtoms));
   const unknownSelectedAtoms = getUnknownAtoms(uniqueSelectedAtoms);
-  const selectedOperatorIsComplete = unknownSelectedAtoms.length === 0 && isCompleteOperator(uniqueSelectedAtoms);
-  const selectedOperatorIsValid = unknownSelectedAtoms.length === 0 && isValidSubset(uniqueSelectedAtoms);
-  const selectedOperatorDegree = unknownSelectedAtoms.length === 0 && uniqueSelectedAtoms.length > 0 ? getAtomDegree(uniqueSelectedAtoms) : null;
-  const selectedOperatorIsEmpty = uniqueSelectedAtoms.length === 0;
+  // Single source of truth for the status badge: empty / invalid / degree2
+  // / complete / crossing (vertex-valence based; see classifyOperator).
+  const selectedOperatorStatus = classifyOperator(selectedOperatorNotation);
   const selectedMatchingPresetName = unknownSelectedAtoms.length === 0 ? findPresetName(uniqueSelectedAtoms) : null;
   const selectedPresetValue = !selectedOperatorNotation.trim()
     ? NO_PRESET_VALUE
@@ -2000,19 +1986,32 @@ export default function App() {
     return getInherentCrossingCulprits(selectedOperatorNotation);
   }, [selectedOperatorHasInherentCrossings, selectedOperatorNotation]);
 
-  // Atoms which, added to the current selection, would make the operator
-  // always-crossing — so the matrix can warn before the state is entered.
-  const atomsEnteringCrossingState = useMemo(() => {
-    const result = new Set<string>();
-    if (!selectedOperatorEnabled) return result;
+  // Per-dot classification of each unselected atom, sourced from analytical
+  // validation rather than the curated whitelist:
+  //   'complete' — adding it yields a complete operator (all valences ≥ 3)
+  //   'degree2'  — adding it yields an operator whose lowest valence is 2
+  //                (renders, but introduces hidden vertices)
+  //   'crossing' — adding it forces an always-crossing/overlapping config
+  //   'neutral'  — builds something else, or not a finished operator
+  // One classifyOperator call per atom, memoized per selection (results are
+  // cached per-notation in the library, so re-renders are free).
+  const atomCompatibilityTiers = useMemo(() => {
+    const tiers = new Map<string, 'complete' | 'degree2' | 'crossing' | 'neutral'>();
+    if (!selectedOperatorEnabled) return tiers;
     const selected = parseAtomList(selectedOperatorNotation);
     for (const atom of OMNI_ATOMS) {
       if (selected.includes(atom)) continue;
-      if (operatorHasInherentCrossings(joinAtomList(orderAtoms(new Set([...selected, atom]))))) {
-        result.add(atom);
-      }
+      const notation = joinAtomList(orderAtoms(new Set([...selected, atom])));
+      const status = classifyOperator(notation);
+      tiers.set(
+        atom,
+        status === 'crossing' ? 'crossing'
+          : status === 'complete' ? 'complete'
+          : status === 'degree2' ? 'degree2'
+          : 'neutral',
+      );
     }
-    return result;
+    return tiers;
   }, [selectedOperatorNotation, selectedOperatorEnabled]);
 
   const isMultigrid = tilingType === 'multigrid';
@@ -3868,7 +3867,7 @@ export default function App() {
                                               dangerouslySetInnerHTML={{ __html: selectedOperatorDiagramSvg }}
                                             />
                                             <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                                              {selectedOperatorIsValid && !selectedOperatorIsComplete && selectedOperatorDegree !== null ? (
+                                              {selectedOperatorStatus === 'degree2' ? (
                                                 <motion.span
                                                   animate={{
                                                     backgroundColor: ['rgba(120,53,15,0.3)', 'rgba(180,83,9,0.55)', 'rgba(120,53,15,0.3)'],
@@ -3877,23 +3876,21 @@ export default function App() {
                                                   }}
                                                   transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
                                                   className="rounded-full border px-2 py-1 font-semibold uppercase tracking-widest"
-                                                  title={`Degree ${selectedOperatorDegree || 2} operator`}
+                                                  title="Renders fine, but has degree-2 vertices: extra vertices that look identical yet change the topology for later operators"
                                                 >
-                                                  Degree {selectedOperatorDegree || 2}
+                                                  Degree 2
                                                 </motion.span>
                                               ) : (
                                                 <span
                                                   className={`rounded-full border px-2 py-1 font-semibold uppercase tracking-widest ${
-                                                    selectedOperatorIsComplete
+                                                    selectedOperatorStatus === 'complete'
                                                       ? 'border-emerald-800/40 bg-emerald-900/30 text-emerald-300'
-                                                      : selectedOperatorIsEmpty
+                                                      : selectedOperatorStatus === 'empty'
                                                         ? 'border-neutral-700/60 bg-neutral-900/40 text-neutral-400'
-                                                      : selectedOperatorDegree !== null
-                                                        ? 'border-amber-800/40 bg-amber-900/25 text-amber-300'
-                                                      : 'border-red-800/40 bg-red-900/30 text-red-300'
+                                                        : 'border-red-800/40 bg-red-900/30 text-red-300'
                                                   }`}
                                                 >
-                                                  {selectedOperatorIsComplete ? 'Complete' : selectedOperatorIsEmpty ? 'Empty' : selectedOperatorDegree !== null ? `Degree ${selectedOperatorDegree}` : 'Invalid'}
+                                                  {selectedOperatorStatus === 'complete' ? 'Complete' : selectedOperatorStatus === 'empty' ? 'Empty' : 'Invalid'}
                                                 </span>
                                               )}
                                               {selectedMatchingPresetName && (
@@ -3964,9 +3961,11 @@ export default function App() {
 
                                                 const isSelected = uniqueSelectedAtoms.includes(atom);
                                                 const isCulprit = isSelected && selectedOperatorCrossingCulprits.includes(atom);
-                                                const wouldAlwaysCross = !isSelected && atomsEnteringCrossingState.has(atom);
-                                                const isCompatible = isSelected || isCompatibleSubset(uniqueSelectedAtoms.filter((selected) => selected !== atom), atom);
-                                                const isDotHighlighted = !isSelected && isCompatible && !wouldAlwaysCross && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
+                                                const tier = isSelected ? undefined : atomCompatibilityTiers.get(atom);
+                                                const wouldAlwaysCross = tier === 'crossing';
+                                                const completesComplete = tier === 'complete';
+                                                const completesDegree2 = tier === 'degree2';
+                                                const isDotHighlighted = completesComplete && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
                                                 const baseClass = isCulprit
                                                   ? 'bg-red-600 border-red-400 shadow-sm shadow-red-900/40 animate-pulse'
                                                   : isSelected
@@ -3975,9 +3974,11 @@ export default function App() {
                                                       ? 'bg-amber-500/70 border-amber-400/80 animate-pulse'
                                                       : wouldAlwaysCross
                                                         ? 'border-red-800/70 bg-red-950/50 opacity-80 hover:border-red-600/80 hover:bg-red-900/50'
-                                                        : isCompatible
+                                                        : completesComplete
                                                           ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
-                                                          : 'border-neutral-700/55 bg-neutral-800/35 opacity-60 hover:border-neutral-600/75 hover:bg-neutral-800/55 hover:opacity-80';
+                                                          : completesDegree2
+                                                            ? 'bg-amber-900/40 border-amber-800/50 hover:bg-amber-800/40'
+                                                            : 'border-neutral-700/55 bg-neutral-800/35 opacity-60 hover:border-neutral-600/75 hover:bg-neutral-800/55 hover:opacity-80';
 
                                                 return (
                                                   <button
@@ -3990,8 +3991,12 @@ export default function App() {
                                                     title={isCulprit
                                                       ? `${atom} — involved in the crossing; remove to fix`
                                                       : wouldAlwaysCross
-                                                        ? `${atom} — adding this would make edges always cross`
-                                                        : atom}
+                                                        ? `${atom} — adding this would always cross or overlap`
+                                                        : completesComplete
+                                                          ? `${atom} — completes a complete operator`
+                                                          : completesDegree2
+                                                            ? `${atom} — completes an operator with degree-2 vertices`
+                                                            : atom}
                                                   />
                                                 );
                                               })}
@@ -4243,8 +4248,10 @@ export default function App() {
                                                       seen.add(atom);
                                                       const alreadySelected = uniqueSelectedAtoms.includes(atom);
                                                       const culprit = alreadySelected && selectedOperatorCrossingCulprits.includes(atom);
-                                                      const entersCrossing = !alreadySelected && atomsEnteringCrossingState.has(atom);
-                                                      const compatible = alreadySelected || isCompatibleSubset(uniqueSelectedAtoms.filter((a) => a !== atom), atom);
+                                                      const tier = alreadySelected ? undefined : atomCompatibilityTiers.get(atom);
+                                                      const entersCrossing = tier === 'crossing';
+                                                      const completesComplete = tier === 'complete';
+                                                      const completesDegree2 = tier === 'degree2';
                                                       return [(
                                                         <button
                                                           key={atom}
@@ -4258,15 +4265,21 @@ export default function App() {
                                                                 ? 'bg-blue-600/80 text-white'
                                                                 : entersCrossing
                                                                   ? 'border border-red-800/70 bg-red-950/40 text-red-300 hover:border-red-600/80 hover:bg-red-900/40'
-                                                                  : compatible
+                                                                  : completesComplete
                                                                     ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
-                                                                    : 'border border-neutral-700/55 bg-neutral-800/30 text-neutral-500 opacity-70 hover:border-neutral-600/75 hover:bg-neutral-800/50 hover:text-neutral-400 hover:opacity-85'
+                                                                    : completesDegree2
+                                                                      ? 'bg-amber-900/40 text-amber-300 hover:bg-amber-800/40'
+                                                                      : 'border border-neutral-700/55 bg-neutral-800/30 text-neutral-500 opacity-70 hover:border-neutral-600/75 hover:bg-neutral-800/50 hover:text-neutral-400 hover:opacity-85'
                                                           }`}
                                                           title={culprit
                                                             ? `${atom} — involved in the crossing; remove to fix`
                                                             : entersCrossing
-                                                              ? `${atom} — adding this would make edges always cross`
-                                                              : atom}
+                                                              ? `${atom} — adding this would always cross or overlap`
+                                                              : completesComplete
+                                                                ? `${atom} — completes a complete operator`
+                                                                : completesDegree2
+                                                                  ? `${atom} — completes an operator with degree-2 vertices`
+                                                                  : atom}
                                                         >
                                                           <span className="font-mono text-neutral-500 text-[9px]">{atom}</span>
                                                           {alreadySelected && <span className="ml-1 text-blue-200">✓</span>}
