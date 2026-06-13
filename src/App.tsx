@@ -48,7 +48,6 @@ import {
   findPresetName,
   getOmniParamVisibility,
   getUnknownAtoms,
-  isCompatibleSubset,
   isCompleteOperator,
   isValidSubset,
   joinAtomList,
@@ -64,6 +63,8 @@ import {
   getOperatorParamRanges,
   generateRandomValidOperator,
   findCleanOperatorParams,
+  analyzeOperator,
+  isOperatorAnalyticallyValid,
   normalizeFaceFilter,
   operatorSupportsFaceFilter,
   OperatorSpec,
@@ -2000,19 +2001,31 @@ export default function App() {
     return getInherentCrossingCulprits(selectedOperatorNotation);
   }, [selectedOperatorHasInherentCrossings, selectedOperatorNotation]);
 
-  // Atoms which, added to the current selection, would make the operator
-  // always-crossing — so the matrix can warn before the state is entered.
-  const atomsEnteringCrossingState = useMemo(() => {
-    const result = new Set<string>();
-    if (!selectedOperatorEnabled) return result;
+  // Per-dot classification of each unselected atom, sourced from analytical
+  // validation rather than the curated whitelist:
+  //   'valid'    — adding it yields a complete, analytically-valid operator
+  //   'crossing' — adding it forces an always-crossing configuration
+  //   'neutral'  — builds something, but not (yet) a finished valid operator
+  // One analyzeOperator call per atom, memoized per selection (results are
+  // cached per-notation in the library, so re-renders are free).
+  const atomCompatibilityTiers = useMemo(() => {
+    const tiers = new Map<string, 'valid' | 'crossing' | 'neutral'>();
+    if (!selectedOperatorEnabled) return tiers;
     const selected = parseAtomList(selectedOperatorNotation);
     for (const atom of OMNI_ATOMS) {
       if (selected.includes(atom)) continue;
-      if (operatorHasInherentCrossings(joinAtomList(orderAtoms(new Set([...selected, atom]))))) {
-        result.add(atom);
-      }
+      const notation = joinAtomList(orderAtoms(new Set([...selected, atom])));
+      const analysis = analyzeOperator(notation);
+      tiers.set(
+        atom,
+        analysis.inherentCrossings
+          ? 'crossing'
+          : isOperatorAnalyticallyValid(notation)
+            ? 'valid'
+            : 'neutral',
+      );
     }
-    return result;
+    return tiers;
   }, [selectedOperatorNotation, selectedOperatorEnabled]);
 
   const isMultigrid = tilingType === 'multigrid';
@@ -3964,9 +3977,10 @@ export default function App() {
 
                                                 const isSelected = uniqueSelectedAtoms.includes(atom);
                                                 const isCulprit = isSelected && selectedOperatorCrossingCulprits.includes(atom);
-                                                const wouldAlwaysCross = !isSelected && atomsEnteringCrossingState.has(atom);
-                                                const isCompatible = isSelected || isCompatibleSubset(uniqueSelectedAtoms.filter((selected) => selected !== atom), atom);
-                                                const isDotHighlighted = !isSelected && isCompatible && !wouldAlwaysCross && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
+                                                const tier = isSelected ? undefined : atomCompatibilityTiers.get(atom);
+                                                const wouldAlwaysCross = tier === 'crossing';
+                                                const completesValid = tier === 'valid';
+                                                const isDotHighlighted = completesValid && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
                                                 const baseClass = isCulprit
                                                   ? 'bg-red-600 border-red-400 shadow-sm shadow-red-900/40 animate-pulse'
                                                   : isSelected
@@ -3975,7 +3989,7 @@ export default function App() {
                                                       ? 'bg-amber-500/70 border-amber-400/80 animate-pulse'
                                                       : wouldAlwaysCross
                                                         ? 'border-red-800/70 bg-red-950/50 opacity-80 hover:border-red-600/80 hover:bg-red-900/50'
-                                                        : isCompatible
+                                                        : completesValid
                                                           ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
                                                           : 'border-neutral-700/55 bg-neutral-800/35 opacity-60 hover:border-neutral-600/75 hover:bg-neutral-800/55 hover:opacity-80';
 
@@ -3991,7 +4005,9 @@ export default function App() {
                                                       ? `${atom} — involved in the crossing; remove to fix`
                                                       : wouldAlwaysCross
                                                         ? `${atom} — adding this would make edges always cross`
-                                                        : atom}
+                                                        : completesValid
+                                                          ? `${atom} — completes a valid operator`
+                                                          : atom}
                                                   />
                                                 );
                                               })}
@@ -4243,8 +4259,9 @@ export default function App() {
                                                       seen.add(atom);
                                                       const alreadySelected = uniqueSelectedAtoms.includes(atom);
                                                       const culprit = alreadySelected && selectedOperatorCrossingCulprits.includes(atom);
-                                                      const entersCrossing = !alreadySelected && atomsEnteringCrossingState.has(atom);
-                                                      const compatible = alreadySelected || isCompatibleSubset(uniqueSelectedAtoms.filter((a) => a !== atom), atom);
+                                                      const tier = alreadySelected ? undefined : atomCompatibilityTiers.get(atom);
+                                                      const entersCrossing = tier === 'crossing';
+                                                      const completesValid = tier === 'valid';
                                                       return [(
                                                         <button
                                                           key={atom}
@@ -4258,7 +4275,7 @@ export default function App() {
                                                                 ? 'bg-blue-600/80 text-white'
                                                                 : entersCrossing
                                                                   ? 'border border-red-800/70 bg-red-950/40 text-red-300 hover:border-red-600/80 hover:bg-red-900/40'
-                                                                  : compatible
+                                                                  : completesValid
                                                                     ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50'
                                                                     : 'border border-neutral-700/55 bg-neutral-800/30 text-neutral-500 opacity-70 hover:border-neutral-600/75 hover:bg-neutral-800/50 hover:text-neutral-400 hover:opacity-85'
                                                           }`}
@@ -4266,7 +4283,9 @@ export default function App() {
                                                             ? `${atom} — involved in the crossing; remove to fix`
                                                             : entersCrossing
                                                               ? `${atom} — adding this would make edges always cross`
-                                                              : atom}
+                                                              : completesValid
+                                                                ? `${atom} — completes a valid operator`
+                                                                : atom}
                                                         >
                                                           <span className="font-mono text-neutral-500 text-[9px]">{atom}</span>
                                                           {alreadySelected && <span className="ml-1 text-blue-200">✓</span>}

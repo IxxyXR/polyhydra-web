@@ -139,3 +139,35 @@ All 311 whitelisted operators pass every criterion. The Random button
 now rejection-samples the analytical space (~86 ms/click, ~75% of
 results are valid operators the whitelist never listed) and sets the
 sliders to the operator's clean parameter point.
+
+## Revision 3: matrix green hints from analytical validation
+
+The matrix compatibility colouring no longer consults the curated
+whitelist (isCompatibleSubset). Each unselected atom is classified by
+analysing selected ∪ {atom} directly:
+
+- green   — the result is a complete, analytically-valid operator
+            (isOperatorAnalyticallyValid): clicking finishes a valid op
+- red      — the result is always-crossing (operatorHasInherentCrossings)
+- neutral — builds something but isn't a finished valid operator, or
+            doesn't build; we can't cheaply prove whether it extends to
+            valid, so it makes no promise
+
+This replaces the previous binary "subset of a known operator" green.
+The semantic shift is deliberate: green now means "valid operator right
+now" rather than "on the path to a recognised one", so it lights up less
+during early construction and converges as the set fills in. The red
+always-crossing tier and culprit highlighting are unchanged; the three
+tiers are now computed in one memo (atomCompatibilityTiers), one
+analyzeOperator call per atom, memoised per selection and cached
+per-notation in the library.
+
+Why not the faithful "extends to a valid operator" semantic: a live
+reachability search costs ~260s cold, a precomputed catalogue needs
+size-6 enumeration (~10^5 combos), and coverage is not a usable
+extendability proxy (142/886 extendable subsets over-cover). Per-dot
+validity is the only cheap, catalogue-free option.
+
+Still whitelist-backed (intentionally, as a name/recognition registry,
+not a validity gate): the "Complete / Degree N" status badge and preset
+name matching.
