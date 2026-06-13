@@ -2657,6 +2657,69 @@ function minInteriorVertexValence(mesh: Mesh): number {
   return min;
 }
 
+// Minimum vertex valence measured on the operator's RAW edge graph (the atom
+// connections themselves), not on the built face-mesh. buildMeshFromEdges
+// drops dangling edges — a vertex with a single incident half-edge forms no
+// face (see the length-1 bundle in buildMeshFromEdges) and vanishes from the
+// mesh — so a face-mesh count can never report a degree-1 vertex. The classic
+// case is an unpaired fe-fe! (or vf-vf!, ve-…) atom whose edge has two
+// dangling ends: a real degree-1 (stray) vertex that the face count silently
+// rounds up to the valence of whatever surviving vertex sits nearby.
+//
+// For a well-formed operator every interior vertex is closed by faces, so its
+// raw edge degree equals its face valence; this only diverges (downward) when
+// an atom leaves a genuinely dangling end. Edges are generated over the full
+// 5×5 patch and deduped by vertex-id pair (the same physical edge is emitted
+// by both adjacent faces), then degree is counted per vertex over interior
+// vertices only (|x|,|y| < 1.3), matching minInteriorVertexValence's cut.
+function minInteriorEdgeDegree(notation: string, tVe: number, tVf: number, tFe: number): number {
+  const atoms = parseOperatorNotation(notation);
+  if (atoms.length === 0) return Infinity;
+
+  let resolvedTVe = tVe;
+  let resolvedTVf = tVf;
+  let resolvedTFe = tFe;
+  if (Math.abs(resolvedTVe - resolvedTVf) < EPSILON) resolvedTVf += EPSILON;
+  if (Math.abs(resolvedTVe - resolvedTFe) < EPSILON) resolvedTFe += EPSILON;
+  if (Math.abs(resolvedTVf - resolvedTFe) < EPSILON) resolvedTFe += EPSILON;
+
+  const classesNeeded = new Set<OmniPointClass>();
+  atoms.forEach(([classA, classB]) => {
+    classesNeeded.add(classA);
+    classesNeeded.add(classB);
+  });
+
+  const sourceMesh = buildHalfedgeMesh(makeCanonicalPatch());
+  const cache = new OperatorVertexCache();
+  const degree = new Map<number, number>();
+  const position = new Map<number, OVertex>();
+  const seen = new Set<string>();
+
+  for (const face of sourceMesh.faces) {
+    const edges = buildOperatorEdgesForFace(
+      face, atoms, classesNeeded, cache, resolvedTVe, resolvedTVf, resolvedTFe
+    );
+    for (const edge of edges) {
+      const key = edge.a.id <= edge.b.id ? `${edge.a.id}_${edge.b.id}` : `${edge.b.id}_${edge.a.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      position.set(edge.a.id, edge.a);
+      position.set(edge.b.id, edge.b);
+      degree.set(edge.a.id, (degree.get(edge.a.id) ?? 0) + 1);
+      degree.set(edge.b.id, (degree.get(edge.b.id) ?? 0) + 1);
+    }
+  }
+
+  let min = Infinity;
+  for (const [id, count] of degree) {
+    const vertex = position.get(id);
+    if (!vertex) continue;
+    if (Math.abs(vertex.position.x) >= 1.3 || Math.abs(vertex.position.y) >= 1.3) continue;
+    if (count < min) min = count;
+  }
+  return min;
+}
+
 export function analyzeOperator(notation: string): OperatorAnalysis {
   const cached = operatorAnalysisCache.get(notation);
   if (cached) return cached;
@@ -2689,7 +2752,14 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
       const full = applyOmni(patch, notation, tVe, tVf, tFe);
       analysis.buildsFaces = full.faces.length > 0;
       analysis.centralCellCoverage = meshCentralCellCoverage(full);
-      analysis.minVertexValence = minInteriorVertexValence(full);
+      // Take the lower of the face-mesh valence and the raw edge-graph degree:
+      // the face count sees false (degree-2) vertices that the edge graph
+      // closes, while the edge graph sees dangling (degree-1) vertices that the
+      // face count drops. Neither alone is the full picture.
+      analysis.minVertexValence = Math.min(
+        minInteriorVertexValence(full),
+        minInteriorEdgeDegree(notation, tVe, tVf, tFe),
+      );
       if (analysis.buildsFaces && atoms.length > 1) {
         const fullSignature = meshSignature(full);
         for (const atom of atoms) {
@@ -2717,18 +2787,22 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
 //   empty    — no atoms
 //   crossing — edges always cross or overlap (incl. T-junctions / double
 //              covers); the one truly invalid geometric state
-//   invalid  — unknown atoms, builds nothing, or a stray degree-1 vertex
+//   invalid  — unknown atoms or builds nothing
+//   degree1  — builds, but has a stray degree-1 (dangling) vertex, e.g. an
+//              unpaired fe-fe! whose edge has two loose ends; renders, but is
+//              not a finished operator (later atoms can still close it)
 //   degree2  — builds cleanly but its lowest vertex valence is 2 (renders,
 //              but the 2-valent vertices change topology for later operators)
 //   complete — builds cleanly with every vertex valence ≥ 3
-export type OperatorStatus = 'empty' | 'crossing' | 'invalid' | 'degree2' | 'complete';
+export type OperatorStatus = 'empty' | 'crossing' | 'invalid' | 'degree1' | 'degree2' | 'complete';
 
 export function classifyOperator(notation: string): OperatorStatus {
   if (!notation.trim()) return 'empty';
   const a = analyzeOperator(notation);
   if (!a.parses || !a.buildsFaces) return 'invalid';
   if (a.inherentCrossings) return 'crossing';
-  if (a.minVertexValence < 2) return 'invalid';
+  if (a.minVertexValence < 1) return 'invalid';
+  if (a.minVertexValence === 1) return 'degree1';
   if (a.minVertexValence === 2) return 'degree2';
   return 'complete';
 }
