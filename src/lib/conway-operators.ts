@@ -2323,6 +2323,34 @@ function segmentListHasCrossings(segments: CrossingSegment[]): boolean {
   return false;
 }
 
+// A T-junction: a vertex lying strictly in the interior of a non-incident
+// edge (collinear, 0 < t < 1). Edge-vs-edge tests miss these — a proper
+// crossing needs both endpoints straddling, a collinear overlap needs all
+// four endpoints collinear — but a vertex sitting on another edge's interior
+// is a genuine overlap. E.g. E-E,V-V: every V-V edge runs straight through
+// an E (edge-midpoint) vertex. Treated as a crossing/overlap.
+function segmentsHaveTJunction(segments: CrossingSegment[]): boolean {
+  const verts = new Map<number, [number, number]>();
+  for (const s of segments) {
+    verts.set(s.aId, [s.ax, s.ay]);
+    verts.set(s.bId, [s.bx, s.by]);
+  }
+  for (const s of segments) {
+    const dx = s.bx - s.ax, dy = s.by - s.ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) continue;
+    const len = Math.sqrt(len2);
+    for (const [id, [px, py]] of verts) {
+      if (id === s.aId || id === s.bId) continue;
+      const perp = (px - s.ax) * dy - (py - s.ay) * dx;
+      if (Math.abs(perp) > 1e-6 * len) continue; // not on the line
+      const t = ((px - s.ax) * dx + (py - s.ay) * dy) / len2;
+      if (t > 1e-9 && t < 1 - 1e-9) return true; // strictly interior
+    }
+  }
+  return false;
+}
+
 export function hasMeshEdgeCrossings(mesh: Mesh): boolean {
   const { vertices, faces } = mesh;
 
@@ -2426,7 +2454,7 @@ export function operatorPatchHasCrossings(notation: string, tVe: number, tVf: nu
       });
     }
   }
-  return segmentListHasCrossings(segments);
+  return segmentListHasCrossings(segments) || segmentsHaveTJunction(segments);
 }
 
 // Returns true only if no probed parameter combination is free of crossings,
@@ -2491,6 +2519,12 @@ export interface OperatorAnalysis {
   // overlapping coverage (e.g. E-E,V-V double-covers: quad + inscribed
   // diamond), <1 for gaps.
   centralCellCoverage: number;
+  // Smallest vertex valence among output vertices well inside the patch
+  // (boundary-cut artifacts excluded). A proper polyhedral vertex has
+  // valence ≥ 3; valence 2 is a "false" vertex that renders identically but
+  // carries hidden topology for later operators; valence 1 is a stray
+  // dangling vertex. Infinity when no interior vertex exists.
+  minVertexValence: number;
 }
 
 const operatorAnalysisCache = new Map<string, OperatorAnalysis>();
@@ -2549,6 +2583,28 @@ function meshCentralCellCoverage(mesh: Mesh): number {
   return total; // cell area is 1
 }
 
+// Minimum vertex valence among output vertices well inside the patch
+// (|x|,|y| < 1.3), so vertices on the patch's cut boundary — which have
+// artificially low valence — are excluded.
+function minInteriorVertexValence(mesh: Mesh): number {
+  const incident = new Map<number, Set<number>>();
+  const touch = (a: number, b: number) => {
+    let sa = incident.get(a); if (!sa) { sa = new Set(); incident.set(a, sa); }
+    let sb = incident.get(b); if (!sb) { sb = new Set(); incident.set(b, sb); }
+    sa.add(b); sb.add(a);
+  };
+  for (const face of mesh.faces) {
+    for (let i = 0; i < face.length; i++) touch(face[i], face[(i + 1) % face.length]);
+  }
+  let min = Infinity;
+  for (const [v, neighbours] of incident) {
+    const x = mesh.vertices[v * 3], y = mesh.vertices[v * 3 + 1];
+    if (Math.abs(x) >= 1.3 || Math.abs(y) >= 1.3) continue;
+    if (neighbours.size < min) min = neighbours.size;
+  }
+  return min;
+}
+
 export function analyzeOperator(notation: string): OperatorAnalysis {
   const cached = operatorAnalysisCache.get(notation);
   if (cached) return cached;
@@ -2559,6 +2615,7 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
     inherentCrossings: false,
     unusedAtoms: [],
     centralCellCoverage: 0,
+    minVertexValence: Infinity,
   };
 
   let atoms: string[] = [];
@@ -2580,6 +2637,7 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
       const full = applyOmni(patch, notation, tVe, tVf, tFe);
       analysis.buildsFaces = full.faces.length > 0;
       analysis.centralCellCoverage = meshCentralCellCoverage(full);
+      analysis.minVertexValence = minInteriorVertexValence(full);
       if (analysis.buildsFaces && atoms.length > 1) {
         const fullSignature = meshSignature(full);
         for (const atom of atoms) {
@@ -2603,19 +2661,46 @@ export function analyzeOperator(notation: string): OperatorAnalysis {
   return analysis;
 }
 
+// Coarse status of an operator, the single source of truth for the UI:
+//   empty    — no atoms
+//   crossing — edges always cross or overlap (incl. T-junctions / double
+//              covers); the one truly invalid geometric state
+//   invalid  — unknown atoms, builds nothing, or a stray degree-1 vertex
+//   degree2  — builds cleanly but its lowest vertex valence is 2 (renders,
+//              but the 2-valent vertices change topology for later operators)
+//   complete — builds cleanly with every vertex valence ≥ 3
+export type OperatorStatus = 'empty' | 'crossing' | 'invalid' | 'degree2' | 'complete';
+
+export function classifyOperator(notation: string): OperatorStatus {
+  if (!notation.trim()) return 'empty';
+  const a = analyzeOperator(notation);
+  if (!a.parses || !a.buildsFaces) return 'invalid';
+  if (a.inherentCrossings) return 'crossing';
+  if (a.minVertexValence < 2) return 'invalid';
+  if (a.minVertexValence === 2) return 'degree2';
+  return 'complete';
+}
+
+// True for finished operators only: every vertex valence ≥ 3, no crossings.
+export function isOperatorComplete(notation: string): boolean {
+  return classifyOperator(notation) === 'complete';
+}
+
+// Deprecated: superseded by classifyOperator. Retained until the UI is
+// fully migrated. "Valid" here means complete-or-degree-2 and tidy.
 export function isOperatorAnalyticallyValid(notation: string): boolean {
+  const status = classifyOperator(notation);
+  if (status !== 'complete' && status !== 'degree2') return false;
   const analysis = analyzeOperator(notation);
-  return analysis.parses
-    && analysis.buildsFaces
-    && !analysis.inherentCrossings
-    && analysis.unusedAtoms.length === 0
+  return analysis.unusedAtoms.length === 0
     && Math.abs(analysis.centralCellCoverage - 1) <= 0.01;
 }
 
-// Rejection-samples random atom sets until one passes analytical validation.
-// The valid space is far larger than the curated whitelist (~25% of all
-// 3-atom combos pass); typical cost is a few hundred ms, cached thereafter.
-export function generateRandomValidOperator(maxAttempts = 40): string | null {
+// Rejection-samples random atom sets until one is complete (valence ≥ 3, no
+// crossings) and tidy (no dead atoms, no gaps/overlaps). The complete space
+// is far larger than the curated whitelist; cost is typically a few hundred
+// ms, cached thereafter.
+export function generateRandomValidOperator(maxAttempts = 60): string | null {
   const sizeWeights = [1, 2, 2, 3, 3, 3, 4, 4, 5];
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const size = sizeWeights[Math.floor(Math.random() * sizeWeights.length)];
@@ -2624,7 +2709,12 @@ export function generateRandomValidOperator(maxAttempts = 40): string | null {
       pick.add(OMNI_ATOMS[Math.floor(Math.random() * OMNI_ATOMS.length)]);
     }
     const notation = joinAtomList(orderAtoms(pick));
-    if (isOperatorAnalyticallyValid(notation)) return notation;
+    const a = analyzeOperator(notation);
+    if (classifyOperator(notation) === 'complete'
+      && a.unusedAtoms.length === 0
+      && Math.abs(a.centralCellCoverage - 1) <= 0.01) {
+      return notation;
+    }
   }
   return null;
 }
