@@ -48,8 +48,6 @@ import {
   findPresetName,
   getOmniParamVisibility,
   getUnknownAtoms,
-  isCompleteOperator,
-  isValidSubset,
   joinAtomList,
   orderAtoms,
   parseOperatorSpec,
@@ -1772,8 +1770,15 @@ export default function App() {
   const orderedSelectedAtoms = orderAtoms(selectedAtoms);
   const uniqueSelectedAtoms = Array.from(new Set(selectedAtoms));
   const unknownSelectedAtoms = getUnknownAtoms(uniqueSelectedAtoms);
-  const selectedOperatorIsComplete = unknownSelectedAtoms.length === 0 && isCompleteOperator(uniqueSelectedAtoms);
-  const selectedOperatorIsValid = unknownSelectedAtoms.length === 0 && isValidSubset(uniqueSelectedAtoms);
+  const selectedOperatorAnalysis = selectedOperatorNotation ? analyzeOperator(selectedOperatorNotation) : null;
+  const selectedOperatorIsComplete = !!selectedOperatorAnalysis && isOperatorAnalyticallyValid(selectedOperatorNotation);
+  // "Valid" now means the geometry builds cleanly — parses, closes into
+  // faces, and isn't always-crossing — even if it isn't yet a complete
+  // subdivision. Drives the pulsing in-progress badge.
+  const selectedOperatorIsValid = !!selectedOperatorAnalysis
+    && selectedOperatorAnalysis.parses
+    && selectedOperatorAnalysis.buildsFaces
+    && !selectedOperatorAnalysis.inherentCrossings;
   const selectedOperatorDegree = unknownSelectedAtoms.length === 0 && uniqueSelectedAtoms.length > 0 ? getAtomDegree(uniqueSelectedAtoms) : null;
   const selectedOperatorIsEmpty = uniqueSelectedAtoms.length === 0;
   const selectedMatchingPresetName = unknownSelectedAtoms.length === 0 ? findPresetName(uniqueSelectedAtoms) : null;
