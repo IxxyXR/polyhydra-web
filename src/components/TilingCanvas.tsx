@@ -1486,16 +1486,21 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       controls.removeEventListener('start', handleControlsStart);
       controllerEventCleanups.forEach((cleanup) => cleanup());
       fitAnimationRef.current = null;
-      xrPanelRootRef.current?.unmount();
+      const xrPanelRoot = xrPanelRootRef.current;
+      const xrPanelHost = xrPanelHostCanvas;
       xrPanelRootRef.current = null;
       xrPanelContainerRef.current = null;
       xrPanelMesh.geometry.dispose();
       disposeMaterialResources(xrPanelMesh.material);
       xrPanelTexture.dispose();
-      xrPanelHostCanvas.remove();
       renderer.setAnimationLoop(null);
       renderer.dispose();
       renderer.domElement.remove();
+
+      window.setTimeout(() => {
+        xrPanelRoot?.unmount();
+        xrPanelHost.remove();
+      }, 0);
     };
   }, []);
 

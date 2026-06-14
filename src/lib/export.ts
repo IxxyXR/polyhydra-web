@@ -11,6 +11,9 @@ const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 const ZIP_VERSION = 20;
 const CRC32_TABLE = createCrc32Table();
+const OPEN_BLOCKS_API_BASE_URL = 'http://localhost:40084/api/v1';
+const OPEN_BLOCKS_REQUEST_TIMEOUT_MS = 5000;
+const OPEN_BLOCKS_GEOMETRY_SCALE = 0.1;
 
 export async function sendToBlender(
   mode: '2d' | '3d',
@@ -50,6 +53,112 @@ export async function sendToBlender(
     return { ok: true };
   } catch {
     return { ok: false, error: 'Could not connect — is the Blender addon running?' };
+  }
+}
+
+export async function sendToOpenBlocks(
+  mode: '2d' | '3d',
+  tilingType: string,
+  rows: number,
+  cols: number,
+  operators: Array<OperatorSpec | StackItem>,
+  paletteKey: PaletteKey,
+  colorMode: ColorMode,
+  roleColorCount: number,
+  roleGeometryDetail: number,
+  roleShapeBasis: RoleShapeBasis,
+  sideModulo: number,
+  sideOffset: number,
+  radialType: RadialPolyType,
+  radialSides: number,
+  radialBuildOptions?: RadialBuildOptions,
+  generationOptions?: TilingGenerationOptions,
+): Promise<{ ok: boolean; error?: string }> {
+  const apiCheck = await checkOpenBlocksApi();
+  if (!apiCheck.ok) return apiCheck;
+
+  const mesh = generateFinalMesh({ mode, tilingType, rows, cols, operators, radialType, radialSides, radialBuildOptions, roleGeometryDetail, roleShapeBasis, generationOptions });
+  if (!mesh) return { ok: false, error: 'No mesh generated' };
+
+  const faceColors = computeFaceColors(mesh, paletteKey, colorMode, { roleColorCount, sideModulo, sideOffset });
+  const vertices = [];
+  for (let i = 0; i < mesh.vertices.length; i += 3) {
+    const x = mesh.vertices[i] * OPEN_BLOCKS_GEOMETRY_SCALE;
+    const y = mesh.vertices[i + 1] * OPEN_BLOCKS_GEOMETRY_SCALE;
+    const z = mesh.vertices[i + 2] * OPEN_BLOCKS_GEOMETRY_SCALE;
+    vertices.push({
+      x,
+      y,
+      z,
+    });
+  }
+
+  const payload = {
+    name: 'Polyhydra',
+    vertices,
+    faces: mesh.faces.map((face, faceIndex) => ({
+      vertices: [...face],
+      color: faceColors[faceIndex] || '#ffffff',
+    })),
+    offset: { x: 0, y: 1.6, z: 0 },
+    rotationEuler: { x: 0, y: 0, z: 0 },
+    mergeCoplanarFaces: true,
+  };
+
+  try {
+    const res = await fetchWithTimeout(
+      `${OPEN_BLOCKS_API_BASE_URL}/meshes/import-geometry`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      OPEN_BLOCKS_REQUEST_TIMEOUT_MS,
+    );
+    if (!res.ok) return { ok: false, error: `Open Blocks responded with ${res.status}` };
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error && error.name === 'AbortError'
+        ? 'Open Blocks did not respond before the request timed out.'
+        : 'Could not connect — is Open Blocks running with the HTTP API available?',
+    };
+  }
+}
+
+async function checkOpenBlocksApi(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetchWithTimeout(
+      `${OPEN_BLOCKS_API_BASE_URL}/meshes`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+      },
+      OPEN_BLOCKS_REQUEST_TIMEOUT_MS,
+    );
+    if (!res.ok) return { ok: false, error: `Open Blocks API check responded with ${res.status}` };
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error && error.name === 'AbortError'
+        ? 'Open Blocks did not respond before the API check timed out.'
+        : 'Could not connect — is Open Blocks running with the HTTP API available?',
+    };
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 }
 

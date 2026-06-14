@@ -32,7 +32,7 @@ import {
 } from './lib/tiling-geometries';
 import { RadialBuildOptions, RadialPolyType, RADIAL_SHAPE_GROUPS, RADIAL_SOLID_NAMES, RADIAL_TYPES_WITH_SIDES } from './lib/radial-solids';
 import { PALETTES, PaletteKey } from './lib/palettes';
-import { exportObj, exportOff, exportSvg, sendToBlender } from './lib/export';
+import { exportObj, exportOff, exportSvg, sendToBlender, sendToOpenBlocks } from './lib/export';
 import { ColorMode } from './lib/coloring';
 import { MeshFinalizationMode } from './lib/mesh-finalization';
 import { createOmniOperatorDiagramSvg, createEmptyDiagramSvg } from './lib/omni-diagram';
@@ -1225,6 +1225,8 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [blenderStatus, setBlenderStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
   const [blenderError, setBlenderError] = useState<string | null>(null);
+  const [openBlocksStatus, setOpenBlocksStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
+  const [openBlocksError, setOpenBlocksError] = useState<string | null>(null);
   const sendToBlenderNow = async () => {
     setBlenderStatus('sending');
     setBlenderError(null);
@@ -1238,6 +1240,23 @@ export default function App() {
       // the choice (open Blender + retry, or download the add-on).
       setBlenderError(result.error ?? null);
       setBlenderStatus('error');
+    }
+  };
+  const sendToOpenBlocksNow = async () => {
+    setOpenBlocksStatus('sending');
+    setOpenBlocksError(null);
+    try {
+      const result = await sendToOpenBlocks(mode, tilingType, rows, cols, activeOperators, palette, getRenderColorMode(colorMode, tilingType), roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, radialType, radialSides, radialBuildOptions, generationOptions);
+      if (result.ok) {
+        setOpenBlocksStatus('ok');
+        setTimeout(() => setOpenBlocksStatus('idle'), 3000);
+      } else {
+        setOpenBlocksError(result.error ?? null);
+        setOpenBlocksStatus('error');
+      }
+    } catch (error) {
+      setOpenBlocksError(error instanceof Error ? error.message : 'Open Blocks request failed.');
+      setOpenBlocksStatus('error');
     }
   };
   const [hoveredDotType, setHoveredDotType] = useState<string | null>(null);
@@ -5074,6 +5093,35 @@ export default function App() {
                   </div>
                   {blenderError && (
                     <p className="text-[9px] text-red-400/80">{blenderError}</p>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={sendToOpenBlocksNow}
+                disabled={openBlocksStatus === 'sending'}
+                className={`mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                  openBlocksStatus === 'ok'
+                    ? 'bg-green-800/60 border-green-600/50 text-green-300'
+                    : openBlocksStatus === 'error'
+                    ? 'bg-red-900/40 border-red-700/50 text-red-300 hover:bg-red-900/60'
+                    : 'bg-cyan-900/30 border-cyan-700/50 text-cyan-300 hover:bg-cyan-900/60 hover:text-cyan-100'
+                }`}
+              >
+                {openBlocksStatus === 'sending' ? 'Sending...' : openBlocksStatus === 'ok' ? 'Sent to Open Blocks!' : 'Send to Open Blocks'}
+              </button>
+              {openBlocksStatus === 'error' && (
+                <div className="mt-2 rounded-lg border border-neutral-700/50 bg-neutral-800/40 p-2 space-y-2">
+                  <p className="text-[10px] leading-relaxed text-neutral-300">
+                    Couldn't reach Open Blocks. Start Open Blocks with the HTTP API running on port 40084 and retry.
+                  </p>
+                  <button
+                    onClick={sendToOpenBlocksNow}
+                    className="w-full px-2 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider border bg-cyan-900/30 border-cyan-700/50 text-cyan-300 hover:bg-cyan-900/60 hover:text-cyan-100 transition-all"
+                  >
+                    Retry
+                  </button>
+                  {openBlocksError && (
+                    <p className="text-[9px] text-red-400/80">{openBlocksError}</p>
                   )}
                 </div>
               )}
