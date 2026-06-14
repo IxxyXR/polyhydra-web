@@ -57,7 +57,7 @@ export const EXAMPLE_PRESETS: AppPreset[] = [
   { name: 'Saucergrid', params: 'rt=4&t=r&rf=0.6666666666666667&o=2tc0.1b0y21' },
   { name: 'Clay Pinwheel', params: 'rt=9&t=a&r=4&c=6&p=desert&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&gd=10&gv=4&go=-0.59&o=3fvgg.1a201g' },
   { name: 'Deep Hex', params: 'rt=9&t=t&r=4&c=6&p=midnight&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&gd=10&gv=4&go=-0.59&o=18ykg.1a0n16' },
-  { name: 'Sandy Jewel', params: 'rt=9&t=t&s=4&p=desert&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&o=2i2o0.141n15%3B6cg' },
+  { name: 'Wine Dark Sea', params: 'rt=9&t=t&s=4&p=desert&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&o=2i2o0.141n15%3B6cg' },
   { name: 'Mamluk', params: 'rt=w&t=s&r=4&c=6&p=isthmus&ew=0.01&ed=0.015&es=0.6&a=0.85&rf=0&gd=10&gv=4&go=-0.59&o=1upz4.0w1i14' },
 ];
 
