@@ -1800,6 +1800,14 @@ export default function App() {
     : (selectedMatchingPresetName ?? CUSTOM_PRESET_VALUE);
   const selectedOperatorDiagramSvg = createOmniOperatorDiagramSvg(selectedOperatorNotation, hoveredGridAtom) ?? (selectedOperatorNotation.trim() === '' ? createEmptyDiagramSvg(hoveredGridAtom) : null);
   const activeOperators = useMemo(() => operators.filter((op) => op.enabled), [operators]);
+  // Fast planar-output assumption for the current stack: 2D tiling bases are
+  // generated in a plane, Omni operators preserve that plane, and only active
+  // deformers/cloners currently move or replicate the stack into non-planar
+  // arrangements. If future operators can leave the plane on their own, this
+  // predicate needs to become more precise.
+  const stackOutputIsPlanar = mode === '2d' && !activeOperators.some((op) =>
+    isDeformerStackItem(op) || isClonerStackItem(op)
+  );
   const selectedOperatorSupportsFaceFilter = selectedOperator ? operatorSupportsFaceFilter(selectedOperator) : false;
   const selectedFaceFilter = normalizeFaceFilter(selectedOperator?.faceFilter);
 
@@ -4272,29 +4280,31 @@ export default function App() {
                                         </p>
                                       )}
 
-                                      <div className="grid gap-1">
-                                        <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Finalize After</span>
-                                        <div className="grid grid-cols-3 gap-1">
-                                          {([
-                                            ['none', 'Off'],
-                                            ['planarize', 'Planarize'],
-                                            ['canonicalize', 'Canonical'],
-                                          ] as Array<[MeshFinalizationMode, string]>).map(([value, label]) => (
-                                            <button
-                                              key={value}
-                                              type="button"
-                                              onClick={() => updateOperatorFinalization(op.id, value)}
-                                              className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
-                                                (op.finalizationAfter ?? 'planarize') === value
-                                                  ? 'border-blue-700/60 bg-blue-950/30 text-blue-300'
-                                                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
-                                              }`}
-                                            >
-                                              {label}
-                                            </button>
-                                          ))}
+                                      {!stackOutputIsPlanar && (
+                                        <div className="grid gap-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">Finalize After</span>
+                                          <div className="grid grid-cols-3 gap-1">
+                                            {([
+                                              ['none', 'Off'],
+                                              ['planarize', 'Planarize'],
+                                              ['canonicalize', 'Canonical'],
+                                            ] as Array<[MeshFinalizationMode, string]>).map(([value, label]) => (
+                                              <button
+                                                key={value}
+                                                type="button"
+                                                onClick={() => updateOperatorFinalization(op.id, value)}
+                                                className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                                                  (op.finalizationAfter ?? 'planarize') === value
+                                                    ? 'border-blue-700/60 bg-blue-950/30 text-blue-300'
+                                                    : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 hover:bg-neutral-800/60'
+                                                }`}
+                                              >
+                                                {label}
+                                              </button>
+                                            ))}
+                                          </div>
                                         </div>
-                                      </div>
+                                      )}
 
                                       <AnimatePresence>
                                         {dotPopup && (
