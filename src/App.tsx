@@ -3990,13 +3990,13 @@ export default function App() {
                                                 const completesDegree2 = tier === 'degree2';
                                                 const isDotHighlighted = completesComplete && hoveredDotType !== null && (rowClass === hoveredDotType || colClass === hoveredDotType);
                                                 const baseClass = isCulprit
-                                                  ? 'bg-red-600 border-red-400 shadow-sm shadow-red-900/40 animate-pulse'
+                                                  ? 'bg-rose-600 border-rose-300 shadow-sm shadow-rose-950/45 animate-pulse'
                                                   : isSelected
                                                     ? 'bg-blue-600 border-blue-500 shadow-sm shadow-blue-900/30'
                                                     : isDotHighlighted
-                                                      ? 'bg-amber-500/70 border-amber-400/80 animate-pulse'
+                                                      ? 'bg-yellow-300/50 border-yellow-100/65 shadow-sm shadow-yellow-950/20 animate-pulse'
                                                       : wouldAlwaysCross
-                                                        ? 'border-red-800/70 bg-red-950/50 opacity-80 hover:border-red-600/80 hover:bg-red-900/50'
+                                                        ? 'border-rose-700/80 bg-rose-950/65 opacity-85 hover:border-rose-500/90 hover:bg-rose-900/60'
                                                         : completesComplete
                                                           ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
                                                           : completesDegree2
