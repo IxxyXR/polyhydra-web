@@ -601,10 +601,13 @@ function XRSliderValueField({
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
       <input
-        type="number"
+        type="text"
+        inputMode={precision === 0 ? 'numeric' : 'decimal'}
+        pattern={precision === 0 ? '[0-9]*' : '[0-9]*[.]?[0-9]*'}
         min={min}
         max={max}
         step={step}
+        spellCheck={false}
         value={inputValue}
         disabled={disabled}
         onChange={(event) => setInputValue(event.currentTarget.value)}

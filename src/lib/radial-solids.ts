@@ -182,7 +182,9 @@ export interface RadialBuildOptions {
     z: number;
   };
   coneHeightSegments?: number;
+  coneRadius?: number;
   coneTaper?: number;
+  torusRadius?: number;
   torusProfileSides?: number;
 }
 
@@ -658,10 +660,11 @@ function makeBox(xSegments: number, ySegments: number, zSegments: number): { ver
   return centerAndNormalize({ vertices, faces });
 }
 
-function makeCone(n: number, heightSegments: number, taper: number): { vertices: number[]; faces: number[][] } {
+function makeCone(n: number, heightSegments: number, baseRadius: number, taper: number): { vertices: number[]; faces: number[][] } {
   const sides = Math.max(3, Math.min(64, Math.round(n)));
   const segments = Math.max(1, Math.min(32, Math.round(heightSegments)));
-  const topRadius = Math.max(0, Math.min(2, taper));
+  const bottomRadius = Math.max(0.2, Math.min(2, baseRadius));
+  const topRadius = bottomRadius * Math.max(0, Math.min(2, taper));
   const height = 2;
   const vertices: number[] = [];
   const ringIndices: number[][] = [];
@@ -671,7 +674,7 @@ function makeCone(n: number, heightSegments: number, taper: number): { vertices:
 
   for (let level = 0; level < ringCount; level += 1) {
     const t = level / segments;
-    const radius = 1 + (topRadius - 1) * t;
+    const radius = bottomRadius + (topRadius - bottomRadius) * t;
     const y = -height / 2 + height * t;
     ringIndices.push(ring(sides, radius, y).map((vertex) => {
       const index = vertices.length / 3;
@@ -705,11 +708,11 @@ function makeCone(n: number, heightSegments: number, taper: number): { vertices:
   return centerAndNormalize({ vertices, faces });
 }
 
-function makeTorus(sides: number, profileSides: number): { vertices: number[]; faces: number[][] } {
+function makeTorus(sides: number, profileSides: number, radius: number): { vertices: number[]; faces: number[][] } {
   const ringCount = Math.max(3, Math.min(96, Math.round(sides)));
   const profileCount = Math.max(3, Math.min(32, Math.round(profileSides)));
   const majorRadius = 1.15;
-  const profileRadius = 0.35;
+  const profileRadius = Math.max(0.05, Math.min(0.95, radius));
   const vertices: number[] = [];
   const faces: number[][] = [];
 
@@ -1626,10 +1629,10 @@ export function buildRadialSolid(type: RadialPolyType, sides: number, options: R
       );
       break;
     case 'Cone':
-      result = makeCone(n, options.coneHeightSegments ?? 1, options.coneTaper ?? 0);
+      result = makeCone(n, options.coneHeightSegments ?? 1, options.coneRadius ?? 1, options.coneTaper ?? 0);
       break;
     case 'Torus':
-      result = makeTorus(n, options.torusProfileSides ?? 8);
+      result = makeTorus(n, options.torusProfileSides ?? 8, options.torusRadius ?? 0.35);
       break;
     case 'Tetrahedron':            result = makeTetrahedron(); break;
     case 'Cube':                   result = makeCube(); break;

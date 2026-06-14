@@ -162,10 +162,13 @@ function SliderValueField({
   return (
     <label className="inline-flex items-center gap-1 justify-end">
       <input
-        type="number"
+        type="text"
+        inputMode={precision === 0 ? 'numeric' : 'decimal'}
+        pattern={precision === 0 ? '[0-9]*' : '[0-9]*[.]?[0-9]*'}
         min={min}
         max={max}
         step={step}
+        spellCheck={false}
         value={inputValue}
         disabled={disabled}
         onChange={(event) => setInputValue(event.currentTarget.value)}
@@ -216,7 +219,9 @@ const APP_DEFAULTS = {
   boxYSegments: 3,
   boxZSegments: 3,
   coneHeightSegments: 1,
+  coneRadius: 1,
   coneTaper: 1,
+  torusRadius: 0.35,
   torusProfileSides: 8,
   tilingType: '4.4.4.4',
   rows: 5,
@@ -312,7 +317,9 @@ const URL_KEYS = {
   boxYSegments: 'by',
   boxZSegments: 'bz',
   coneHeightSegments: 'ch',
+  coneRadius: 'cr',
   coneTaper: 'ct',
+  torusRadius: 'tr',
   torusProfileSides: 'tp',
   tiling: 't',
   size: 's',
@@ -1011,7 +1018,9 @@ function buildAppSearchParams(state: {
   boxYSegments: number;
   boxZSegments: number;
   coneHeightSegments: number;
+  coneRadius: number;
   coneTaper: number;
+  torusRadius: number;
   torusProfileSides: number;
   tilingType: string;
   rows: number;
@@ -1055,7 +1064,9 @@ function buildAppSearchParams(state: {
   setParamIfNeeded(params, URL_KEYS.boxYSegments, state.boxYSegments, APP_DEFAULTS.boxYSegments);
   setParamIfNeeded(params, URL_KEYS.boxZSegments, state.boxZSegments, APP_DEFAULTS.boxZSegments);
   setParamIfNeeded(params, URL_KEYS.coneHeightSegments, state.coneHeightSegments, APP_DEFAULTS.coneHeightSegments);
+  setParamIfNeeded(params, URL_KEYS.coneRadius, state.coneRadius, APP_DEFAULTS.coneRadius);
   setParamIfNeeded(params, URL_KEYS.coneTaper, state.coneTaper, APP_DEFAULTS.coneTaper);
+  setParamIfNeeded(params, URL_KEYS.torusRadius, state.torusRadius, APP_DEFAULTS.torusRadius);
   setParamIfNeeded(params, URL_KEYS.torusProfileSides, state.torusProfileSides, APP_DEFAULTS.torusProfileSides);
   setParamIfNeeded(
     params,
@@ -1165,7 +1176,9 @@ export default function App() {
   const [boxYSegments, setBoxYSegments] = useState(APP_DEFAULTS.boxYSegments);
   const [boxZSegments, setBoxZSegments] = useState(APP_DEFAULTS.boxZSegments);
   const [coneHeightSegments, setConeHeightSegments] = useState(APP_DEFAULTS.coneHeightSegments);
+  const [coneRadius, setConeRadius] = useState(APP_DEFAULTS.coneRadius);
   const [coneTaper, setConeTaper] = useState(APP_DEFAULTS.coneTaper);
+  const [torusRadius, setTorusRadius] = useState(APP_DEFAULTS.torusRadius);
   const [torusProfileSides, setTorusProfileSides] = useState(APP_DEFAULTS.torusProfileSides);
   const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
   const [tilingType, setTilingType] = useState(APP_DEFAULTS.tilingType);
@@ -1327,7 +1340,9 @@ export default function App() {
     setBoxYSegments(APP_DEFAULTS.boxYSegments);
     setBoxZSegments(APP_DEFAULTS.boxZSegments);
     setConeHeightSegments(APP_DEFAULTS.coneHeightSegments);
+    setConeRadius(APP_DEFAULTS.coneRadius);
     setConeTaper(APP_DEFAULTS.coneTaper);
+    setTorusRadius(APP_DEFAULTS.torusRadius);
     setTorusProfileSides(APP_DEFAULTS.torusProfileSides);
     setTilingType(APP_DEFAULTS.tilingType);
     setRows(APP_DEFAULTS.rows);
@@ -1445,13 +1460,17 @@ export default function App() {
     const parsedBoxYSegments = parseIntParam(getUrlParam(params, URL_KEYS.boxYSegments, 'boxYSegments'), APP_DEFAULTS.boxYSegments);
     const parsedBoxZSegments = parseIntParam(getUrlParam(params, URL_KEYS.boxZSegments, 'boxZSegments'), APP_DEFAULTS.boxZSegments);
     const parsedConeHeightSegments = parseIntParam(getUrlParam(params, URL_KEYS.coneHeightSegments, 'coneHeightSegments'), APP_DEFAULTS.coneHeightSegments);
+    const parsedConeRadius = parseFloatParam(getUrlParam(params, URL_KEYS.coneRadius, 'coneRadius'), APP_DEFAULTS.coneRadius);
     const parsedConeTaper = parseFloatParam(getUrlParam(params, URL_KEYS.coneTaper, 'coneTaper'), APP_DEFAULTS.coneTaper);
+    const parsedTorusRadius = parseFloatParam(getUrlParam(params, URL_KEYS.torusRadius, 'torusRadius'), APP_DEFAULTS.torusRadius);
     const parsedTorusProfileSides = parseIntParam(getUrlParam(params, URL_KEYS.torusProfileSides, 'torusProfileSides'), APP_DEFAULTS.torusProfileSides);
     setBoxXSegments(Math.min(Math.max(parsedBoxXSegments, 1), 32));
     setBoxYSegments(Math.min(Math.max(parsedBoxYSegments, 1), 32));
     setBoxZSegments(Math.min(Math.max(parsedBoxZSegments, 1), 32));
     setConeHeightSegments(Math.min(Math.max(parsedConeHeightSegments, 1), 32));
+    setConeRadius(Math.min(Math.max(parsedConeRadius, 0.2), 2));
     setConeTaper(Math.min(Math.max(parsedConeTaper, 0), 2));
+    setTorusRadius(Math.min(Math.max(parsedTorusRadius, 0.05), 0.95));
     setTorusProfileSides(Math.min(Math.max(parsedTorusProfileSides, 3), 32));
 
     const urlTiling = decodeAliasedValue(
@@ -1628,7 +1647,9 @@ export default function App() {
       boxYSegments,
       boxZSegments,
       coneHeightSegments,
+      coneRadius,
       coneTaper,
+      torusRadius,
       torusProfileSides,
       tilingType,
       rows,
@@ -1668,7 +1689,7 @@ export default function App() {
     const newSearch = '?' + params.toString();
     if (newSearch === window.location.search) return;
     window.history.pushState(null, '', window.location.pathname + newSearch);
-  }, [mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
+  }, [mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneRadius, coneTaper, torusRadius, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, operators, palette, shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, isReady]);
 
 
   const applyPreset = (preset: AppPreset) => {
@@ -1681,7 +1702,7 @@ export default function App() {
 
   const saveCurrentPreset = () => {
     if (!newPresetName.trim()) return;
-    const params = buildAppSearchParams({ mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneRadius, coneTaper, torusRadius, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     saveUserPreset({ name: newPresetName.trim(), params: params.toString() });
     setUserPresets(getUserPresets());
     setNewPresetName('');
@@ -1689,7 +1710,7 @@ export default function App() {
   };
 
   const copyCurrentAsExamplePreset = async () => {
-    const params = buildAppSearchParams({ mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
+    const params = buildAppSearchParams({ mode, radialType, radialSides, boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneRadius, coneTaper, torusRadius, torusProfileSides, tilingType, rows, cols, showEdges, showVertices, showFaces, wireframe, palette, paletteColors: shuffledColors, colorMode, roleColorCount, roleGeometryDetail, roleShapeBasis, sideModulo, sideOffset, edgeColor, embossEnabled, embossWidth, embossDepth, embossSmoothness, ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation, faceRoughness, faceOpacity, multigridSettings, operators });
     const entry = `{ name: 'name', params: '${params.toString()}'},`;
     await navigator.clipboard.writeText(entry);
   };
@@ -2036,9 +2057,11 @@ export default function App() {
       z: boxZSegments,
     },
     coneHeightSegments,
+    coneRadius,
     coneTaper,
+    torusRadius,
     torusProfileSides,
-  }), [boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneTaper, torusProfileSides]);
+  }), [boxXSegments, boxYSegments, boxZSegments, coneHeightSegments, coneRadius, coneTaper, torusRadius, torusProfileSides]);
 
   useEffect(() => {
     if (radialType !== 'Torus' && radialSides > 16) {
@@ -2633,23 +2656,55 @@ export default function App() {
                               className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
                             />
                           </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-neutral-400">Radius</span>
+                              <SliderValueField value={coneRadius} min={0.2} max={2} step={0.01} precision={2} onValueCommit={setConeRadius} />
+                            </div>
+                            <input
+                              type="range"
+                              min="0.2"
+                              max="2"
+                              step="0.01"
+                              value={coneRadius}
+                              onChange={e => setConeRadius(Number.parseFloat(e.target.value))}
+                              className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                            />
+                          </div>
                         </>
                       )}
                       {isTorusShape && (
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-neutral-400">Profile Sides</span>
-                            <SliderValueField value={torusProfileSides} min={3} max={32} step={1} onValueCommit={setTorusProfileSides} />
+                        <>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-neutral-400">Radius</span>
+                              <SliderValueField value={torusRadius} min={0.05} max={0.95} step={0.01} precision={2} onValueCommit={setTorusRadius} />
+                            </div>
+                            <input
+                              type="range"
+                              min="0.05"
+                              max="0.95"
+                              step="0.01"
+                              value={torusRadius}
+                              onChange={e => setTorusRadius(Number.parseFloat(e.target.value))}
+                              className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                            />
                           </div>
-                          <input
-                            type="range"
-                            min="3"
-                            max="32"
-                            value={torusProfileSides}
-                            onChange={e => setTorusProfileSides(parseInt(e.target.value, 10))}
-                            className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-neutral-400">Profile Sides</span>
+                              <SliderValueField value={torusProfileSides} min={3} max={32} step={1} onValueCommit={setTorusProfileSides} />
+                            </div>
+                            <input
+                              type="range"
+                              min="3"
+                              max="32"
+                              value={torusProfileSides}
+                              onChange={e => setTorusProfileSides(parseInt(e.target.value, 10))}
+                              className="w-full accent-blue-600 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                            />
+                          </div>
+                        </>
                       )}
                     </>
                 ) : isMultigrid ? (
@@ -4065,10 +4120,13 @@ export default function App() {
                                             </div>
                                             <div className="grid grid-cols-[1fr_auto] gap-2">
                                               <input
-                                                type="number"
+                                                type="text"
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
                                                 min="3"
                                                 max="32"
                                                 step="1"
+                                                spellCheck={false}
                                                 disabled={selectedFaceFilter.measure === 'is-even'}
                                                 value={selectedFaceFilter.value}
                                                 aria-label="Face side count"
@@ -5019,7 +5077,9 @@ export default function App() {
                     boxYSegments,
                     boxZSegments,
                     coneHeightSegments,
+                    coneRadius,
                     coneTaper,
+                    torusRadius,
                     torusProfileSides,
                     tilingType,
                     rows,
