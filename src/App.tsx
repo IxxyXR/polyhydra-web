@@ -4001,7 +4001,7 @@ export default function App() {
                                                           ? 'bg-emerald-800/50 border-emerald-700/60 hover:bg-emerald-700/60'
                                                           : completesDegree2
                                                             ? 'bg-amber-900/40 border-amber-800/50 hover:bg-amber-800/40'
-                                                            : 'border-neutral-700/55 bg-neutral-800/35 opacity-60 hover:border-neutral-600/75 hover:bg-neutral-800/55 hover:opacity-80';
+                                                            : 'border-amber-700/55 bg-amber-800/35 opacity-40 hover:border-amber-600/75 hover:bg-amber-800/55 hover:opacity-80';
 
                                                 return (
                                                   <button
@@ -4202,7 +4202,7 @@ export default function App() {
                                           >
                                             <div className="mt-1 flex items-center gap-2 rounded-lg border border-red-800/50 bg-red-950/40 px-2.5 py-2 text-[10px] text-red-300">
                                               <span className="shrink-0">⚠</span>
-                                              <span>Edges are crossing — adjust sliders to fix</span>
+                                              <span>Edges may cross — adjust sliders to fix</span>
                                             </div>
                                           </motion.div>
                                         )}
