@@ -93,6 +93,11 @@ export async function sendToOpenBlocks(
     });
   }
 
+  const invalidFaceIndex = mesh.faces.findIndex((face) => !isValidOpenBlocksFace(face, vertices.length));
+  if (invalidFaceIndex !== -1) {
+    return { ok: false, error: `Generated invalid face ${invalidFaceIndex} for Open Blocks.` };
+  }
+
   const payload = {
     name: 'Polyhydra',
     vertices,
@@ -127,6 +132,13 @@ export async function sendToOpenBlocks(
   }
 }
 
+function isValidOpenBlocksFace(face: number[], vertexCount: number) {
+  return face.length >= 3
+    && new Set(face).size === face.length
+    && face.every((vertexIndex) => (
+      Number.isInteger(vertexIndex) && vertexIndex >= 0 && vertexIndex < vertexCount
+    ));
+}
 async function checkOpenBlocksApi(): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetchWithTimeout(

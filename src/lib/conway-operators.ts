@@ -1556,6 +1556,47 @@ function pruneLargestFaceLoop(faceLoops: OVertex[][], faceHalfedgeLoops: number[
   faceHalfedgeLoops.splice(largestIndex, 1);
 }
 
+function splitFaceLoopIntoSimpleLoops(
+  loop: OVertex[],
+  halfedgeLoop: number[]
+): Array<{ loop: OVertex[]; halfedgeLoop: number[] }> {
+  const simpleLoops: Array<{ loop: OVertex[]; halfedgeLoop: number[] }> = [];
+  const stack: OVertex[] = [];
+  const halfedgeStack: number[] = [];
+  const indexByVertex = new Map<OVertex, number>();
+
+  const rebuildIndex = () => {
+    indexByVertex.clear();
+    stack.forEach((vertex, index) => indexByVertex.set(vertex, index));
+  };
+
+  loop.forEach((vertex, index) => {
+    const existingIndex = indexByVertex.get(vertex);
+    if (existingIndex === undefined) {
+      indexByVertex.set(vertex, stack.length);
+      stack.push(vertex);
+      halfedgeStack.push(halfedgeLoop[index]);
+      return;
+    }
+
+    const simpleLoop = stack.slice(existingIndex);
+    const simpleHalfedgeLoop = halfedgeStack.slice(existingIndex);
+    if (simpleLoop.length >= 3) {
+      simpleLoops.push({ loop: simpleLoop, halfedgeLoop: simpleHalfedgeLoop });
+    }
+
+    stack.splice(existingIndex + 1);
+    halfedgeStack.splice(existingIndex + 1);
+    rebuildIndex();
+  });
+
+  if (stack.length >= 3) {
+    simpleLoops.push({ loop: [...stack], halfedgeLoop: [...halfedgeStack] });
+  }
+
+  return simpleLoops;
+}
+
 function pruneDuplicateSourceSideFaceLoops(
   faceLoops: OVertex[][],
   faceHalfedgeLoops: number[][],
@@ -1790,11 +1831,14 @@ function buildMeshFromEdges(
       halfedgeLoop.reverse();
     }
 
-    const faceIndex = faceLoops.length;
-    faceLoops.push(loop);
-    faceHalfedgeLoops.push(halfedgeLoop);
-    if (dot >= 0) {
-      positiveOrientationIndices.push(faceIndex);
+    const simpleLoops = splitFaceLoopIntoSimpleLoops(loop, halfedgeLoop);
+    for (const simpleLoop of simpleLoops) {
+      const faceIndex = faceLoops.length;
+      faceLoops.push(simpleLoop.loop);
+      faceHalfedgeLoops.push(simpleLoop.halfedgeLoop);
+      if (dot >= 0) {
+        positiveOrientationIndices.push(faceIndex);
+      }
     }
   }
 
