@@ -759,7 +759,7 @@ function buildHalfedgeMesh(mesh: Mesh): { vertices: SourceVertex[]; faces: Sourc
         vertex: destinationVertex,
         prev: null as unknown as SourceHalfedge,
         next: null as unknown as SourceHalfedge,
-        pair: null,
+        pair: null as SourceHalfedge | null,
         face: null as unknown as SourceFace,
       };
     });

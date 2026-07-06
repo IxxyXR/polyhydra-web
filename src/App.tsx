@@ -2043,8 +2043,9 @@ export default function App() {
     try {
       let { vertices, faces } = tiling.generate(2, 2);
       for (let i = 0; i <= selectedIdx; i++) {
-        if (operators[i].enabled && isOperatorStackItem(operators[i])) {
-          ({ vertices, faces } = applyOperator({ vertices, faces }, operators[i]));
+        const item = operators[i];
+        if (item.enabled && isOperatorStackItem(item)) {
+          ({ vertices, faces } = applyOperator({ vertices, faces }, item));
         }
       }
       return hasMeshEdgeCrossings({ vertices, faces });

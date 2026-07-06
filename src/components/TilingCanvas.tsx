@@ -987,16 +987,6 @@ interface TilingCanvasProps {
   xrPanel?: XRPanelControls;
 }
 
-interface XRNavigator extends Navigator {
-  xr?: {
-    isSessionSupported?: (mode: 'immersive-vr') => Promise<boolean>;
-    requestSession: (
-      mode: 'immersive-vr',
-      options?: { optionalFeatures?: string[] },
-    ) => Promise<Parameters<THREE.WebXRManager['setSession']>[0]>;
-  };
-}
-
 export interface TilingCanvasHandle {
   enterWebXR: () => Promise<void>;
   isWebXRSupported: () => Promise<boolean>;
@@ -1069,7 +1059,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         throw new Error('Renderer is not ready yet.');
       }
 
-      const xr = (navigator as XRNavigator).xr;
+      const xr = navigator.xr;
       if (!xr?.requestSession) {
         throw new Error('WebXR is not available in this browser.');
       }
@@ -1087,7 +1077,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       await sceneRef.current.renderer.xr.setSession(session);
     },
     isWebXRSupported: async () => {
-      const xr = (navigator as XRNavigator).xr;
+      const xr = navigator.xr;
       if (!xr?.requestSession) return false;
       if (!xr.isSessionSupported) return true;
       return xr.isSessionSupported('immersive-vr');
@@ -1429,7 +1419,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
           if (moveX !== 0 || moveZ !== 0 || moveY !== 0) {
             const speed = 0.02; // Reduced speed slightly for comfort
             
-            const xrCamera = renderer.xr.getCamera(camera);
+            const xrCamera = renderer.xr.getCamera();
             
             const direction = new THREE.Vector3(0, 0, -1);
             direction.applyQuaternion(xrCamera.quaternion);

@@ -80,7 +80,7 @@ export function computeFaceColors(
     }
   });
 
-  const faceAdjacency: number[][] = Array(faces.length).fill(0).map(() => []);
+  const faceAdjacency: number[][] = Array(faces.length).fill(0).map((): number[] => []);
 
   for (const neighbors of edgeMap.values()) {
     if (neighbors.length === 2) {

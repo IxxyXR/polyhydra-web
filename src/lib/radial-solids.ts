@@ -586,7 +586,7 @@ function computeDual(verts: number[], faces: number[][]): { vertices: number[]; 
     return scale(s, 1 / face.length);
   });
 
-  const vFaces: number[][] = Array.from({length: nv}, () => []);
+  const vFaces: number[][] = Array.from({length: nv}, (): number[] => []);
   faces.forEach((face, fi) => face.forEach(vi => vFaces[vi].push(fi)));
 
   const dualFaces: number[][] = [];
