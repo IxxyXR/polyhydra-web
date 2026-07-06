@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polyhydra XR Minimal Test</title>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        color: #eee;
+        font: 14px/1.4 system-ui, sans-serif;
+        padding: 24px;
+      }
+
+      button {
+        border: 1px solid #555;
+        border-radius: 6px;
+        background: #222;
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        margin-right: 8px;
+        padding: 10px 14px;
+      }
+
+      button:hover {
+        background: #333;
+      }
+
+      button:disabled {
+        cursor: default;
+        opacity: 0.4;
+      }
+
+      pre {
+        background: #050505;
+        border: 1px solid #333;
+        border-radius: 6px;
+        max-width: 900px;
+        overflow: auto;
+        padding: 14px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Minimal WebXR Test</h1>
+    <p>
+      This page does not load React, Three.js, or the Polyhydra app. It starts a raw WebXR
+      session, renders a spinning cube per eye with plain WebGL, and logs session, pose,
+      and controller activity.
+    </p>
+    <button id="start">Start immersive-vr</button>
+    <button id="end" disabled>End session</button>
+    <button id="copy">Copy report</button>
+    <pre id="log"></pre>
+
+    <script>
+      const logEl = document.getElementById('log');
+      const startButton = document.getElementById('start');
+      const endButton = document.getElementById('end');
+      const lines = [];
+      let session = null;
+      let gl = null;
+      let refSpace = null;
+      let cube = null;
+      let frameCount = 0;
+      let fpsWindowStart = 0;
+      let loggedFirstFrame = false;
+      let warnedNoPose = false;
+      const buttonStates = new Map();
+      const lastAxisLogTime = new Map();
+
+      function log(message) {
+        const line = `[PXRM-20260524] ${new Date().toISOString()} ${message}`;
+        lines.push(line);
+        logEl.textContent = [
+          `url: ${location.href}`,
+          `userAgent: ${navigator.userAgent}`,
+          `platform: ${navigator.platform}`,
+          `navigator.xr: ${navigator.xr ? 'present' : 'missing'}`,
+          '',
+          ...lines,
+        ].join('\n');
+        console.log(line);
+      }
+
+      async function checkSupport() {
+        if (!navigator.xr) {
+          log('navigator.xr missing');
+          return;
+        }
+
+        if (!navigator.xr.isSessionSupported) {
+          log('isSessionSupported missing');
+          return;
+        }
+
+        for (const mode of ['immersive-vr', 'immersive-ar', 'inline']) {
+          try {
+            const supported = await navigator.xr.isSessionSupported(mode);
+            log(`isSessionSupported ${mode}=${supported}`);
+          } catch (error) {
+            log(`isSessionSupported ${mode} failed ${error.name}: ${error.message}`);
+          }
+        }
+      }
+
+      // --- Minimal WebGL cube (GLSL 100 so WebGL1 fallback also works) ---
+
+      const VERTEX_SHADER = `
+        attribute vec3 position;
+        attribute vec3 color;
+        uniform mat4 mvp;
+        varying vec3 vColor;
+        void main() {
+          vColor = color;
+          gl_Position = mvp * vec4(position, 1.0);
+        }
+      `;
+
+      const FRAGMENT_SHADER = `
+        precision mediump float;
+        varying vec3 vColor;
+        void main() {
+          gl_FragColor = vec4(vColor, 1.0);
+        }
+      `;
+
+      function compileShader(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          throw new Error(`shader compile failed: ${gl.getShaderInfoLog(shader)}`);
+        }
+        return shader;
+      }
+
+      function createCube() {
+        const program = gl.createProgram();
+        gl.attachShader(program, compileShader(gl.VERTEX_SHADER, VERTEX_SHADER));
+        gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, FRAGMENT_SHADER));
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          throw new Error(`program link failed: ${gl.getProgramInfoLog(program)}`);
+        }
+
+        // 6 faces x 2 triangles, interleaved position(3) + color(3).
+        const faces = [
+          { n: [0, 0, 1], c: [0.9, 0.3, 0.3] },
+          { n: [0, 0, -1], c: [0.3, 0.9, 0.4] },
+          { n: [0, 1, 0], c: [0.3, 0.5, 0.95] },
+          { n: [0, -1, 0], c: [0.95, 0.8, 0.3] },
+          { n: [1, 0, 0], c: [0.8, 0.4, 0.9] },
+          { n: [-1, 0, 0], c: [0.35, 0.85, 0.85] },
+        ];
+        const data = [];
+        for (const { n, c } of faces) {
+          // Build an orthonormal basis (u, v, n) for the face plane.
+          const u = n[0] !== 0 ? [0, 1, 0] : [1, 0, 0];
+          const v = [
+            n[1] * u[2] - n[2] * u[1],
+            n[2] * u[0] - n[0] * u[2],
+            n[0] * u[1] - n[1] * u[0],
+          ];
+          const corner = (su, sv) => [
+            (n[0] + su * u[0] + sv * v[0]) * 0.5,
+            (n[1] + su * u[1] + sv * v[1]) * 0.5,
+            (n[2] + su * u[2] + sv * v[2]) * 0.5,
+          ];
+          const quad = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+          for (const i of [0, 1, 2, 0, 2, 3]) {
+            data.push(...quad[i], ...c);
+          }
+        }
+
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+
+        return {
+          program,
+          buffer,
+          vertexCount: data.length / 6,
+          attribPosition: gl.getAttribLocation(program, 'position'),
+          attribColor: gl.getAttribLocation(program, 'color'),
+          uniformMvp: gl.getUniformLocation(program, 'mvp'),
+        };
+      }
+
+      // Column-major 4x4 helpers matching WebXR's matrix layout.
+      function mat4Multiply(a, b) {
+        const out = new Float32Array(16);
+        for (let col = 0; col < 4; col++) {
+          for (let row = 0; row < 4; row++) {
+            out[col * 4 + row] =
+              a[row] * b[col * 4] +
+              a[4 + row] * b[col * 4 + 1] +
+              a[8 + row] * b[col * 4 + 2] +
+              a[12 + row] * b[col * 4 + 3];
+          }
+        }
+        return out;
+      }
+
+      function cubeModelMatrix(timeMs) {
+        const ry = timeMs * 0.0006;
+        const rx = timeMs * 0.00023;
+        const cy = Math.cos(ry), sy = Math.sin(ry);
+        const cx = Math.cos(rx), sx = Math.sin(rx);
+        const rotY = new Float32Array([cy, 0, -sy, 0, 0, 1, 0, 0, sy, 0, cy, 0, 0, 0, 0, 1]);
+        const rotX = new Float32Array([1, 0, 0, 0, 0, cx, sx, 0, 0, -sx, cx, 0, 0, 0, 0, 1]);
+        const model = mat4Multiply(rotY, rotX);
+        // Scale to 0.5m and place at head height, 2m in front of the user.
+        for (let i = 0; i < 12; i++) model[i] *= 0.5;
+        model[12] = 0;
+        model[13] = 1.4;
+        model[14] = -2;
+        return model;
+      }
+
+      function drawCube(projection, viewMatrix, timeMs) {
+        const mvp = mat4Multiply(projection, mat4Multiply(viewMatrix, cubeModelMatrix(timeMs)));
+        gl.useProgram(cube.program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, cube.buffer);
+        gl.enableVertexAttribArray(cube.attribPosition);
+        gl.vertexAttribPointer(cube.attribPosition, 3, gl.FLOAT, false, 24, 0);
+        gl.enableVertexAttribArray(cube.attribColor);
+        gl.vertexAttribPointer(cube.attribColor, 3, gl.FLOAT, false, 24, 12);
+        gl.uniformMatrix4fv(cube.uniformMvp, false, mvp);
+        gl.drawArrays(gl.TRIANGLES, 0, cube.vertexCount);
+      }
+
+      // --- Input logging ---
+
+      function pollInputs(frame, timeMs) {
+        for (const source of session.inputSources) {
+          const hand = source.handedness || 'unknown';
+          const gamepad = source.gamepad;
+          if (!gamepad) continue;
+
+          gamepad.buttons.forEach((button, index) => {
+            const key = `${hand}:${index}`;
+            const wasPressed = buttonStates.get(key) === true;
+            if (button.pressed !== wasPressed) {
+              buttonStates.set(key, button.pressed);
+              log(`${hand} button[${index}] ${button.pressed ? 'pressed' : 'released'}`);
+            }
+          });
+
+          const active = gamepad.axes.some((axis) => Math.abs(axis) > 0.6);
+          if (active && timeMs - (lastAxisLogTime.get(hand) ?? 0) > 500) {
+            lastAxisLogTime.set(hand, timeMs);
+            log(`${hand} axes [${gamepad.axes.map((axis) => axis.toFixed(2)).join(', ')}]`);
+          }
+        }
+      }
+
+      // --- Frame loop ---
+
+      function onFrame(timeMs, frame) {
+        session.requestAnimationFrame(onFrame);
+        frameCount++;
+
+        if (timeMs - fpsWindowStart >= 5000) {
+          if (fpsWindowStart > 0) {
+            const fps = (frameCount * 1000) / (timeMs - fpsWindowStart);
+            log(`fps ~${fps.toFixed(1)}`);
+          }
+          fpsWindowStart = timeMs;
+          frameCount = 0;
+        }
+
+        const pose = frame.getViewerPose(refSpace);
+        if (!pose) {
+          if (!warnedNoPose) {
+            warnedNoPose = true;
+            log('getViewerPose returned null (tracking not established yet)');
+          }
+          return;
+        }
+
+        const layer = session.renderState.baseLayer;
+        if (!loggedFirstFrame) {
+          loggedFirstFrame = true;
+          const p = pose.transform.position;
+          log(`first tracked frame views=${pose.views.length} framebuffer=${layer.framebufferWidth}x${layer.framebufferHeight}`);
+          log(`viewer position ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}`);
+        }
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.clearColor(0.04, 0.06, 0.1, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+
+        for (const view of pose.views) {
+          const viewport = layer.getViewport(view);
+          gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+          drawCube(view.projectionMatrix, view.transform.inverse.matrix, timeMs);
+        }
+
+        pollInputs(frame, timeMs);
+      }
+
+      // --- Session lifecycle ---
+
+      function describeInputSources() {
+        return [...session.inputSources]
+          .map((source) => `${source.handedness}(${(source.profiles || []).join('|') || 'no-profiles'})`)
+          .join(', ') || 'none';
+      }
+
+      async function startSession() {
+        if (session) {
+          log('session already active');
+          return;
+        }
+        if (!navigator.xr?.requestSession) {
+          log('requestSession unavailable');
+          return;
+        }
+
+        try {
+          log('requestSession immersive-vr');
+          session = await navigator.xr.requestSession('immersive-vr', {
+            optionalFeatures: ['local-floor'],
+          });
+          log(`requestSession success inputSources=${session.inputSources.length}`);
+
+          session.addEventListener('end', () => {
+            log('session ended');
+            session = null;
+            gl = null;
+            cube = null;
+            refSpace = null;
+            loggedFirstFrame = false;
+            warnedNoPose = false;
+            fpsWindowStart = 0;
+            frameCount = 0;
+            buttonStates.clear();
+            lastAxisLogTime.clear();
+            startButton.disabled = false;
+            endButton.disabled = true;
+          });
+          session.addEventListener('inputsourceschange', (event) => {
+            log(`inputsourceschange added=${event.added.length} removed=${event.removed.length} now: ${describeInputSources()}`);
+          });
+          session.addEventListener('visibilitychange', () => {
+            log(`visibility ${session.visibilityState}`);
+          });
+          for (const type of ['selectstart', 'selectend', 'squeezestart', 'squeezeend']) {
+            session.addEventListener(type, (event) => {
+              log(`${type} ${event.inputSource.handedness}`);
+            });
+          }
+
+          const canvas = document.createElement('canvas');
+          gl = canvas.getContext('webgl2', { xrCompatible: true })
+            || canvas.getContext('webgl', { xrCompatible: true });
+          if (!gl) {
+            throw new Error('could not create an XR-compatible WebGL context');
+          }
+          log(`webgl context ${gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl1'}`);
+
+          session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+          cube = createCube();
+
+          try {
+            refSpace = await session.requestReferenceSpace('local-floor');
+            log('referenceSpace local-floor');
+          } catch {
+            refSpace = await session.requestReferenceSpace('local');
+            log('referenceSpace local (local-floor unavailable)');
+          }
+
+          startButton.disabled = true;
+          endButton.disabled = false;
+          session.requestAnimationFrame(onFrame);
+        } catch (error) {
+          log(`session setup failed ${error.name ?? 'Error'}: ${error.message}`);
+          if (session) {
+            try { await session.end(); } catch { /* already ending */ }
+          }
+        }
+      }
+
+      startButton.addEventListener('click', startSession);
+
+      endButton.addEventListener('click', async () => {
+        if (!session) return;
+        log('ending session via button');
+        try {
+          await session.end();
+        } catch (error) {
+          log(`session.end failed ${error.name}: ${error.message}`);
+        }
+      });
+
+      document.getElementById('copy').addEventListener('click', async () => {
+        const report = logEl.textContent;
+        try {
+          await navigator.clipboard.writeText(report);
+          log('copied report');
+        } catch {
+          prompt('Copy report', report);
+        }
+      });
+
+      checkSupport();
+    </script>
+  </body>
+</html>
