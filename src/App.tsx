@@ -1354,8 +1354,16 @@ export default function App() {
     setOnboardingDismissed(true);
   };
 
+  // Re-frames after the next mesh regeneration; use when a fit request accompanies
+  // a geometry change so the camera fits the *new* bounds.
   const requestFitToExtents = () => {
     setFitRequestKey((current) => current + 1);
+  };
+
+  // Camera-only re-frame of the current mesh — no regeneration. Use for plain
+  // "zoom to extents" actions where the geometry hasn't changed.
+  const fitViewToExtents = () => {
+    tilingCanvasRef.current?.fitToExtents();
   };
 
   const handleGeometryGenerationChange = useCallback((isGenerating: boolean) => {
@@ -2019,7 +2027,7 @@ export default function App() {
         setSliderMoved(true);
       }
     },
-    onFitToExtents: requestFitToExtents,
+    onFitToExtents: fitViewToExtents,
   }), [
     mode,
     showFaces,
@@ -5438,7 +5446,7 @@ export default function App() {
           </div>
           <div className="h-4 w-px shrink-0 bg-neutral-800" />
           <button
-            onClick={requestFitToExtents}
+            onClick={fitViewToExtents}
             className="flex shrink-0 items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white"
             title="Zoom to extents"
             aria-label="Zoom to extents"
