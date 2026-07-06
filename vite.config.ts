@@ -15,5 +15,16 @@ export default defineConfig(() => {
 server: {
       hmr: process.env.DISABLE_HMR !== 'true',
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            three: ['three'],
+            react: ['react', 'react-dom'],
+            ui: ['motion', 'lucide-react'],
+          },
+        },
+      },
+    },
   };
 });
