@@ -983,6 +983,7 @@ interface TilingCanvasProps {
   radialSides?: number;
   radialBuildOptions?: RadialBuildOptions;
   fitRequestKey?: number;
+  autoRotate?: boolean;
   onGeometryGenerationChange?: (isGenerating: boolean) => void;
   xrPanel?: XRPanelControls;
 }
@@ -1027,6 +1028,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   radialSides = 5,
   radialBuildOptions,
   fitRequestKey = 0,
+  autoRotate = false,
   onGeometryGenerationChange,
   xrPanel,
 }, ref) => {
@@ -1217,6 +1219,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.autoRotateSpeed = 1.5;
 
     const handleControlsStart = () => {
       if (fitAnimationRef.current?.active) {
@@ -1504,6 +1507,11 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       }, 0);
     };
   }, []);
+
+  useEffect(() => {
+    if (!sceneRef.current) return;
+    sceneRef.current.controls.autoRotate = autoRotate;
+  }, [autoRotate]);
 
   useEffect(() => {
     if (!sceneRef.current) return;

@@ -21,7 +21,9 @@ import {
   Github,
   Link2,
   Check,
-  Headset
+  Headset,
+  RotateCw,
+  Dices
 } from 'lucide-react';
 import { TilingCanvas, TilingCanvasHandle } from './components/TilingCanvas';
 import {
@@ -1232,6 +1234,7 @@ export default function App() {
   const [multigridSettings, setMultigridSettings] = useState<MultiGridSettings>(MULTIGRID_DEFAULTS);
   const isMobileLayout = useIsMobileLayout();
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(MOBILE_LAYOUT_QUERY).matches);
+  const [autoRotate, setAutoRotate] = useState(false);
   // Fraction of the screen height the controls sheet occupies on mobile; user-draggable.
   const [mobileSplit, setMobileSplit] = useState(() => {
     const stored = Number(localStorage.getItem(MOBILE_SPLIT_STORAGE_KEY));
@@ -2220,6 +2223,32 @@ export default function App() {
       : (currentIndex + direction + tilingTypeCycle.length) % tilingTypeCycle.length;
 
     selectTilingType(tilingTypeCycle[nextIndex], false);
+  };
+
+  // Randomize shape, operator stack, and palette in one tap.
+  const surpriseMe = () => {
+    const pick = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
+
+    if (mode === '3d') {
+      setRadialType(pick(radialTypeCycle));
+    } else {
+      const nextTiling = pick(tilingTypeCycle);
+      setTilingType(nextTiling);
+      setColorMode((current) => normalizeColorModeForTiling(current, nextTiling));
+    }
+
+    const operatorCount = 1 + Math.floor(Math.random() * 2);
+    const nextOperators = Array.from({ length: operatorCount }, () => {
+      const notation = getRandomOperatorNotation();
+      return createOperator(notation, true, getSaneOperatorParams(notation));
+    });
+    setOperators(nextOperators);
+    setSelectedOperatorId(nextOperators[nextOperators.length - 1]?.id ?? null);
+
+    setPalette(pick(Object.keys(PALETTES) as PaletteKey[]));
+    setShuffledColors(null);
+    setPresetOrRandomUsed(true);
+    requestFitToExtents();
   };
 
   useEffect(() => {
@@ -5347,6 +5376,7 @@ export default function App() {
             radialSides={radialSides}
             radialBuildOptions={radialBuildOptions}
             fitRequestKey={fitRequestKey}
+            autoRotate={autoRotate}
             onGeometryGenerationChange={handleGeometryGenerationChange}
             xrPanel={xrPanel}
           />
@@ -5453,6 +5483,29 @@ export default function App() {
           >
             <Search className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Zoom to Extents</span>
+          </button>
+          <button
+            onClick={surpriseMe}
+            className="flex shrink-0 items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white"
+            title="Randomize shape, operators, and palette"
+            aria-label="Surprise me"
+          >
+            <Dices className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Surprise Me</span>
+          </button>
+          <button
+            onClick={() => setAutoRotate((current) => !current)}
+            className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+              autoRotate
+                ? 'border-blue-700/60 bg-blue-950/40 text-blue-200 hover:bg-blue-950/60'
+                : 'border-neutral-700/80 bg-neutral-800/70 text-neutral-300 hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white'
+            }`}
+            title={autoRotate ? 'Stop auto-rotation' : 'Slowly rotate the camera around the model'}
+            aria-label="Toggle auto-rotate"
+            aria-pressed={autoRotate}
+          >
+            <RotateCw className={`h-3.5 w-3.5 ${autoRotate ? 'animate-spin [animation-duration:3s]' : ''}`} />
+            <span className="hidden sm:inline">Spin</span>
           </button>
           <button
             onClick={enterWebXR}
