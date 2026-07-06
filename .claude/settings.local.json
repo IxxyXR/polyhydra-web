@@ -7,7 +7,8 @@
       "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
       "Bash(cmd.exe /c \"echo %PATH%\")",
       "Bash(/c/Windows/System32/cmd.exe *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(curl *)"
     ]
   }
 }

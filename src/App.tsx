@@ -1168,6 +1168,21 @@ function parseOperatorsFromUrlParam(urlOps: string): StackItemState[] {
   }));
 }
 
+const MOBILE_LAYOUT_QUERY = '(max-width: 767px)';
+
+function useIsMobileLayout() {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_LAYOUT_QUERY).matches);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(MOBILE_LAYOUT_QUERY);
+    const handleChange = (event: MediaQueryListEvent) => setIsMobile(event.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  return isMobile;
+}
+
 export default function App() {
   const [mode, setMode] = useState<'2d' | '3d'>(APP_DEFAULTS.mode);
   const [radialType, setRadialType] = useState<RadialPolyType>(APP_DEFAULTS.radialType);
@@ -1211,7 +1226,8 @@ export default function App() {
   const [faceRoughness, setFaceRoughness] = useState(APP_DEFAULTS.faceRoughness);
   const [faceOpacity, setFaceOpacity] = useState(APP_DEFAULTS.faceOpacity);
   const [multigridSettings, setMultigridSettings] = useState<MultiGridSettings>(MULTIGRID_DEFAULTS);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobileLayout = useIsMobileLayout();
+  const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(MOBILE_LAYOUT_QUERY).matches);
   const [tilingMenuOpen, setTilingMenuOpen] = useState(false);
   const [displayMenuOpen, setDisplayMenuOpen] = useState(false);
   const [lightingMenuOpen, setLightingMenuOpen] = useState(false);
@@ -2211,25 +2227,49 @@ export default function App() {
   }, [tilingMenuOpen, tilingType]);
 
   return (
-    <div id="app-root" className="flex h-screen bg-neutral-950 text-neutral-100 font-sans overflow-hidden">
+    <div id="app-root" className="flex h-dvh bg-neutral-950 text-neutral-100 font-sans overflow-hidden">
+      {/* Backdrop behind the sidebar overlay on mobile */}
+      <AnimatePresence>
+        {isMobileLayout && sidebarOpen && (
+          <motion.div
+            key="sidebar-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-30 bg-black/60"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <motion.div
         initial={false}
-        animate={{ width: sidebarOpen ? 360 : 0 }}
-        className="relative h-full shrink-0 overflow-visible z-20"
+        animate={
+          isMobileLayout
+            ? { x: sidebarOpen ? 0 : -400, width: 'min(360px, 88vw)' }
+            : { x: 0, width: sidebarOpen ? 360 : 0 }
+        }
+        className={
+          isMobileLayout
+            ? 'fixed inset-y-0 left-0 z-40 h-full overflow-visible'
+            : 'relative h-full shrink-0 overflow-visible z-20'
+        }
       >
-        <button
-          onClick={() => setSidebarOpen((current) => !current)}
-          className="absolute right-0 top-6 z-30 flex h-10 w-5 translate-x-1/2 items-center justify-center rounded-r-xl border border-neutral-800 border-l-0 bg-neutral-900/90 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white"
-          title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-          aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-        >
-          {sidebarOpen ? <ArrowLeft className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
-        </button>
+        {!isMobileLayout && (
+          <button
+            onClick={() => setSidebarOpen((current) => !current)}
+            className="absolute right-0 top-6 z-30 flex h-10 w-5 translate-x-1/2 items-center justify-center rounded-r-xl border border-neutral-800 border-l-0 bg-neutral-900/90 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white"
+            title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          >
+            {sidebarOpen ? <ArrowLeft className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
+          </button>
+        )}
         <div className="h-full w-full overflow-hidden">
-        <aside className="h-full w-[360px] bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col overflow-hidden">
-        <div className="p-6 overflow-y-auto flex-1">
-          <div className="flex items-center justify-between gap-3 mb-8">
+        <aside className="h-full w-[min(360px,88vw)] bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col overflow-hidden">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
+          <div className="flex items-center justify-between gap-3 mb-4 sm:mb-8">
             <div className="flex items-center gap-3 min-w-0">
               <div className="p-2 bg-blue-600 rounded-lg">
                 <Layers className="w-6 h-6 text-white" />
@@ -2239,19 +2279,29 @@ export default function App() {
                 <p className="text-xs text-neutral-400 font-mono uppercase tracking-widest">Three.js Powered</p>
               </div>
             </div>
-            <a
-              href={POLYHYDRA_WEB_REPO_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="shrink-0 rounded-lg border border-neutral-800 bg-neutral-800/30 p-2 text-neutral-400 transition-colors hover:bg-neutral-800/60 hover:text-white"
-              title="Polyhydra Web repository"
-              aria-label="Open Polyhydra Web repository"
-            >
-              <Github className="w-4 h-4" />
-            </a>
+            <div className="flex shrink-0 items-center gap-2">
+              <a
+                href={POLYHYDRA_WEB_REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 rounded-lg border border-neutral-800 bg-neutral-800/30 p-2 text-neutral-400 transition-colors hover:bg-neutral-800/60 hover:text-white"
+                title="Polyhydra Web repository"
+                aria-label="Open Polyhydra Web repository"
+              >
+                <Github className="w-4 h-4" />
+              </a>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="shrink-0 rounded-lg border border-neutral-800 bg-neutral-800/30 p-2 text-neutral-400 transition-colors hover:bg-neutral-800/60 hover:text-white md:hidden"
+                title="Close controls"
+                aria-label="Close controls"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-3 sm:space-y-6">
             {/* Presets */}
             <section>
               <div className="rounded-2xl border border-neutral-800 bg-neutral-800/20 overflow-hidden">
@@ -2406,7 +2456,7 @@ export default function App() {
                         if (!shapeMenuOpen) setShapeEverOpened(true);
                         setShapeMenuOpen(!shapeMenuOpen);
                       }}
-                      className="min-w-0 flex-1 p-4 text-left transition-colors hover:bg-neutral-800/40"
+                      className="min-w-0 flex-1 p-3 sm:p-4 text-left transition-colors hover:bg-neutral-800/40"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -2498,7 +2548,7 @@ export default function App() {
                       if (!tilingMenuOpen) setTilingEverOpened(true);
                       setTilingMenuOpen(!tilingMenuOpen);
                     }}
-                    className="min-w-0 flex-1 p-4 text-left transition-colors hover:bg-neutral-800/40"
+                    className="min-w-0 flex-1 p-3 sm:p-4 text-left transition-colors hover:bg-neutral-800/40"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -5186,7 +5236,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-6 border-t border-neutral-800 bg-neutral-900/80">
+        <div className="p-4 sm:p-6 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-neutral-800 bg-neutral-900/80">
           <div className="flex flex-wrap gap-3 font-mono text-[10px] text-neutral-500">
             {[
               ['V', 'stat-vertices', 'Vertex count: unique corner points in the generated mesh.'],
@@ -5209,6 +5259,16 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 relative flex flex-col min-w-0">
+        {isMobileLayout && !sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="absolute left-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] z-20 flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900/80 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-widest text-neutral-200 shadow-lg backdrop-blur-md transition-colors hover:bg-neutral-800 hover:text-white"
+            aria-label="Open controls"
+          >
+            <Settings className="h-4 w-4" />
+            Controls
+          </button>
+        )}
         <div className="w-full h-full">
           <TilingCanvas
             ref={tilingCanvasRef}
@@ -5257,7 +5317,7 @@ export default function App() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 16 }}
-              className="absolute bottom-20 left-6 z-20 w-60 rounded-2xl border border-neutral-700/60 bg-neutral-900/90 p-4 shadow-2xl backdrop-blur-md"
+              className="absolute bottom-20 left-4 sm:left-6 z-20 w-60 max-w-[calc(100vw-2rem)] rounded-2xl border border-neutral-700/60 bg-neutral-900/90 p-4 shadow-2xl backdrop-blur-md"
             >
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-300">Getting Started</span>
@@ -5335,30 +5395,32 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-4 py-2 backdrop-blur-md">
-          <div className="flex w-48 items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${isGeometryGenerating ? 'animate-pulse bg-amber-400' : 'bg-emerald-500'}`} />
-            <span className={`font-mono text-[10px] uppercase tracking-widest ${isGeometryGenerating ? 'text-amber-200' : 'text-neutral-400'}`}>
+        <div className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 left-1/2 -translate-x-1/2 z-10 flex max-w-[calc(100vw-1rem)] items-center gap-2 sm:gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-3 sm:px-4 py-2 backdrop-blur-md">
+          <div className="flex min-w-0 sm:w-48 items-center gap-2">
+            <div className={`h-2 w-2 shrink-0 rounded-full ${isGeometryGenerating ? 'animate-pulse bg-amber-400' : 'bg-emerald-500'}`} />
+            <span className={`truncate font-mono text-[10px] uppercase tracking-widest ${isGeometryGenerating ? 'text-amber-200' : 'text-neutral-400'}`}>
               {isGeometryGenerating ? 'Rendering Geometry' : 'Ready'}
             </span>
           </div>
-          <div className="h-4 w-px bg-neutral-800" />
+          <div className="h-4 w-px shrink-0 bg-neutral-800" />
           <button
             onClick={requestFitToExtents}
-            className="flex items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white"
+            className="flex shrink-0 items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white"
             title="Zoom to extents"
+            aria-label="Zoom to extents"
           >
             <Search className="h-3.5 w-3.5" />
-            <span>Zoom to Extents</span>
+            <span className="hidden sm:inline">Zoom to Extents</span>
           </button>
           <button
             onClick={enterWebXR}
             disabled={webXrSupported === false}
-            className="flex items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-neutral-700/80 disabled:hover:bg-neutral-800/70 disabled:hover:text-neutral-300"
+            className="flex shrink-0 items-center gap-2 rounded-full border border-neutral-700/80 bg-neutral-800/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-300 transition-colors hover:border-blue-700/60 hover:bg-blue-950/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-neutral-700/80 disabled:hover:bg-neutral-800/70 disabled:hover:text-neutral-300"
             title={webXrSupported === false ? 'WebXR is not available in this browser or device' : webXrError ?? 'Enter WebXR mode'}
+            aria-label="Enter WebXR mode"
           >
             <Headset className="h-3.5 w-3.5" />
-            <span>WebXR</span>
+            <span className="hidden sm:inline">WebXR</span>
           </button>
         </div>
       </main>

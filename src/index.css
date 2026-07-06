@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Fixed full-viewport app: #app-root owns all scrolling. Off-screen helper
+   elements (e.g. the XR panel host) must never make the page itself scroll. */
+html, body {
+  overflow: hidden;
+}
+
+/* Compact UI on phones: Tailwind spacing/text is rem-based, so shrinking the
+   root font-size scales padding, gaps, text, and icons down together. */
+@media (max-width: 767px) {
+  html {
+    font-size: 13px;
+  }
+}
+
 @keyframes callout-pulse {
   0%, 100% { background-color: #facc15; } /* yellow-400 */
   50%       { background-color: #fef08a; } /* yellow-200 */
