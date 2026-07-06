@@ -14,6 +14,23 @@ html, body {
   }
 }
 
+/* Short viewports (landscape phones): pin the status toolbar nearly flush with
+   the bottom edge and tighten its internal spacing. */
+@media (max-height: 500px) {
+  #status-toolbar {
+    bottom: max(0.25rem, env(safe-area-inset-bottom));
+    gap: 0.5rem;
+    padding: 0.25rem 0.625rem;
+  }
+  #status-toolbar > div:first-child {
+    width: auto;
+  }
+  #status-toolbar button {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+}
+
 @keyframes callout-pulse {
   0%, 100% { background-color: #facc15; } /* yellow-400 */
   50%       { background-color: #fef08a; } /* yellow-200 */

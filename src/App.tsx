@@ -1169,6 +1169,10 @@ function parseOperatorsFromUrlParam(urlOps: string): StackItemState[] {
 }
 
 const MOBILE_LAYOUT_QUERY = '(max-width: 767px)';
+const MOBILE_SPLIT_STORAGE_KEY = 'polyhydra-mobile-split';
+const DEFAULT_MOBILE_SPLIT = 0.6;
+
+const clampMobileSplit = (value: number) => Math.min(0.85, Math.max(0.25, value));
 
 function useIsMobileLayout() {
   const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_LAYOUT_QUERY).matches);
@@ -1228,6 +1232,11 @@ export default function App() {
   const [multigridSettings, setMultigridSettings] = useState<MultiGridSettings>(MULTIGRID_DEFAULTS);
   const isMobileLayout = useIsMobileLayout();
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(MOBILE_LAYOUT_QUERY).matches);
+  // Fraction of the screen height the controls sheet occupies on mobile; user-draggable.
+  const [mobileSplit, setMobileSplit] = useState(() => {
+    const stored = Number(localStorage.getItem(MOBILE_SPLIT_STORAGE_KEY));
+    return Number.isFinite(stored) && stored > 0 ? clampMobileSplit(stored) : DEFAULT_MOBILE_SPLIT;
+  });
   const [tilingMenuOpen, setTilingMenuOpen] = useState(false);
   const [displayMenuOpen, setDisplayMenuOpen] = useState(false);
   const [lightingMenuOpen, setLightingMenuOpen] = useState(false);
@@ -2234,21 +2243,31 @@ export default function App() {
     return () => window.clearTimeout(timeoutId);
   }, [isMobileLayout, sidebarOpen]);
 
+  const handleSplitDragMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    setMobileSplit(clampMobileSplit(event.clientY / window.innerHeight));
+  };
+
+  const handleSplitDragEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setMobileSplit((current) => {
+      localStorage.setItem(MOBILE_SPLIT_STORAGE_KEY, String(current));
+      return current;
+    });
+    tilingCanvasRef.current?.fitToExtents();
+  };
+
   return (
     <div id="app-root" className="flex h-dvh bg-neutral-950 text-neutral-100 font-sans overflow-hidden">
       {/* Sidebar: desktop side panel; mobile top sheet with the canvas visible below */}
-      <motion.div
-        initial={false}
-        animate={
-          isMobileLayout
-            ? { x: 0, y: sidebarOpen ? '0%' : '-105%', width: '100%' }
-            : { x: 0, y: 0, width: sidebarOpen ? 360 : 0 }
-        }
+      <div
         className={
           isMobileLayout
-            ? 'fixed inset-x-0 top-0 z-40 h-[75dvh] overflow-visible'
-            : 'relative h-full shrink-0 overflow-visible z-20'
+            ? `fixed inset-x-0 top-0 z-40 overflow-visible transition-transform duration-300 ease-out ${sidebarOpen ? 'translate-y-0' : '-translate-y-[110%]'}`
+            : 'relative h-full shrink-0 overflow-visible z-20 transition-[width] duration-300 ease-out'
         }
+        style={isMobileLayout ? { height: `${mobileSplit * 100}dvh` } : { width: sidebarOpen ? 360 : 0 }}
       >
         {!isMobileLayout && (
           <button
@@ -5249,7 +5268,24 @@ export default function App() {
         </div>
         </aside>
         </div>
-      </motion.div>
+        {isMobileLayout && (
+          <div
+            className="absolute inset-x-0 -bottom-3.5 z-50 flex h-7 cursor-row-resize touch-none items-center justify-center"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={handleSplitDragMove}
+            onPointerUp={handleSplitDragEnd}
+            onPointerCancel={handleSplitDragEnd}
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize controls panel"
+          >
+            <div className="h-1.5 w-14 rounded-full bg-neutral-600 shadow-[0_1px_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        )}
+      </div>
 
       {/* Main Content */}
       <main className="flex-1 relative flex flex-col min-w-0">
@@ -5263,7 +5299,10 @@ export default function App() {
             Controls
           </button>
         )}
-        <div className={isMobileLayout && sidebarOpen ? 'absolute inset-x-0 bottom-0 h-[25dvh]' : 'w-full h-full'}>
+        <div
+          className={isMobileLayout && sidebarOpen ? 'absolute inset-x-0 bottom-0' : 'w-full h-full'}
+          style={isMobileLayout && sidebarOpen ? { height: `${(1 - mobileSplit) * 100}dvh` } : undefined}
+        >
           <TilingCanvas
             ref={tilingCanvasRef}
             tilingType={tilingType}
@@ -5389,7 +5428,7 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <div className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 left-1/2 -translate-x-1/2 z-10 flex max-w-[calc(100vw-1rem)] items-center gap-2 sm:gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-3 sm:px-4 py-2 backdrop-blur-md ${isMobileLayout && sidebarOpen ? 'hidden' : ''}`}>
+        <div id="status-toolbar" className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 left-1/2 -translate-x-1/2 z-10 flex w-max max-w-[calc(100vw-1rem)] items-center gap-2 sm:gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-3 sm:px-4 py-2 backdrop-blur-md ${isMobileLayout && sidebarOpen ? 'hidden' : ''}`}>
           <div className="flex min-w-0 sm:w-48 items-center gap-2">
             <div className={`h-2 w-2 shrink-0 rounded-full ${isGeometryGenerating ? 'animate-pulse bg-amber-400' : 'bg-emerald-500'}`} />
             <span className={`truncate font-mono text-[10px] uppercase tracking-widest ${isGeometryGenerating ? 'text-amber-200' : 'text-neutral-400'}`}>
