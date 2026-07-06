@@ -4,14 +4,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { installHtmlInCanvasPolyfill } from 'three-html-render/polyfill';
-import { TilingGenerationOptions, triangulateFaces } from '../lib/tiling-geometries';
+import { TilingGenerationOptions } from '../lib/tiling-geometries';
 import { PaletteKey } from '../lib/palettes';
 import { RadialBuildOptions, RadialPolyType } from '../lib/radial-solids';
 
 import { OperatorSpec, RoleShapeBasis } from '../lib/conway-operators';
-import { ColorMode, computeFaceColors } from '../lib/coloring';
-import { generateFinalMesh } from '../lib/mesh-pipeline';
+import { ColorMode } from '../lib/coloring';
 import { StackItem } from '../lib/stack-items';
+import type { MeshWorkRequest, MeshWorkResult } from '../workers/mesh-generation.worker';
 
 const FIT_PADDING_MULTIPLIER = 1.12;
 const FIT_LERP_ALPHA = 0.14;
@@ -1036,6 +1036,8 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   const fitAnimationRef = useRef<FitAnimationState | null>(null);
   const lastHandledFitRequestKeyRef = useRef(0);
   const meshBoundsRef = useRef<MeshBounds | null>(null);
+  const meshWorkerRef = useRef<Worker | null>(null);
+  const meshRequestIdRef = useRef(0);
   const sceneRef = useRef<{
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
@@ -1512,6 +1514,11 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     updateKeyLightPosition(directLight, keyLightAzimuth, keyLightElevation);
   }, [ambientLightIntensity, keyLightIntensity, keyLightAzimuth, keyLightElevation]);
 
+  useEffect(() => () => {
+    meshWorkerRef.current?.terminate();
+    meshWorkerRef.current = null;
+  }, []);
+
   useEffect(() => {
     if (!sceneRef.current) {
       onGeometryGenerationChange?.(false);
@@ -1522,12 +1529,28 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     let cancelled = false;
     onGeometryGenerationChange?.(true);
 
-    let generationTimeoutId: number | null = null;
-    const generationFrameId = window.requestAnimationFrame(() => {
-      generationTimeoutId = window.setTimeout(() => {
+    if (!meshWorkerRef.current) {
+      meshWorkerRef.current = new Worker(
+        new URL('../workers/mesh-generation.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+    }
+    const worker = meshWorkerRef.current;
+    const requestId = ++meshRequestIdRef.current;
+
+    const handleWorkerMessage = (event: MessageEvent<MeshWorkResult>) => {
+      if (event.data.requestId !== requestId) return;
+      worker.removeEventListener('message', handleWorkerMessage);
       if (cancelled || !sceneRef.current) return;
 
       try {
+      const { payload, error } = event.data;
+      if (error) {
+        console.warn('Mesh generation failed:', error);
+        return;
+      }
+      if (!payload) return;
+      const { vertices, faces, faceColors: computedFaceColors, faceTriangulations, stats } = payload;
       const { meshGroup, renderer } = sceneRef.current;
       const hadEmbossedFaces = meshGroup.children.some((child) => {
         const material = (child as any).material as THREE.Material | THREE.Material[] | undefined;
@@ -1543,37 +1566,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         meshGroup.remove(child);
       }
 
-      let vertices: number[];
-      let faces: number[][];
-      const mesh = generateFinalMesh({
-        mode,
-        tilingType,
-        rows,
-        cols,
-        operators,
-        radialType,
-        radialSides,
-        radialBuildOptions,
-        roleGeometryDetail,
-        roleShapeBasis,
-        generationOptions,
-      });
-      if (!mesh) return;
-      vertices = mesh.vertices;
-      faces = mesh.faces;
       meshBoundsRef.current = computeMeshBounds(vertices);
-
-      const computedFaceColors = computeFaceColors(mesh, paletteColors ?? palette, colorMode, { roleColorCount, sideModulo, sideOffset });
-      const faceTriangulations = faces.map((face) => triangulateFaces([face], vertices));
-      const uniqueColorsUsed = new Set(computedFaceColors);
-      const uniqueEdges = new Set<string>();
-      faces.forEach((face) => {
-        for (let i = 0; i < face.length; i++) {
-          const a = face[i];
-          const b = face[(i + 1) % face.length];
-          uniqueEdges.add(a < b ? `${a},${b}` : `${b},${a}`);
-        }
-      });
 
       const updateStat = (ids: string[], value: string) => {
         ids.forEach((id) => {
@@ -1581,10 +1574,10 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
           if (element) element.innerText = value;
         });
       };
-      updateStat(['stat-colors'], uniqueColorsUsed.size.toString());
-      updateStat(['stat-vertices'], (vertices.length / 3).toString());
-      updateStat(['stat-faces'], faces.length.toString());
-      updateStat(['stat-edges'], uniqueEdges.size.toString());
+      updateStat(['stat-colors'], stats.colorCount.toString());
+      updateStat(['stat-vertices'], stats.vertexCount.toString());
+      updateStat(['stat-faces'], stats.faceCount.toString());
+      updateStat(['stat-edges'], stats.edgeCount.toString());
 
       let faceMesh: THREE.Mesh | null = null;
       // 3D solids are consistently wound outward, so opaque solids can backface-cull.
@@ -1737,15 +1730,43 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
           onGeometryGenerationChange?.(false);
         }
       }
-      }, 0);
-    });
+    };
+
+    const handleWorkerError = (event: ErrorEvent) => {
+      console.warn('Mesh generation worker error:', event.message);
+      worker.removeEventListener('message', handleWorkerMessage);
+      worker.removeEventListener('error', handleWorkerError);
+      if (!cancelled) {
+        onGeometryGenerationChange?.(false);
+      }
+    };
+
+    worker.addEventListener('message', handleWorkerMessage);
+    worker.addEventListener('error', handleWorkerError);
+    worker.postMessage({
+      requestId,
+      meshOptions: {
+        mode,
+        tilingType,
+        rows,
+        cols,
+        operators,
+        radialType,
+        radialSides,
+        radialBuildOptions,
+        roleGeometryDetail,
+        roleShapeBasis,
+        generationOptions,
+      },
+      palette: paletteColors ?? palette,
+      colorMode,
+      colorOptions: { roleColorCount, sideModulo, sideOffset },
+    } satisfies MeshWorkRequest);
 
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(generationFrameId);
-      if (generationTimeoutId !== null) {
-        window.clearTimeout(generationTimeoutId);
-      }
+      worker.removeEventListener('message', handleWorkerMessage);
+      worker.removeEventListener('error', handleWorkerError);
       if (embossTimeoutId !== null) {
         window.clearTimeout(embossTimeoutId);
       }
