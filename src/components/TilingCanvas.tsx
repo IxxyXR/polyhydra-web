@@ -1000,6 +1000,7 @@ interface XRNavigator extends Navigator {
 export interface TilingCanvasHandle {
   enterWebXR: () => Promise<void>;
   isWebXRSupported: () => Promise<boolean>;
+  fitToExtents: () => void;
 }
 
 export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
@@ -1090,6 +1091,11 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       if (!xr?.requestSession) return false;
       if (!xr.isSessionSupported) return true;
       return xr.isSessionSupported('immersive-vr');
+    },
+    fitToExtents: () => {
+      if (meshBoundsRef.current) {
+        fitCameraToBounds(meshBoundsRef.current);
+      }
     },
   }), []);
 
@@ -1480,8 +1486,11 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     };
     window.addEventListener('resize', handleResize);
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(containerRef.current);
 
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       controls.removeEventListener('start', handleControlsStart);
       controllerEventCleanups.forEach((cleanup) => cleanup());

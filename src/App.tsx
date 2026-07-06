@@ -2226,33 +2226,27 @@ export default function App() {
     return () => window.cancelAnimationFrame(rafId);
   }, [tilingMenuOpen, tilingType]);
 
+  // On mobile the canvas switches between full-screen and the bottom strip when
+  // the controls sheet toggles; re-frame the model for the new viewport.
+  useEffect(() => {
+    if (!isMobileLayout) return;
+    const timeoutId = window.setTimeout(() => tilingCanvasRef.current?.fitToExtents(), 80);
+    return () => window.clearTimeout(timeoutId);
+  }, [isMobileLayout, sidebarOpen]);
+
   return (
     <div id="app-root" className="flex h-dvh bg-neutral-950 text-neutral-100 font-sans overflow-hidden">
-      {/* Backdrop behind the sidebar overlay on mobile */}
-      <AnimatePresence>
-        {isMobileLayout && sidebarOpen && (
-          <motion.div
-            key="sidebar-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-30 bg-black/60"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar */}
+      {/* Sidebar: desktop side panel; mobile top sheet with the canvas visible below */}
       <motion.div
         initial={false}
         animate={
           isMobileLayout
-            ? { x: sidebarOpen ? 0 : -400, width: 'min(360px, 88vw)' }
-            : { x: 0, width: sidebarOpen ? 360 : 0 }
+            ? { x: 0, y: sidebarOpen ? '0%' : '-105%', width: '100%' }
+            : { x: 0, y: 0, width: sidebarOpen ? 360 : 0 }
         }
         className={
           isMobileLayout
-            ? 'fixed inset-y-0 left-0 z-40 h-full overflow-visible'
+            ? 'fixed inset-x-0 top-0 z-40 h-[75dvh] overflow-visible'
             : 'relative h-full shrink-0 overflow-visible z-20'
         }
       >
@@ -2267,7 +2261,7 @@ export default function App() {
           </button>
         )}
         <div className="h-full w-full overflow-hidden">
-        <aside className="h-full w-[min(360px,88vw)] bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-800 flex flex-col overflow-hidden">
+        <aside className="h-full w-full md:w-[360px] bg-neutral-900/50 backdrop-blur-xl border-neutral-800 border-b shadow-2xl md:border-b-0 md:border-r md:shadow-none flex flex-col overflow-hidden max-md:pt-[env(safe-area-inset-top)]">
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
           <div className="flex items-center justify-between gap-3 mb-4 sm:mb-8">
             <div className="flex items-center gap-3 min-w-0">
@@ -5269,7 +5263,7 @@ export default function App() {
             Controls
           </button>
         )}
-        <div className="w-full h-full">
+        <div className={isMobileLayout && sidebarOpen ? 'absolute inset-x-0 bottom-0 h-[25dvh]' : 'w-full h-full'}>
           <TilingCanvas
             ref={tilingCanvasRef}
             tilingType={tilingType}
@@ -5311,7 +5305,7 @@ export default function App() {
         </div>
 
         <AnimatePresence>
-          {showOnboarding && (
+          {showOnboarding && !(isMobileLayout && sidebarOpen) && (
             <motion.div
               key="onboarding"
               initial={{ opacity: 0, y: 16 }}
@@ -5395,7 +5389,7 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <div className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 left-1/2 -translate-x-1/2 z-10 flex max-w-[calc(100vw-1rem)] items-center gap-2 sm:gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-3 sm:px-4 py-2 backdrop-blur-md">
+        <div className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 left-1/2 -translate-x-1/2 z-10 flex max-w-[calc(100vw-1rem)] items-center gap-2 sm:gap-4 rounded-full border border-neutral-800 bg-neutral-900/60 px-3 sm:px-4 py-2 backdrop-blur-md ${isMobileLayout && sidebarOpen ? 'hidden' : ''}`}>
           <div className="flex min-w-0 sm:w-48 items-center gap-2">
             <div className={`h-2 w-2 shrink-0 rounded-full ${isGeometryGenerating ? 'animate-pulse bg-amber-400' : 'bg-emerald-500'}`} />
             <span className={`truncate font-mono text-[10px] uppercase tracking-widest ${isGeometryGenerating ? 'text-amber-200' : 'text-neutral-400'}`}>
