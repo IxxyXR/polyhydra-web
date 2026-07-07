@@ -930,15 +930,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrPanelElement.style.top = '0';
     xrPanelElement.style.overflow = 'auto';
     xrPanelHostCanvas.appendChild(xrPanelElement);
-    // The polyfill's appendChild override moves canvas children into a host
-    // div appended to document.body — outside the React root, so bubbling
-    // events never reach React's delegated listeners and onClick/onChange
-    // stay dead. Relocate the host inside the React tree; the polyfill keeps
-    // working via its retained reference, and the host renders offscreen.
-    const polyfillHost = xrPanelElement.parentElement;
-    if (polyfillHost instanceof HTMLElement && polyfillHost.hasAttribute('data-html-in-canvas-host')) {
-      containerRef.current.appendChild(polyfillHost);
-    }
 
     // The XR panel mirrors the app's real sidebar. On session start the live
     // sidebar DOM (id="app-sidebar") is reparented into the offscreen host so
@@ -973,6 +964,20 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     let sidebarHome: { parent: HTMLElement; nextSibling: Node | null; inlineStyle: string } | null = null;
     const adoptSidebarForXR = () => {
+      // The polyfill reparents canvas children into a host div it appends to
+      // document.body — outside the React root, so bubbled events never reach
+      // React's delegated listeners and onClick/onChange stay dead. Move the
+      // host inside the React tree (registration is async, and the polyfill's
+      // parentElement override hides the host, so find it by attribute here
+      // at session start rather than at canvas creation).
+      const polyfillHost = document.querySelector('div[data-html-in-canvas-host]');
+      if (
+        polyfillHost instanceof HTMLElement
+        && containerRef.current
+        && polyfillHost.parentElement !== containerRef.current
+      ) {
+        containerRef.current.appendChild(polyfillHost);
+      }
       const sidebar = document.getElementById('app-sidebar');
       if (!sidebar || !sidebar.parentElement || sidebarHome) return;
       sidebarHome = {
@@ -1308,6 +1313,8 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
             raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
             raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
             const [hit] = raycaster.intersectObject(xrPanelMesh, false);
+            // Stop the pointer line at the panel instead of passing through it.
+            controllerRays[index].scale.z = hit ? hit.distance / XR_POINTER_LENGTH : 1;
 
             if (hit?.uv) {
               xrPanelCursor.position.copy(hit.point);
