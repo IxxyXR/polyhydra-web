@@ -32,7 +32,7 @@ const XR_PANEL_HEIGHT_PX = 1200;
 const XR_PANEL_WORLD_WIDTH = 0.9;
 const XR_PANEL_WORLD_HEIGHT = XR_PANEL_WORLD_WIDTH * (XR_PANEL_HEIGHT_PX / XR_PANEL_WIDTH_PX);
 const XR_PANEL_IDLE_REPAINT_MS = 1000;
-const XR_PANEL_HAND_SCALE = 0.15;
+const XR_PANEL_HAND_SCALE = 0.18;
 const XR_PANEL_HAND_LIFT = 0.18; // metres above the non-dominant grip
 const XR_POINTER_LENGTH = 1.6;
 const XR_POINTER_LINE_NAME = 'xr-controller-pointer-line';
@@ -930,6 +930,15 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrPanelElement.style.top = '0';
     xrPanelElement.style.overflow = 'auto';
     xrPanelHostCanvas.appendChild(xrPanelElement);
+    // The polyfill's appendChild override moves canvas children into a host
+    // div appended to document.body — outside the React root, so bubbling
+    // events never reach React's delegated listeners and onClick/onChange
+    // stay dead. Relocate the host inside the React tree; the polyfill keeps
+    // working via its retained reference, and the host renders offscreen.
+    const polyfillHost = xrPanelElement.parentElement;
+    if (polyfillHost instanceof HTMLElement && polyfillHost.hasAttribute('data-html-in-canvas-host')) {
+      containerRef.current.appendChild(polyfillHost);
+    }
 
     // The XR panel mirrors the app's real sidebar. On session start the live
     // sidebar DOM (id="app-sidebar") is reparented into the offscreen host so
