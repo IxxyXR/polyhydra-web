@@ -979,7 +979,22 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       }
       home.parent.insertBefore(sidebar, home.nextSibling);
     };
+    const logSessionInputSources = () => {
+      const session = renderer.xr.getSession();
+      const describe = () => {
+        const sources = session ? Array.from(session.inputSources) : [];
+        console.info(
+          `[PXR-INPUT] session inputSources=${sources.length}: ` +
+            sources
+              .map((s) => `${s.handedness}/${s.targetRayMode}/gamepad=${Boolean(s.gamepad)}/hand=${Boolean(s.hand)}`)
+              .join(', '),
+        );
+      };
+      describe();
+      session?.addEventListener('inputsourceschange', describe);
+    };
     renderer.xr.addEventListener('sessionstart', adoptSidebarForXR);
+    renderer.xr.addEventListener('sessionstart', logSessionInputSources);
     renderer.xr.addEventListener('sessionend', releaseSidebarFromXR);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -1026,11 +1041,14 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     const controllerModelFactory = new XRControllerModelFactory();
     const controllerEventCleanups: Array<() => void> = [];
+    const controllerRays: THREE.Line[] = [];
+    const controllerAimFallbacks: THREE.Group[] = [];
     for (let index = 0; index < 2; index++) {
       const controller = renderer.xr.getController(index);
       controller.name = `xr-controller-${index}`;
       const ray = createXRControllerRay(index === 0 ? 0x38bdf8 : 0xf97316);
       ray.visible = false;
+      controllerRays.push(ray);
       controller.add(ray);
       const aimFallback = createXRControllerFallback();
       aimFallback.name = 'xr-controller-target-ray-fallback-model';
@@ -1038,9 +1056,13 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       aimFallback.rotation.x = -0.35;
       aimFallback.scale.setScalar(0.72);
       aimFallback.visible = false;
+      controllerAimFallbacks.push(aimFallback);
       controller.add(aimFallback);
       const handleConnected = (event: any) => {
         const handedness = event.data?.handedness;
+        console.info(
+          `[PXR-INPUT] controller ${index} connected: handedness=${handedness ?? 'none'} targetRayMode=${event.data?.targetRayMode ?? 'unknown'} gamepad=${Boolean(event.data?.gamepad)} hand=${Boolean(event.data?.hand)}`,
+        );
         controller.userData.inputSource = event.data;
         const color = handedness === 'right' ? 0xf97316 : 0x38bdf8;
         const material = ray.material as THREE.LineBasicMaterial;
@@ -1050,6 +1072,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         aimFallback.visible = true;
       };
       const handleDisconnected = () => {
+        console.info(`[PXR-INPUT] controller ${index} disconnected`);
         delete controller.userData.inputSource;
         ray.visible = false;
         aimFallback.visible = false;
@@ -1107,6 +1130,10 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
           (xrPanelHostCanvas as any).requestPaint?.();
         }
         xrPanelMesh.visible = true;
+        // Failsafe: show pointer visuals even when three's 'connected' event
+        // never fired (some browsers only surface input sources after a grab).
+        controllerRays.forEach((ray) => { ray.visible = true; });
+        controllerAimFallbacks.forEach((fallback) => { fallback.visible = true; });
         const session = renderer.xr.getSession();
         if (session) {
           let moveX = 0;
@@ -1266,6 +1293,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       controllerEventCleanups.forEach((cleanup) => cleanup());
       fitAnimationRef.current = null;
       renderer.xr.removeEventListener('sessionstart', adoptSidebarForXR);
+      renderer.xr.removeEventListener('sessionstart', logSessionInputSources);
       renderer.xr.removeEventListener('sessionend', releaseSidebarFromXR);
       releaseSidebarFromXR();
       panelMutationObserver.disconnect();
