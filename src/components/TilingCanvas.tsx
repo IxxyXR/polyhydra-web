@@ -32,7 +32,7 @@ const XR_PANEL_HEIGHT_PX = 1200;
 const XR_PANEL_WORLD_WIDTH = 0.9;
 const XR_PANEL_WORLD_HEIGHT = XR_PANEL_WORLD_WIDTH * (XR_PANEL_HEIGHT_PX / XR_PANEL_WIDTH_PX);
 const XR_PANEL_IDLE_REPAINT_MS = 1000;
-const XR_PANEL_HAND_SCALE = 0.5;
+const XR_PANEL_HAND_SCALE = 0.15;
 const XR_PANEL_HAND_LIFT = 0.18; // metres above the non-dominant grip
 const XR_POINTER_LENGTH = 1.6;
 const XR_POINTER_LINE_NAME = 'xr-controller-pointer-line';
@@ -1156,11 +1156,49 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       controllerPointerStates,
     };
 
+    // The html-in-canvas polyfill schedules DOM sync + rasterization via
+    // window.requestAnimationFrame, which browsers stop firing during an
+    // immersive session (the 2D page is hidden), freezing the panel texture.
+    // Shim rAF so queued callbacks can be pumped from the XR frame loop.
+    const originalRAF = window.requestAnimationFrame.bind(window);
+    const originalCAF = window.cancelAnimationFrame.bind(window);
+    const pendingRafCallbacks = new Map<number, FrameRequestCallback>();
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      const handle = originalRAF((time: number) => {
+        pendingRafCallbacks.delete(handle);
+        callback(time);
+      });
+      pendingRafCallbacks.set(handle, callback);
+      return handle;
+    };
+    window.cancelAnimationFrame = (handle: number) => {
+      pendingRafCallbacks.delete(handle);
+      originalCAF(handle);
+    };
+    const restoreRafShim = () => {
+      window.requestAnimationFrame = originalRAF;
+      window.cancelAnimationFrame = originalCAF;
+      pendingRafCallbacks.clear();
+    };
+
     const tempMatrix = new THREE.Matrix4();
     const tempVec = new THREE.Vector3();
     let lastClickDebugTime = 0;
     const animate = () => {
       if (renderer.xr.isPresenting) {
+        if (pendingRafCallbacks.size > 0) {
+          const entries = Array.from(pendingRafCallbacks.entries());
+          pendingRafCallbacks.clear();
+          const time = performance.now();
+          for (const [handle, callback] of entries) {
+            originalCAF(handle);
+            try {
+              callback(time);
+            } catch (error) {
+              console.error('[PXR] pumped rAF callback threw', error);
+            }
+          }
+        }
         // Repaint the HTML texture only when the panel DOM actually changed
         // (plus a slow heartbeat) — per-frame painting is the main XR perf drain.
         const now = performance.now();
@@ -1373,6 +1411,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       controls.removeEventListener('start', handleControlsStart);
+      restoreRafShim();
       controllerEventCleanups.forEach((cleanup) => cleanup());
       fitAnimationRef.current = null;
       renderer.xr.removeEventListener('sessionstart', adoptSidebarForXR);
