@@ -1065,7 +1065,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     // Aiming feedback: a small dot rendered where a controller ray meets the
     // panel, drawn on top so it never hides behind the panel surface.
     const xrPanelCursor = new THREE.Mesh(
-      new THREE.SphereGeometry(0.008, 12, 12),
+      new THREE.SphereGeometry(0.003, 12, 12),
       new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false }),
     );
     xrPanelCursor.renderOrder = 999;
