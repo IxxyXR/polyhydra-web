@@ -32,6 +32,8 @@ const XR_PANEL_HEIGHT_PX = 1200;
 const XR_PANEL_WORLD_WIDTH = 0.9;
 const XR_PANEL_WORLD_HEIGHT = XR_PANEL_WORLD_WIDTH * (XR_PANEL_HEIGHT_PX / XR_PANEL_WIDTH_PX);
 const XR_PANEL_IDLE_REPAINT_MS = 1000;
+const XR_PANEL_HAND_SCALE = 0.5;
+const XR_PANEL_HAND_LIFT = 0.45; // metres above the non-dominant grip
 const XR_POINTER_LENGTH = 1.6;
 const XR_POINTER_LINE_NAME = 'xr-controller-pointer-line';
 const XR_PANEL_HOST_STYLE_ID = 'polyhydra-xr-html-panel-host-style';
@@ -948,6 +950,18 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrPanelElement.addEventListener('change', markPanelDirty, true);
     xrPanelElement.addEventListener('scroll', markPanelDirty, true);
 
+    // In-headset debug readout: the Quest console isn't reachable remotely,
+    // so surface input state directly on the panel texture.
+    const xrDebugStrip = document.createElement('div');
+    xrDebugStrip.style.cssText =
+      'position:absolute;top:0;left:0;right:0;z-index:10;font:13px monospace;color:#4ade80;background:#000c;padding:2px 6px;white-space:pre;pointer-events:none;';
+    xrDebugStrip.textContent = '[PXR] waiting for input…';
+    xrPanelElement.appendChild(xrDebugStrip);
+    const setXRDebug = (text: string) => {
+      xrDebugStrip.textContent = `[PXR] ${text}`;
+      markPanelDirty();
+    };
+
     let sidebarHome: { parent: HTMLElement; nextSibling: Node | null; inlineStyle: string } | null = null;
     const adoptSidebarForXR = () => {
       const sidebar = document.getElementById('app-sidebar');
@@ -1077,11 +1091,26 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         ray.visible = false;
         aimFallback.visible = false;
       };
+      // WebXR 'select' events are the spec-guaranteed primary action; polling
+      // gamepad.buttons[0] alone fails when the 'connected' payload never
+      // arrives (seen on Quest browser), so track both.
+      const handleSelectStart = () => {
+        controller.userData.selectPressed = true;
+        setXRDebug(`controller ${index} selectstart`);
+      };
+      const handleSelectEnd = () => {
+        controller.userData.selectPressed = false;
+        setXRDebug(`controller ${index} selectend`);
+      };
       controller.addEventListener('connected', handleConnected);
       controller.addEventListener('disconnected', handleDisconnected);
+      controller.addEventListener('selectstart', handleSelectStart);
+      controller.addEventListener('selectend', handleSelectEnd);
       controllerEventCleanups.push(() => {
         controller.removeEventListener('connected', handleConnected);
         controller.removeEventListener('disconnected', handleDisconnected);
+        controller.removeEventListener('selectstart', handleSelectStart);
+        controller.removeEventListener('selectend', handleSelectEnd);
       });
       xrRig.add(controller);
 
@@ -1118,6 +1147,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     };
 
     const tempMatrix = new THREE.Matrix4();
+    const tempVec = new THREE.Vector3();
     const animate = () => {
       if (renderer.xr.isPresenting) {
         // Repaint the HTML texture only when the panel DOM actually changed
@@ -1140,6 +1170,33 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
           let moveZ = 0;
           let moveY = 0;
 
+          // Fall back to session.inputSources by index when the 'connected'
+          // event payload never arrived (three matches them in the same order).
+          const resolveInputSource = (index: number) =>
+            (renderer.xr.getController(index).userData.inputSource
+              ?? session.inputSources[index]) as XRInputSourceLike | undefined;
+
+          // Float the panel above the non-dominant (left) hand, facing the
+          // viewer; until handedness is known keep the fixed spot on the rig.
+          let leftGripIndex = -1;
+          for (let index = 0; index < 2; index++) {
+            if (resolveInputSource(index)?.handedness === 'left') {
+              leftGripIndex = index;
+              break;
+            }
+          }
+          if (leftGripIndex >= 0) {
+            const grip = renderer.xr.getControllerGrip(leftGripIndex);
+            xrPanelMesh.scale.setScalar(XR_PANEL_HAND_SCALE);
+            xrPanelMesh.position.set(grip.position.x, grip.position.y + XR_PANEL_HAND_LIFT, grip.position.z);
+            xrPanelMesh.lookAt(camera.getWorldPosition(tempVec));
+          } else {
+            xrPanelMesh.scale.setScalar(1);
+            xrPanelMesh.position.set(0, 1.2, -1.35);
+            xrPanelMesh.quaternion.identity();
+          }
+          xrPanelMesh.updateMatrixWorld();
+
           const panelPointedByHand = new Set<string>();
 
           for (let index = 0; index < 2; index++) {
@@ -1148,10 +1205,8 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
             raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
             raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
             if (raycaster.intersectObject(xrPanelMesh, false).length > 0) {
-              const source = controller.userData.inputSource as XRInputSourceLike | undefined;
-              if (source?.handedness) {
-                panelPointedByHand.add(source.handedness);
-              }
+              const source = resolveInputSource(index);
+              panelPointedByHand.add(source?.handedness ?? `controller-${index}`);
             }
           }
 
@@ -1164,7 +1219,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
                 const x = (axes[0] || 0) + (axes[2] || 0);
                 const z = (axes[1] || 0) + (axes[3] || 0);
 
-                if (panelPointedByHand.has(source.handedness)) {
+                if (panelPointedByHand.size > 0) {
                   if (Math.abs(z) > 0.25) {
                     const scroller = xrPanelElement.querySelector('[data-xr-scroll]') ?? xrPanelElement;
                     scroller.scrollTop += z * 18;
@@ -1186,8 +1241,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
           for (let index = 0; index < 2; index++) {
             const controller = renderer.xr.getController(index);
             const pointerState = controllerPointerStates[index];
-            const source = controller.userData.inputSource as XRInputSourceLike | undefined;
-            const pressed = Boolean(source?.gamepad?.buttons?.[0]?.pressed);
+            const source = resolveInputSource(index);
+            const pressed = controller.userData.selectPressed === true
+              || Boolean(source?.gamepad?.buttons?.[0]?.pressed);
 
             tempMatrix.identity().extractRotation(controller.matrixWorld);
             raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
@@ -1211,6 +1267,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
               } else if (!pressed && pointerState.pressed) {
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', point);
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'click', point);
+                setXRDebug(
+                  `click @${Math.round(point.x)},${Math.round(point.y)} → ${pointerState.lastTarget?.tagName ?? '?'}.${pointerState.lastTarget?.className?.toString().slice(0, 40) ?? ''}`,
+                );
               }
               pointerState.pressed = pressed;
             } else if (!pressed && pointerState.pressed && pointerState.lastPoint) {
