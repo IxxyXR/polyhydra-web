@@ -1770,14 +1770,6 @@ export default function App() {
     await navigator.clipboard.writeText(entry);
   };
 
-  const addOperator = (notation: string, overrides: Partial<OperatorSpec> = {}) => {
-    if (!notation.trim()) return;
-    const nextOperator = createOperator(notation.trim(), true, overrides);
-    setOperators((current) => [...current, nextOperator]);
-    setSelectedOperatorId(nextOperator.id);
-    setAddMenuOpen(false);
-  };
-
   const getSaneOperatorParams = (notation: string): Pick<OperatorSpec, 'tVe' | 'tVf' | 'tFe'> => {
     const [tVe, tVf, tFe] = findCleanOperatorParams(notation) ?? [
       DEFAULT_OMNI_PARAMS.tVe,
@@ -1828,15 +1820,6 @@ export default function App() {
       }
       return remaining;
     });
-  };
-
-  const randomizeSelectedOperator = () => {
-    if (!selectedOperatorId) return;
-    const notation = getRandomOperatorNotation();
-    const params = getSaneOperatorParams(notation);
-    setOperators((current) => current.map((op) =>
-      op.id === selectedOperatorId && isOperatorStackItem(op) ? { ...op, notation, ...params } : op
-    ));
   };
 
   const selectedStackItem = operators.find((op) => op.id === selectedOperatorId) ?? null;
@@ -1978,73 +1961,6 @@ export default function App() {
   const isTorusShape = radialType === 'Torus';
   const hasBaseSettings = mode !== '3d' || radialTypeUsesSides || isBoxShape;
   const renderColorMode = getRenderColorMode(colorMode, tilingType);
-  const xrPanel = useMemo(() => ({
-    mode,
-    showFaces,
-    showEdges,
-    colorMode: renderColorMode,
-    paletteName: selectedPalette.name,
-    paletteColors: shuffledColors ?? selectedPalette.colors,
-    selectedOperator: selectedOperator
-      ? {
-          id: selectedOperator.id,
-          label: selectedMatchingPresetName ?? `Operator ${operators.findIndex((op) => op.id === selectedOperator.id) + 1}`,
-          notation: selectedOperatorNotation,
-          enabled: selectedOperator.enabled,
-          tVe: selectedOperator.tVe,
-          tVf: selectedOperator.tVf,
-          tFe: selectedOperator.tFe,
-        }
-      : null,
-    operatorCount: operators.length,
-    onModeChange: (nextMode: '2d' | '3d') => setModeAndFit(nextMode),
-    onToggleFaces: () => setShowFaces((current) => !current),
-    onToggleEdges: () => setShowEdges((current) => !current),
-    onCycleColorMode: () => setColorMode((current) => current === 'role' ? 'sides' : 'role'),
-    onShufflePalette: () => {
-      const colors = [...selectedPalette.colors];
-      for (let i = colors.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [colors[i], colors[j]] = [colors[j], colors[i]];
-      }
-      setShuffledColors(colors);
-    },
-    onAddRandomOperator: () => {
-      const notation = getRandomOperatorNotation();
-      addOperator(notation, getSaneOperatorParams(notation));
-      setPresetOrRandomUsed(true);
-    },
-    onRandomizeSelectedOperator: () => {
-      randomizeSelectedOperator();
-      setPresetOrRandomUsed(true);
-    },
-    onToggleSelectedOperator: () => {
-      if (selectedOperatorId) toggleOperator(selectedOperatorId);
-    },
-    onDeleteSelectedOperator: () => {
-      if (selectedOperatorId) removeOperator(selectedOperatorId);
-    },
-    onOperatorParamChange: (field: 'tVe' | 'tVf' | 'tFe', value: number) => {
-      if (selectedOperatorId) {
-        updateOperatorParams(selectedOperatorId, field, String(value));
-        setSliderMoved(true);
-      }
-    },
-    onFitToExtents: fitViewToExtents,
-  }), [
-    mode,
-    showFaces,
-    showEdges,
-    renderColorMode,
-    selectedPalette,
-    shuffledColors,
-    selectedOperator,
-    selectedMatchingPresetName,
-    selectedOperatorNotation,
-    operators,
-    selectedOperatorId,
-  ]);
-
   const selectedOperatorHasCrossings = useMemo(() => {
     if (!selectedOperatorId) return false;
     const tiling = UNIFORM_TILINGS[tilingType];
@@ -2318,8 +2234,8 @@ export default function App() {
           </button>
         )}
         <div className="h-full w-full overflow-hidden">
-        <aside className="h-full w-full md:w-[360px] bg-neutral-900/50 backdrop-blur-xl border-neutral-800 border-b shadow-2xl md:border-b-0 md:border-r md:shadow-none flex flex-col overflow-hidden max-md:pt-[env(safe-area-inset-top)]">
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
+        <aside id="app-sidebar" className="h-full w-full md:w-[360px] bg-neutral-900/50 backdrop-blur-xl border-neutral-800 border-b shadow-2xl md:border-b-0 md:border-r md:shadow-none flex flex-col overflow-hidden max-md:pt-[env(safe-area-inset-top)]">
+        <div data-xr-scroll className="p-4 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
           <div className="flex items-center justify-between gap-3 mb-4 sm:mb-8">
             <div className="flex items-center gap-3 min-w-0">
               <div className="p-2 bg-blue-600 rounded-lg">
@@ -5378,7 +5294,6 @@ export default function App() {
             fitRequestKey={fitRequestKey}
             autoRotate={autoRotate}
             onGeometryGenerationChange={handleGeometryGenerationChange}
-            xrPanel={xrPanel}
           />
         </div>
 

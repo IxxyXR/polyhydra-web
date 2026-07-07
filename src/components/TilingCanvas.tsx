@@ -1,5 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { createRoot, Root } from 'react-dom/client';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
@@ -27,50 +26,18 @@ const DEFAULT_KEY_LIGHT_ELEVATION = 35;
 const DEFAULT_FACE_ROUGHNESS = 0.66;
 const DEFAULT_FACE_OPACITY = 1;
 const KEY_LIGHT_DISTANCE = 8.660254037844387;
-const XR_PANEL_WIDTH_PX = 960;
-const XR_PANEL_HEIGHT_PX = 720;
-const XR_PANEL_WORLD_WIDTH = 1.25;
+// The XR panel shows the app's real sidebar: a portrait tablet-like plane.
+const XR_PANEL_WIDTH_PX = 720;
+const XR_PANEL_HEIGHT_PX = 1200;
+const XR_PANEL_WORLD_WIDTH = 0.9;
 const XR_PANEL_WORLD_HEIGHT = XR_PANEL_WORLD_WIDTH * (XR_PANEL_HEIGHT_PX / XR_PANEL_WIDTH_PX);
+const XR_PANEL_IDLE_REPAINT_MS = 1000;
 const XR_POINTER_LENGTH = 1.6;
 const XR_POINTER_LINE_NAME = 'xr-controller-pointer-line';
 const XR_PANEL_HOST_STYLE_ID = 'polyhydra-xr-html-panel-host-style';
 
 if (typeof window !== 'undefined') {
   installHtmlInCanvasPolyfill();
-}
-
-type OperatorParamKey = 'tVe' | 'tVf' | 'tFe';
-
-export interface XRPanelOperator {
-  id: string;
-  label: string;
-  notation: string;
-  enabled: boolean;
-  tVe: number;
-  tVf: number;
-  tFe: number;
-}
-
-export interface XRPanelControls {
-  mode: '2d' | '3d';
-  showFaces: boolean;
-  showEdges: boolean;
-  colorMode: ColorMode;
-  paletteName: string;
-  paletteColors: string[];
-  selectedOperator: XRPanelOperator | null;
-  operatorCount: number;
-  onModeChange: (mode: '2d' | '3d') => void;
-  onToggleFaces: () => void;
-  onToggleEdges: () => void;
-  onCycleColorMode: () => void;
-  onShufflePalette: () => void;
-  onAddRandomOperator: () => void;
-  onRandomizeSelectedOperator: () => void;
-  onToggleSelectedOperator: () => void;
-  onDeleteSelectedOperator: () => void;
-  onOperatorParamChange: (field: OperatorParamKey, value: number) => void;
-  onFitToExtents: () => void;
 }
 
 interface FitAnimationState {
@@ -552,96 +519,6 @@ function clamp01(value: number) {
   return Math.min(Math.max(value, 0), 1);
 }
 
-function clampRangeValue(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function formatSliderValue(value: number, precision = 0) {
-  if (!Number.isFinite(value)) return '0';
-  return value.toFixed(precision);
-}
-
-function XRSliderValueField({
-  value,
-  min,
-  max,
-  step,
-  onValueCommit,
-  disabled,
-  precision,
-  suffix,
-}: {
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onValueCommit: (value: number) => void;
-  disabled?: boolean;
-  precision?: number;
-  suffix?: string;
-}) {
-  const [inputValue, setInputValue] = useState(() => formatSliderValue(value, precision));
-
-  useEffect(() => {
-    setInputValue(formatSliderValue(value, precision));
-  }, [value, precision]);
-
-  const commit = (raw: string) => {
-    const parsed = Number.parseFloat(raw);
-    if (!Number.isFinite(parsed)) {
-      setInputValue(formatSliderValue(value, precision));
-      return;
-    }
-
-    const clamped = clampRangeValue(parsed, min, max);
-    onValueCommit(clamped);
-    setInputValue(formatSliderValue(clamped, precision));
-  };
-
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
-      <input
-        type="text"
-        inputMode={precision === 0 ? 'numeric' : 'decimal'}
-        pattern={precision === 0 ? '[0-9]*' : '[0-9]*[.]?[0-9]*'}
-        min={min}
-        max={max}
-        step={step}
-        spellCheck={false}
-        value={inputValue}
-        disabled={disabled}
-        onChange={(event) => setInputValue(event.currentTarget.value)}
-        onBlur={(event) => commit(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-        }}
-        style={{
-          width: 72,
-          textAlign: 'right',
-          background: disabled ? 'rgba(24, 24, 27, 0.5)' : 'rgba(24, 24, 27, 0.78)',
-          color: '#e4e4e7',
-          border: '1px solid rgba(82, 82, 91, 0.9)',
-          borderRadius: 10,
-          fontSize: 20,
-          fontWeight: 700,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-          padding: '2px 6px',
-        }}
-      />
-      {suffix ? <span style={{ color: '#a1a1aa', fontSize: 18, fontWeight: 700 }}>{suffix}</span> : null}
-    </span>
-  );
-}
-
-function getOperatorParamLabel(field: OperatorParamKey) {
-  if (field === 'tVe') return 'Vertex-edge';
-  if (field === 'tVf') return 'Vertex-face';
-  return 'Face-edge';
-}
-
 function createXRControllerFallback() {
   const group = new THREE.Group();
   group.name = 'xr-controller-fallback-model';
@@ -800,155 +677,6 @@ function dispatchLocalPointerEvent(
   pointerState.lastPoint = point;
 }
 
-function XRControlPanel({ controls }: { controls: XRPanelControls }) {
-  const selected = controls.selectedOperator;
-  const panelStyle: React.CSSProperties = {
-    width: XR_PANEL_WIDTH_PX,
-    height: XR_PANEL_HEIGHT_PX,
-    boxSizing: 'border-box',
-    padding: 32,
-    color: '#f5f5f5',
-    background: 'rgba(10, 10, 10, 0.92)',
-    border: '2px solid rgba(82, 82, 91, 0.85)',
-    borderRadius: 28,
-    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    overflow: 'hidden',
-  };
-  const sectionStyle: React.CSSProperties = {
-    border: '1px solid rgba(63, 63, 70, 0.9)',
-    borderRadius: 18,
-    background: 'rgba(24, 24, 27, 0.78)',
-    padding: 20,
-  };
-  const buttonStyle: React.CSSProperties = {
-    minHeight: 64,
-    border: '1px solid rgba(82, 82, 91, 0.95)',
-    borderRadius: 16,
-    background: 'rgba(39, 39, 42, 0.94)',
-    color: '#f5f5f5',
-    fontSize: 22,
-    fontWeight: 700,
-    padding: '14px 18px',
-  };
-  const activeButtonStyle: React.CSSProperties = {
-    ...buttonStyle,
-    borderColor: 'rgba(59, 130, 246, 0.95)',
-    background: 'rgba(37, 99, 235, 0.82)',
-  };
-  const mutedText: React.CSSProperties = {
-    color: '#a1a1aa',
-    fontSize: 20,
-    lineHeight: 1.35,
-  };
-  const labelStyle: React.CSSProperties = {
-    color: '#a1a1aa',
-    fontSize: 17,
-    fontWeight: 800,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  };
-
-  const paramSlider = (field: OperatorParamKey) => {
-    const value = selected?.[field] ?? 0;
-    return (
-      <label key={field} style={{ display: 'grid', gridTemplateColumns: '190px 1fr 74px', alignItems: 'center', gap: 16 }}>
-        <span style={{ ...mutedText, fontWeight: 700 }}>{getOperatorParamLabel(field)}</span>
-        <input
-          data-xr-param={field}
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={value}
-          disabled={!selected}
-          onChange={(event) => controls.onOperatorParamChange(field, Number.parseFloat(event.currentTarget.value))}
-          style={{ width: '100%', height: 42, accentColor: '#3b82f6' }}
-        />
-        <XRSliderValueField
-          value={value * 100}
-          min={0}
-          max={100}
-          step={1}
-          precision={0}
-          suffix="%"
-          onValueCommit={(next) => controls.onOperatorParamChange(field, next / 100)}
-        />
-      </label>
-    );
-  };
-
-  return (
-    <div data-polyhydra-xr-panel="root" style={panelStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, marginBottom: 22 }}>
-        <div>
-          <div style={labelStyle}>Polyhydra XR</div>
-          <div style={{ fontSize: 40, fontWeight: 850, marginTop: 6 }}>Live Controls</div>
-        </div>
-        <div style={{ ...mutedText, textAlign: 'right' }}>
-          Trigger selects<br />
-          Point at sliders to drag
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-        <div style={sectionStyle}>
-          <div style={labelStyle}>Scene</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
-            <button data-xr-action="mode-2d" type="button" onClick={() => controls.onModeChange('2d')} style={controls.mode === '2d' ? activeButtonStyle : buttonStyle}>2D</button>
-            <button data-xr-action="mode-3d" type="button" onClick={() => controls.onModeChange('3d')} style={controls.mode === '3d' ? activeButtonStyle : buttonStyle}>3D</button>
-            <button data-xr-action="toggle-faces" type="button" onClick={controls.onToggleFaces} style={controls.showFaces ? activeButtonStyle : buttonStyle}>Faces</button>
-            <button data-xr-action="toggle-edges" type="button" onClick={controls.onToggleEdges} style={controls.showEdges ? activeButtonStyle : buttonStyle}>Edges</button>
-            <button data-xr-action="cycle-color-mode" type="button" onClick={controls.onCycleColorMode} style={buttonStyle}>Color: {controls.colorMode}</button>
-            <button data-xr-action="fit-view" type="button" onClick={controls.onFitToExtents} style={buttonStyle}>Fit View</button>
-          </div>
-        </div>
-
-        <div style={sectionStyle}>
-          <div style={labelStyle}>Palette</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 18, alignItems: 'center', marginTop: 18 }}>
-            <div>
-              <div style={{ fontSize: 28, fontWeight: 800 }}>{controls.paletteName}</div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                {controls.paletteColors.slice(0, 6).map((color, index) => (
-                  <span key={`${color}-${index}`} style={{ width: 34, height: 34, borderRadius: 18, background: color, border: '2px solid rgba(0,0,0,0.45)' }} />
-                ))}
-              </div>
-            </div>
-            <button data-xr-action="shuffle-palette" type="button" onClick={controls.onShufflePalette} style={{ ...buttonStyle, width: 170 }}>Shuffle</button>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ ...sectionStyle, marginTop: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 18 }}>
-          <div>
-            <div style={labelStyle}>Operator</div>
-            <div style={{ fontSize: 30, fontWeight: 850, marginTop: 6 }}>
-              {selected ? selected.label : 'No operator selected'}
-            </div>
-            <div style={{ ...mutedText, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 580, marginTop: 6 }}>
-              {selected?.notation || `${controls.operatorCount} operators in stack`}
-            </div>
-          </div>
-          <button data-xr-action="add-random-operator" type="button" onClick={controls.onAddRandomOperator} style={{ ...activeButtonStyle, width: 220 }}>Add Random</button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 18 }}>
-          <button data-xr-action="randomize-selected-operator" type="button" onClick={controls.onRandomizeSelectedOperator} disabled={!selected} style={buttonStyle}>Randomize</button>
-          <button data-xr-action="toggle-selected-operator" type="button" onClick={controls.onToggleSelectedOperator} disabled={!selected} style={selected?.enabled ? activeButtonStyle : buttonStyle}>
-            {selected?.enabled ? 'Enabled' : 'Disabled'}
-          </button>
-          <button data-xr-action="delete-selected-operator" type="button" onClick={controls.onDeleteSelectedOperator} disabled={!selected} style={{ ...buttonStyle, color: selected ? '#fca5a5' : '#71717a' }}>Delete</button>
-        </div>
-
-        <div style={{ display: 'grid', gap: 12, marginTop: 22 }}>
-          {(['tVe', 'tVf', 'tFe'] as OperatorParamKey[]).map(paramSlider)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 interface TilingCanvasProps {
   tilingType: string;
   rows: number;
@@ -985,7 +713,6 @@ interface TilingCanvasProps {
   fitRequestKey?: number;
   autoRotate?: boolean;
   onGeometryGenerationChange?: (isGenerating: boolean) => void;
-  xrPanel?: XRPanelControls;
 }
 
 export interface TilingCanvasHandle {
@@ -1030,11 +757,8 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
   fitRequestKey = 0,
   autoRotate = false,
   onGeometryGenerationChange,
-  xrPanel,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const xrPanelRootRef = useRef<Root | null>(null);
-  const xrPanelContainerRef = useRef<HTMLDivElement | null>(null);
   const fitAnimationRef = useRef<FitAnimationState | null>(null);
   const lastHandledFitRequestKeyRef = useRef(0);
   const meshBoundsRef = useRef<MeshBounds | null>(null);
@@ -1092,13 +816,6 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       }
     },
   }), []);
-
-  useEffect(() => {
-    const root = xrPanelRootRef.current;
-    if (!root || !xrPanel) return;
-    root.render(<XRControlPanel controls={xrPanel} />);
-    (sceneRef.current?.xrPanelHostCanvas as any)?.requestPaint?.();
-  }, [xrPanel]);
 
   const fitCameraToBounds = (bounds: MeshBounds) => {
     if (!sceneRef.current) return;
@@ -1211,11 +928,59 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrPanelElement.style.top = '0';
     xrPanelElement.style.overflow = 'auto';
     xrPanelHostCanvas.appendChild(xrPanelElement);
-    xrPanelContainerRef.current = xrPanelElement;
-    xrPanelRootRef.current = createRoot(xrPanelElement);
-    if (xrPanel) {
-      xrPanelRootRef.current.render(<XRControlPanel controls={xrPanel} />);
-    }
+
+    // The XR panel mirrors the app's real sidebar. On session start the live
+    // sidebar DOM (id="app-sidebar") is reparented into the offscreen host so
+    // the HTMLTexture paints it; on session end it moves back. React keeps
+    // updating the subtree wherever it lives, so XR and desktop share state.
+    let panelPaintRequested = true;
+    let lastPanelPaintTime = 0;
+    const markPanelDirty = () => { panelPaintRequested = true; };
+    const panelMutationObserver = new MutationObserver(markPanelDirty);
+    panelMutationObserver.observe(xrPanelElement, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    // Range/text input values and scroll positions change without DOM mutations.
+    xrPanelElement.addEventListener('input', markPanelDirty, true);
+    xrPanelElement.addEventListener('change', markPanelDirty, true);
+    xrPanelElement.addEventListener('scroll', markPanelDirty, true);
+
+    let sidebarHome: { parent: HTMLElement; nextSibling: Node | null; inlineStyle: string } | null = null;
+    const adoptSidebarForXR = () => {
+      const sidebar = document.getElementById('app-sidebar');
+      if (!sidebar || !sidebar.parentElement || sidebarHome) return;
+      sidebarHome = {
+        parent: sidebar.parentElement,
+        nextSibling: sidebar.nextSibling,
+        inlineStyle: sidebar.getAttribute('style') ?? '',
+      };
+      sidebar.style.width = '100%';
+      sidebar.style.height = '100%';
+      sidebar.style.maxWidth = 'none';
+      // Re-enable hit-testing under the host's pointer-events:none (the panel
+      // element is only reachable via synthetic XR pointer events anyway).
+      sidebar.style.pointerEvents = 'auto';
+      xrPanelElement.appendChild(sidebar);
+      markPanelDirty();
+    };
+    const releaseSidebarFromXR = () => {
+      if (!sidebarHome) return;
+      const sidebar = document.getElementById('app-sidebar');
+      const home = sidebarHome;
+      sidebarHome = null;
+      if (!sidebar) return;
+      if (home.inlineStyle) {
+        sidebar.setAttribute('style', home.inlineStyle);
+      } else {
+        sidebar.removeAttribute('style');
+      }
+      home.parent.insertBefore(sidebar, home.nextSibling);
+    };
+    renderer.xr.addEventListener('sessionstart', adoptSidebarForXR);
+    renderer.xr.addEventListener('sessionend', releaseSidebarFromXR);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -1255,7 +1020,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       xrPanelMaterial,
     );
     xrPanelMesh.name = 'polyhydra-xr-html-panel';
-    xrPanelMesh.position.set(0, 1.35, -1.35);
+    xrPanelMesh.position.set(0, 1.2, -1.35);
     xrPanelMesh.visible = false;
     xrRig.add(xrPanelMesh);
 
@@ -1331,10 +1096,16 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     const tempMatrix = new THREE.Matrix4();
     const animate = () => {
-      xrPanelTexture.needsUpdate = true;
-      (xrPanelHostCanvas as any).requestPaint?.();
-
       if (renderer.xr.isPresenting) {
+        // Repaint the HTML texture only when the panel DOM actually changed
+        // (plus a slow heartbeat) — per-frame painting is the main XR perf drain.
+        const now = performance.now();
+        if (panelPaintRequested || now - lastPanelPaintTime > XR_PANEL_IDLE_REPAINT_MS) {
+          panelPaintRequested = false;
+          lastPanelPaintTime = now;
+          xrPanelTexture.needsUpdate = true;
+          (xrPanelHostCanvas as any).requestPaint?.();
+        }
         xrPanelMesh.visible = true;
         const session = renderer.xr.getSession();
         if (session) {
@@ -1368,8 +1139,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
                 if (panelPointedByHand.has(source.handedness)) {
                   if (Math.abs(z) > 0.25) {
-                    xrPanelElement.scrollTop += z * 18;
-                    xrPanelTexture.needsUpdate = true;
+                    const scroller = xrPanelElement.querySelector('[data-xr-scroll]') ?? xrPanelElement;
+                    scroller.scrollTop += z * 18;
+                    markPanelDirty();
                   }
                 } else {
                   if (Math.abs(x) > 0.1) moveX += x;
@@ -1400,6 +1172,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
                 x: hit.uv.x * XR_PANEL_WIDTH_PX,
                 y: (1 - hit.uv.y) * XR_PANEL_HEIGHT_PX,
               };
+              // Synthetic pointer events change hover/active styling without
+              // DOM mutations, so repaint whenever a ray touches the panel.
+              markPanelDirty();
               dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointermove', point);
 
               if (pressed && !pointerState.pressed) {
@@ -1490,21 +1265,17 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       controls.removeEventListener('start', handleControlsStart);
       controllerEventCleanups.forEach((cleanup) => cleanup());
       fitAnimationRef.current = null;
-      const xrPanelRoot = xrPanelRootRef.current;
-      const xrPanelHost = xrPanelHostCanvas;
-      xrPanelRootRef.current = null;
-      xrPanelContainerRef.current = null;
+      renderer.xr.removeEventListener('sessionstart', adoptSidebarForXR);
+      renderer.xr.removeEventListener('sessionend', releaseSidebarFromXR);
+      releaseSidebarFromXR();
+      panelMutationObserver.disconnect();
       xrPanelMesh.geometry.dispose();
       disposeMaterialResources(xrPanelMesh.material);
       xrPanelTexture.dispose();
       renderer.setAnimationLoop(null);
       renderer.dispose();
       renderer.domElement.remove();
-
-      window.setTimeout(() => {
-        xrPanelRoot?.unmount();
-        xrPanelHost.remove();
-      }, 0);
+      xrPanelHostCanvas.remove();
     };
   }, []);
 
