@@ -33,7 +33,7 @@ const XR_PANEL_WORLD_WIDTH = 0.9;
 const XR_PANEL_WORLD_HEIGHT = XR_PANEL_WORLD_WIDTH * (XR_PANEL_HEIGHT_PX / XR_PANEL_WIDTH_PX);
 const XR_PANEL_IDLE_REPAINT_MS = 1000;
 const XR_PANEL_HAND_SCALE = 0.5;
-const XR_PANEL_HAND_LIFT = 0.45; // metres above the non-dominant grip
+const XR_PANEL_HAND_LIFT = 0.18; // metres above the non-dominant grip
 const XR_POINTER_LENGTH = 1.6;
 const XR_POINTER_LINE_NAME = 'xr-controller-pointer-line';
 const XR_PANEL_HOST_STYLE_ID = 'polyhydra-xr-html-panel-host-style';
@@ -954,7 +954,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     // so surface input state directly on the panel texture.
     const xrDebugStrip = document.createElement('div');
     xrDebugStrip.style.cssText =
-      'position:absolute;top:0;left:0;right:0;z-index:10;font:13px monospace;color:#4ade80;background:#000c;padding:2px 6px;white-space:pre;pointer-events:none;';
+      'position:absolute;top:0;left:0;right:0;z-index:2147483647;font:bold 20px monospace;color:#4ade80;background:#000c;padding:4px 8px;white-space:pre;pointer-events:none;';
     xrDebugStrip.textContent = '[PXR] waiting for input…';
     xrPanelElement.appendChild(xrDebugStrip);
     const setXRDebug = (text: string) => {
@@ -1053,6 +1053,16 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrPanelMesh.visible = false;
     xrRig.add(xrPanelMesh);
 
+    // Aiming feedback: a small dot rendered where a controller ray meets the
+    // panel, drawn on top so it never hides behind the panel surface.
+    const xrPanelCursor = new THREE.Mesh(
+      new THREE.SphereGeometry(0.008, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false }),
+    );
+    xrPanelCursor.renderOrder = 999;
+    xrPanelCursor.visible = false;
+    scene.add(xrPanelCursor);
+
     const controllerModelFactory = new XRControllerModelFactory();
     const controllerEventCleanups: Array<() => void> = [];
     const controllerRays: THREE.Line[] = [];
@@ -1148,6 +1158,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     const tempMatrix = new THREE.Matrix4();
     const tempVec = new THREE.Vector3();
+    let lastClickDebugTime = 0;
     const animate = () => {
       if (renderer.xr.isPresenting) {
         // Repaint the HTML texture only when the panel DOM actually changed
@@ -1238,6 +1249,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
             }
           }
 
+          let panelCursorSet = false;
           for (let index = 0; index < 2; index++) {
             const controller = renderer.xr.getController(index);
             const pointerState = controllerPointerStates[index];
@@ -1251,10 +1263,19 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
             const [hit] = raycaster.intersectObject(xrPanelMesh, false);
 
             if (hit?.uv) {
+              xrPanelCursor.position.copy(hit.point);
+              panelCursorSet = true;
               const point = {
                 x: hit.uv.x * XR_PANEL_WIDTH_PX,
                 y: (1 - hit.uv.y) * XR_PANEL_HEIGHT_PX,
               };
+              // Live readout for in-headset debugging; keep click results on
+              // screen briefly instead of overwriting them next frame.
+              if (now - lastClickDebugTime > 1500) {
+                setXRDebug(
+                  `hover c${index} @${Math.round(point.x)},${Math.round(point.y)} pressed=${pressed} sel=${controller.userData.selectPressed === true} gp=${Boolean(source?.gamepad)}`,
+                );
+              }
               // Synthetic pointer events change hover/active styling without
               // DOM mutations, so repaint whenever a ray touches the panel.
               markPanelDirty();
@@ -1267,6 +1288,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
               } else if (!pressed && pointerState.pressed) {
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', point);
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'click', point);
+                lastClickDebugTime = now;
                 setXRDebug(
                   `click @${Math.round(point.x)},${Math.round(point.y)} → ${pointerState.lastTarget?.tagName ?? '?'}.${pointerState.lastTarget?.className?.toString().slice(0, 40) ?? ''}`,
                 );
@@ -1281,6 +1303,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
               pointerState.pressed = pressed;
             }
           }
+          xrPanelCursor.visible = panelCursorSet;
 
           if (moveX !== 0 || moveZ !== 0 || moveY !== 0) {
             const speed = 0.02; // Reduced speed slightly for comfort
@@ -1305,6 +1328,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
         }
       } else {
         xrPanelMesh.visible = false;
+        xrPanelCursor.visible = false;
         controllerPointerStates.forEach((pointerState) => {
           pointerState.pressed = false;
           pointerState.lastTarget = null;
@@ -1358,6 +1382,8 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       panelMutationObserver.disconnect();
       xrPanelMesh.geometry.dispose();
       disposeMaterialResources(xrPanelMesh.material);
+      xrPanelCursor.geometry.dispose();
+      disposeMaterialResources(xrPanelCursor.material);
       xrPanelTexture.dispose();
       renderer.setAnimationLoop(null);
       renderer.dispose();
