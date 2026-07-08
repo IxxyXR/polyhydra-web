@@ -970,7 +970,12 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       // host inside the React tree (registration is async, and the polyfill's
       // parentElement override hides the host, so find it by attribute here
       // at session start rather than at canvas creation).
-      const polyfillHost = document.querySelector('div[data-html-in-canvas-host]');
+      // Several hosts can exist (StrictMode's first mount leaks one), so pick
+      // the one that really contains our panel element — div.contains is not
+      // overridden by the polyfill, unlike parentElement.
+      const polyfillHost = Array.from(
+        document.querySelectorAll('div[data-html-in-canvas-host]'),
+      ).find((host) => host.contains(xrPanelElement));
       if (
         polyfillHost instanceof HTMLElement
         && containerRef.current
@@ -1443,6 +1448,10 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       renderer.setAnimationLoop(null);
       renderer.dispose();
       renderer.domElement.remove();
+      // Removing the attribute (not just the node) makes the polyfill tear
+      // down its body-level host div; plain .remove() leaks it, which is how
+      // StrictMode's first mount left a stale host behind.
+      xrPanelHostCanvas.removeAttribute('layoutsubtree');
       xrPanelHostCanvas.remove();
     };
   }, []);
