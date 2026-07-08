@@ -957,8 +957,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       'position:absolute;top:0;left:0;right:0;z-index:2147483647;font:bold 20px monospace;color:#4ade80;background:#000c;padding:4px 8px;white-space:pre;pointer-events:none;';
     xrDebugStrip.textContent = '[PXR] waiting for input…';
     xrPanelElement.appendChild(xrDebugStrip);
+    let xrSessionStatus = '';
     const setXRDebug = (text: string) => {
-      xrDebugStrip.textContent = `[PXR] ${text}`;
+      xrDebugStrip.textContent = `[PXR] ${xrSessionStatus}\n${text}`;
       markPanelDirty();
     };
 
@@ -973,16 +974,22 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       // Several hosts can exist (StrictMode's first mount leaks one), so pick
       // the one that really contains our panel element — div.contains is not
       // overridden by the polyfill, unlike parentElement.
-      const polyfillHost = Array.from(
-        document.querySelectorAll('div[data-html-in-canvas-host]'),
-      ).find((host) => host.contains(xrPanelElement));
+      const allHosts = Array.from(document.querySelectorAll('div[data-html-in-canvas-host]'));
+      const polyfillHost = allHosts.find((host) => host.contains(xrPanelElement));
+      const reactRoot = document.getElementById('root');
+      let relocated = false;
       if (
         polyfillHost instanceof HTMLElement
         && containerRef.current
         && polyfillHost.parentElement !== containerRef.current
       ) {
         containerRef.current.appendChild(polyfillHost);
+        relocated = true;
       }
+      const hostInReactRoot = Boolean(polyfillHost && reactRoot?.contains(polyfillHost));
+      xrSessionStatus =
+        `hosts=${allHosts.length} found=${Boolean(polyfillHost)} relocated=${relocated} inRoot=${hostInReactRoot} cont=${Boolean(containerRef.current)}`;
+      xrDebugStrip.textContent = `[PXR] ${xrSessionStatus}\nsidebar adopting…`;
       const sidebar = document.getElementById('app-sidebar');
       if (!sidebar || !sidebar.parentElement || sidebarHome) return;
       sidebarHome = {
