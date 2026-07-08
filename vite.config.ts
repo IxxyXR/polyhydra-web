@@ -9,7 +9,9 @@ export default defineConfig(() => {
     base: process.env.VITE_BASE_PATH ?? '/',
     // basic-ssl gives self-signed HTTPS so WebXR gets a secure context on LAN
     // devices (headsets); accept the one-time certificate warning on-device.
-    plugins: [react(), tailwindcss(), basicSsl()],
+    // NO_HTTPS=true serves plain http (localhost tooling that can't click
+    // through the self-signed-cert interstitial).
+    plugins: [react(), tailwindcss(), ...(process.env.NO_HTTPS === 'true' ? [] : [basicSsl()])],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
