@@ -1209,7 +1209,8 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
 
     const tempMatrix = new THREE.Matrix4();
     const tempVec = new THREE.Vector3();
-    let lastClickDebugTime = 0;
+    let xrDownCount = 0;
+    let xrClickCount = 0;
     const animate = () => {
       if (renderer.xr.isPresenting) {
         if (pendingRafCallbacks.size > 0) {
@@ -1335,31 +1336,29 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
                 x: hit.uv.x * XR_PANEL_WIDTH_PX,
                 y: (1 - hit.uv.y) * XR_PANEL_HEIGHT_PX,
               };
-              // Live readout for in-headset debugging; keep click results on
-              // screen briefly instead of overwriting them next frame.
-              if (now - lastClickDebugTime > 1500) {
-                setXRDebug(
-                  `hover c${index} @${Math.round(point.x)},${Math.round(point.y)} pressed=${pressed} sel=${controller.userData.selectPressed === true} gp=${Boolean(source?.gamepad)}`,
-                );
-              }
               // Synthetic pointer events change hover/active styling without
               // DOM mutations, so repaint whenever a ray touches the panel.
               markPanelDirty();
               dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointermove', point);
 
               if (pressed && !pointerState.pressed) {
+                xrDownCount++;
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerdown', point);
               } else if (pressed && pointerState.pressed) {
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointermove', point);
               } else if (!pressed && pointerState.pressed) {
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', point);
                 dispatchLocalPointerEvent(xrPanelElement, pointerState, 'click', point);
-                lastClickDebugTime = now;
-                setXRDebug(
-                  `click @${Math.round(point.x)},${Math.round(point.y)} → ${pointerState.lastTarget?.tagName ?? '?'}.${pointerState.lastTarget?.className?.toString().slice(0, 40) ?? ''}`,
-                );
+                xrClickCount++;
               }
               pointerState.pressed = pressed;
+              // Always-live readout: pressed state, button count, and running
+              // down/click totals disambiguate trigger-detection vs dispatch.
+              const btnCount = source?.gamepad?.buttons?.length ?? 0;
+              const b0 = Boolean(source?.gamepad?.buttons?.[0]?.pressed);
+              setXRDebug(
+                `c${index} pressed=${pressed} sel=${controller.userData.selectPressed === true} gp=${Boolean(source?.gamepad)} btns=${btnCount} b0=${b0} down=${xrDownCount} click=${xrClickCount} → ${pointerState.lastTarget?.tagName ?? '?'}`,
+              );
             } else if (!pressed && pointerState.pressed && pointerState.lastPoint) {
               dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', pointerState.lastPoint);
               pointerState.pressed = false;
