@@ -1165,6 +1165,30 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       { pressed: false, pointerId: 102, lastTarget: null, lastPoint: null },
     ];
 
+    // Debug hook: lets the desktop-Chrome session be inspected live (controller
+    // world poses, ray visibility, panel transform) without a headset console.
+    const xrDebugHook = {
+      getControllerWorldPos: () => [0, 1].map((i) => {
+        const c = renderer.xr.getController(i);
+        const p = new THREE.Vector3();
+        c.getWorldPosition(p);
+        return {
+          index: i,
+          pos: [p.x, p.y, p.z].map((n) => Number(n.toFixed(3))),
+          rayVisible: controllerRays[i]?.visible,
+          matrixIsIdentity: c.matrixWorld.equals(new THREE.Matrix4()),
+          connected: Boolean(c.userData.inputSource),
+        };
+      }),
+      getPanelWorldPos: () => {
+        const p = new THREE.Vector3();
+        xrPanelMesh.getWorldPosition(p);
+        return { pos: [p.x, p.y, p.z].map((n) => Number(n.toFixed(3))), visible: xrPanelMesh.visible };
+      },
+      getRigPos: () => [xrRig.position.x, xrRig.position.y, xrRig.position.z].map((n) => Number(n.toFixed(3))),
+    };
+    (window as any).__xr = xrDebugHook;
+
     sceneRef.current = {
       scene,
       camera,
@@ -1435,6 +1459,9 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      if ((window as any).__xr === xrDebugHook) {
+        delete (window as any).__xr;
+      }
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       controls.removeEventListener('start', handleControlsStart);
