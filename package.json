@@ -9,6 +9,7 @@
     "build:blender": "vite build --outDir _blender_tmp/web --emptyOutDir && node scripts/zip-blender-addon.mjs",
     "deploy:cloudflare": "node scripts/deploy-cloudflare.mjs",
     "horizon:configure": "node scripts/configure-horizon-pwa.mjs",
+    "horizon:doctor": "bubblewrap doctor",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "pwa:validate": "node scripts/validate-pwa.mjs",
     "predeploy:cloudflare": "npm run build",
@@ -27,6 +28,7 @@
     "three-html-render": "^0.1.2"
   },
   "devDependencies": {
+    "@meta-quest/bubblewrap-cli": "1.24.1",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
