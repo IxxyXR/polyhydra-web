@@ -5,17 +5,19 @@ as a windowed Meta Horizon OS application.
 
 The hosted PWA must be live over HTTPS before Bubblewrap can generate the
 Android wrapper. Generate the machine-specific `twa-manifest.json` after
-choosing the permanent package ID, host, Horizon App ID, and signing key:
+choosing the Horizon App ID and signing key:
 
 ```powershell
-$env:HORIZON_PWA_HOST = 'example.com'
-$env:HORIZON_PACKAGE_ID = 'com.example.polyhydra'
 $env:HORIZON_KEYSTORE_PATH = 'C:\secure\polyhydra.keystore'
 $env:HORIZON_KEY_ALIAS = 'android'
 $env:HORIZON_APP_ID = '0'
 $env:HORIZON_CERT_FINGERPRINT = 'AA:BB:...'
 npm run horizon:configure
 ```
+
+The permanent host is `polyhydra.openblocks.app` and the Android package ID is
+`com.ixxyxr.polyhydra`. `HORIZON_PWA_HOST` and `HORIZON_PACKAGE_ID` remain
+available as explicit overrides for recovery or migration work.
 
 Omit `HORIZON_CERT_FINGERPRINT` until the signing certificate exists. When it
 is supplied, the command also generates `public/.well-known/assetlinks.json`.
@@ -40,5 +42,6 @@ bubblewrap build
 ```
 
 After signing, publish the generated Digital Asset Links statement at
-`https://<PWA_HOST>/.well-known/assetlinks.json`. It must contain the exact
-Android package ID and SHA-256 fingerprint of the signing certificate.
+`https://polyhydra.openblocks.app/.well-known/assetlinks.json`. It must
+contain the exact Android package ID and SHA-256 fingerprint of the signing
+certificate.

@@ -55,3 +55,16 @@ The workflow in `.github/workflows/deploy-pages.yml`:
 - deploys `dist` to GitHub Pages
 
 If you later host it from a custom domain or a different repository name, update the `VITE_BASE_PATH` value in the workflow.
+
+## Cloudflare Pages
+
+The Meta Horizon 2D PWA is hosted at
+`https://polyhydra.openblocks.app` using the `polyhydra` Cloudflare Pages
+project. Deploy the production build with:
+
+```bash
+npm run deploy:cloudflare
+```
+
+This is a Direct Upload deployment. The script builds the root-hosted Vite
+output before uploading `dist/`.

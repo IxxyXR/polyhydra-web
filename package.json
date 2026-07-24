@@ -7,9 +7,11 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "build:blender": "vite build --outDir _blender_tmp/web --emptyOutDir && node scripts/zip-blender-addon.mjs",
+    "deploy:cloudflare": "node scripts/deploy-cloudflare.mjs",
     "horizon:configure": "node scripts/configure-horizon-pwa.mjs",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "pwa:validate": "node scripts/validate-pwa.mjs",
+    "predeploy:cloudflare": "npm run build",
     "preview": "vite preview",
     "clean": "rimraf dist",
     "lint": "tsc --noEmit"
@@ -34,6 +36,7 @@
     "sharp": "^0.35.3",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "wrangler": "4.112.0"
   }
 }

@@ -8,16 +8,14 @@ const packagingDirectory = path.join(projectRoot, 'horizon-pwa');
 const templatePath = path.join(packagingDirectory, 'twa-manifest.template.json');
 const outputPath = path.join(packagingDirectory, 'twa-manifest.json');
 
-const host = process.env.HORIZON_PWA_HOST?.trim();
-const packageId = process.env.HORIZON_PACKAGE_ID?.trim();
+const host = process.env.HORIZON_PWA_HOST?.trim() || 'polyhydra.openblocks.app';
+const packageId = process.env.HORIZON_PACKAGE_ID?.trim() || 'com.ixxyxr.polyhydra';
 const keystorePath = process.env.HORIZON_KEYSTORE_PATH?.trim();
 const keyAlias = process.env.HORIZON_KEY_ALIAS?.trim() || 'android';
 const applicationId = process.env.HORIZON_APP_ID?.trim() || '0';
 const certificateFingerprint = process.env.HORIZON_CERT_FINGERPRINT?.trim();
 
 const missing = [
-  ['HORIZON_PWA_HOST', host],
-  ['HORIZON_PACKAGE_ID', packageId],
   ['HORIZON_KEYSTORE_PATH', keystorePath],
 ].filter(([, value]) => !value).map(([name]) => name);
 
