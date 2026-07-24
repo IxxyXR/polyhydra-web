@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.ixxyxr.polyhydra",
+      "sha256_cert_fingerprints": [
+        "97:BE:62:9A:DE:CD:95:29:CC:0E:30:92:BB:B0:42:A5:68:B1:DC:1E:AA:DD:B0:DE:22:F0:98:1A:F3:AB:79:3A"
+      ]
+    }
+  }
+]
