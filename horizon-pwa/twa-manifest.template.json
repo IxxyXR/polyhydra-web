@@ -1,7 +1,7 @@
 {
-  "packageId": "<HORIZON_PACKAGE_ID>",
-  "applicationId": "<HORIZON_APP_ID_OR_0>",
-  "host": "<PWA_HOST>",
+  "packageId": "com.ixxyxr.polyhydra",
+  "applicationId": "0",
+  "host": "polyhydra.openblocks.app",
   "name": "Polyhydra",
   "launcherName": "Polyhydra",
   "display": "standalone",
@@ -9,9 +9,9 @@
   "themeColor": "#0a0a0a",
   "backgroundColor": "#0a0a0a",
   "startUrl": "/",
-  "iconUrl": "https://<PWA_HOST>/icons/icon-512.png",
-  "maskableIconUrl": "https://<PWA_HOST>/icons/icon-512-maskable.png",
-  "webManifestUrl": "https://<PWA_HOST>/manifest.webmanifest",
+  "iconUrl": "https://polyhydra.openblocks.app/icons/icon-512.png",
+  "maskableIconUrl": "https://polyhydra.openblocks.app/icons/icon-512-maskable.png",
+  "webManifestUrl": "https://polyhydra.openblocks.app/manifest.webmanifest",
   "signingKey": {
     "path": "<ABSOLUTE_KEYSTORE_PATH>",
     "alias": "<KEY_ALIAS>"
