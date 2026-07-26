@@ -67,7 +67,7 @@ interface FaceProjectionData {
 interface XRPanelPointerState {
   pressed: boolean;
   pointerId: number;
-  lastTarget: HTMLElement | null;
+  lastTarget: Element | null;
   lastPoint: { x: number; y: number } | null;
 }
 
@@ -513,6 +513,12 @@ canvas[layoutsubtree],
 [data-polyhydra-xr-panel-host] {
   pointer-events: none !important;
 }
+.xr-only-control {
+  display: none !important;
+}
+[data-polyhydra-xr-panel-host] .xr-only-control {
+  display: inline-flex !important;
+}
 `;
   document.head.appendChild(style);
 }
@@ -574,34 +580,70 @@ function createXRControllerRay(color: number) {
 }
 
 function findLocalElementAt(root: HTMLElement, x: number, y: number) {
-  let best: HTMLElement | null = null;
+  const rootRect = root.getBoundingClientRect();
+  const rootWidth = rootRect.width || root.offsetWidth;
+  const rootHeight = rootRect.height || root.offsetHeight;
 
+  if (rootWidth > 0 && rootHeight > 0) {
+    const clientX = rootRect.left + (x / XR_PANEL_WIDTH_PX) * rootWidth;
+    const clientY = rootRect.top + (y / XR_PANEL_HEIGHT_PX) * rootHeight;
+    let best: Element | null = null;
+
+    for (const element of root.querySelectorAll('*')) {
+      const rect = element.getBoundingClientRect();
+      if (
+        rect.width <= 0
+        || rect.height <= 0
+        || clientX < rect.left
+        || clientX > rect.right
+        || clientY < rect.top
+        || clientY > rect.bottom
+      ) {
+        continue;
+      }
+
+      const style = window.getComputedStyle(element);
+      if (
+        style.pointerEvents !== 'none'
+        && style.visibility !== 'hidden'
+        && style.display !== 'none'
+        && style.opacity !== '0'
+      ) {
+        // querySelectorAll is document ordered, so later descendants and
+        // overlays naturally replace their containing element.
+        best = element;
+      }
+    }
+
+    return best;
+  }
+
+  // Fallback for HTML-in-canvas implementations that do not expose client
+  // rects. This preserves HTML control targeting; SVG targeting uses rects.
+  let best: HTMLElement | null = null;
   const visit = (element: HTMLElement, originX: number, originY: number) => {
     const left = originX + element.offsetLeft - element.scrollLeft;
     const top = originY + element.offsetTop - element.scrollTop;
-    const width = element.offsetWidth;
-    const height = element.offsetHeight;
-
-    if (width > 0 && height > 0 && x >= left && x <= left + width && y >= top && y <= top + height) {
+    if (
+      element.offsetWidth > 0
+      && element.offsetHeight > 0
+      && x >= left
+      && x <= left + element.offsetWidth
+      && y >= top
+      && y <= top + element.offsetHeight
+    ) {
       const style = window.getComputedStyle(element);
       if (style.pointerEvents !== 'none' && style.visibility !== 'hidden' && style.display !== 'none') {
         best = element;
       }
-
-      Array.from(element.children).forEach((child) => {
-        if (child instanceof HTMLElement) {
-          visit(child, left, top);
-        }
-      });
+      for (const child of element.children) {
+        if (child instanceof HTMLElement) visit(child, left, top);
+      }
     }
   };
-
-  Array.from(root.children).forEach((child) => {
-    if (child instanceof HTMLElement) {
-      visit(child, 0, 0);
-    }
-  });
-
+  for (const child of root.children) {
+    if (child instanceof HTMLElement) visit(child, 0, 0);
+  }
   return best;
 }
 
@@ -610,12 +652,208 @@ function setInputNativeValue(input: HTMLInputElement, value: string) {
   descriptor?.set?.call(input, value);
 }
 
+type XREditableControl = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+
+function isXREditableControl(element: Element): element is XREditableControl {
+  if (element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) return true;
+  if (!(element instanceof HTMLInputElement)) return false;
+  return ['color', 'email', 'number', 'search', 'tel', 'text', 'url'].includes(element.type);
+}
+
+function setControlNativeValue(control: XREditableControl, value: string) {
+  const prototype = control instanceof HTMLSelectElement
+    ? window.HTMLSelectElement.prototype
+    : control instanceof HTMLTextAreaElement
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+  descriptor?.set?.call(control, value);
+  control.dispatchEvent(new Event('input', { bubbles: true }));
+  control.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function createXRControlEditor(
+  panelElement: HTMLElement,
+  control: XREditableControl,
+  onClose: () => void,
+) {
+  const overlay = document.createElement('div');
+  overlay.dataset.xrEditor = '';
+  overlay.style.cssText = [
+    'position:absolute',
+    'inset:20px',
+    'z-index:2147483646',
+    'pointer-events:auto',
+    'overflow:auto',
+    'box-sizing:border-box',
+    'padding:24px',
+    'border:2px solid #3b82f6',
+    'border-radius:20px',
+    'background:#0a0a0af5',
+    'color:#f5f5f5',
+    'font:700 22px/1.3 system-ui,sans-serif',
+  ].join(';');
+
+  const title = document.createElement('div');
+  title.textContent = control.getAttribute('aria-label')
+    || control.closest('label')?.textContent?.trim().slice(0, 80)
+    || 'Edit value';
+  title.style.cssText = 'margin-bottom:18px;font-size:26px';
+  overlay.appendChild(title);
+
+  const button = (label: string, action: () => void, background = '#27272a') => {
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.textContent = label;
+    element.style.cssText = `min-height:60px;padding:10px 14px;border:1px solid #52525b;border-radius:12px;background:${background};color:#fff;font:700 20px system-ui,sans-serif`;
+    element.addEventListener('click', action);
+    return element;
+  };
+
+  if (control instanceof HTMLSelectElement) {
+    const options = document.createElement('div');
+    options.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px';
+    for (const option of Array.from(control.options)) {
+      if (option.disabled) continue;
+      options.appendChild(button(
+        option.text,
+        () => {
+          setControlNativeValue(control, option.value);
+          onClose();
+        },
+        option.value === control.value ? '#1d4ed8' : '#27272a',
+      ));
+    }
+    overlay.appendChild(options);
+  } else if (control instanceof HTMLInputElement && control.type === 'color') {
+    const colors = [
+      '#ffffff', '#d4d4d8', '#71717a', '#18181b', '#ef4444', '#f97316',
+      '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9',
+      '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
+    ];
+    const swatches = document.createElement('div');
+    swatches.style.cssText = 'display:grid;grid-template-columns:repeat(6,1fr);gap:12px';
+    for (const color of colors) {
+      const swatch = button(color, () => {
+        setControlNativeValue(control, color);
+        onClose();
+      }, color);
+      swatch.setAttribute('aria-label', `Set color ${color}`);
+      swatch.style.color = ['#ffffff', '#d4d4d8', '#eab308', '#84cc16'].includes(color) ? '#111' : '#fff';
+      swatches.appendChild(swatch);
+    }
+    overlay.appendChild(swatches);
+
+    let hexDraft = control.value.replace(/^#/, '').toUpperCase();
+    const hexDisplay = document.createElement('div');
+    hexDisplay.style.cssText = 'margin:18px 0 10px;padding:10px;border:1px solid #52525b;border-radius:12px;background:#18181b;font:700 24px ui-monospace,monospace';
+    const updateHexDisplay = () => {
+      hexDisplay.textContent = `#${hexDraft}`;
+    };
+    updateHexDisplay();
+    overlay.appendChild(hexDisplay);
+
+    const hexKeys = document.createElement('div');
+    hexKeys.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:8px';
+    for (const key of '0123456789ABCDEF') {
+      hexKeys.appendChild(button(key, () => {
+        if (hexDraft.length < 6) hexDraft += key;
+        updateHexDisplay();
+      }));
+    }
+    hexKeys.appendChild(button('⌫', () => {
+      hexDraft = hexDraft.slice(0, -1);
+      updateHexDisplay();
+    }));
+    hexKeys.appendChild(button('Clear', () => {
+      hexDraft = '';
+      updateHexDisplay();
+    }));
+    hexKeys.appendChild(button('Apply hex', () => {
+      if (/^[0-9A-F]{6}$/.test(hexDraft)) {
+        setControlNativeValue(control, `#${hexDraft.toLowerCase()}`);
+        onClose();
+      }
+    }, '#1d4ed8'));
+    overlay.appendChild(hexKeys);
+  } else {
+    let draft = control.value;
+    let lowerCase = false;
+    const display = document.createElement('div');
+    display.style.cssText = 'min-height:64px;margin-bottom:16px;padding:12px;border:1px solid #52525b;border-radius:12px;background:#18181b;font:600 22px ui-monospace,monospace;overflow-wrap:anywhere';
+    const updateDisplay = () => {
+      display.textContent = draft || ' ';
+    };
+    updateDisplay();
+    overlay.appendChild(display);
+
+    const keys = document.createElement('div');
+    keys.style.cssText = 'display:grid;grid-template-columns:repeat(10,1fr);gap:7px';
+    const letterButtons: HTMLButtonElement[] = [];
+    for (const key of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_,.!/() ') {
+      const keyButton = button(key === ' ' ? 'Space' : key, () => {
+        draft += lowerCase ? key.toLowerCase() : key;
+        updateDisplay();
+      });
+      keyButton.dataset.baseKey = key;
+      if (/[A-Z]/.test(key)) letterButtons.push(keyButton);
+      if (key === ' ') keyButton.style.gridColumn = 'span 3';
+      keys.appendChild(keyButton);
+    }
+    overlay.appendChild(keys);
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:18px';
+    actions.appendChild(button('Aa', () => {
+      lowerCase = !lowerCase;
+      for (const keyButton of letterButtons) {
+        const baseKey = keyButton.dataset.baseKey ?? '';
+        keyButton.textContent = lowerCase ? baseKey.toLowerCase() : baseKey;
+      }
+    }));
+    actions.appendChild(button('⌫', () => {
+      draft = draft.slice(0, -1);
+      updateDisplay();
+    }));
+    actions.appendChild(button('Clear', () => {
+      draft = '';
+      updateDisplay();
+    }));
+    actions.appendChild(button('Cancel', onClose, '#3f3f46'));
+    actions.appendChild(button('Done', () => {
+      setControlNativeValue(control, draft);
+      onClose();
+    }, '#1d4ed8'));
+    overlay.appendChild(actions);
+  }
+
+  if (!(control instanceof HTMLSelectElement) && !(control instanceof HTMLInputElement && control.type === 'color')) {
+    panelElement.appendChild(overlay);
+    return overlay;
+  }
+
+  const footer = document.createElement('div');
+  footer.style.cssText = 'margin-top:18px';
+  footer.appendChild(button('Cancel', onClose, '#3f3f46'));
+  overlay.appendChild(footer);
+  panelElement.appendChild(overlay);
+  return overlay;
+}
+
 function updateRangeInputFromLocalPoint(panelElement: HTMLElement, input: HTMLInputElement, localX: number) {
   const min = Number.parseFloat(input.min || '0');
   const max = Number.parseFloat(input.max || '100');
   const step = Number.parseFloat(input.step || '1');
-  const left = getElementLocalOffset(input, panelElement).x;
-  const normalized = clamp01((localX - left) / Math.max(input.offsetWidth, 1));
+  const panelRect = panelElement.getBoundingClientRect();
+  const inputRect = input.getBoundingClientRect();
+  const canUseClientRects = panelRect.width > 0 && inputRect.width > 0;
+  const left = canUseClientRects
+    ? ((inputRect.left - panelRect.left) / panelRect.width) * XR_PANEL_WIDTH_PX
+    : getElementLocalOffset(input, panelElement).x;
+  const width = canUseClientRects
+    ? (inputRect.width / panelRect.width) * XR_PANEL_WIDTH_PX
+    : input.offsetWidth;
+  const normalized = clamp01((localX - left) / Math.max(width, 1));
   const rawValue = min + (max - min) * normalized;
   const stepped = Number.isFinite(step) && step > 0
     ? Math.round(rawValue / step) * step
@@ -645,29 +883,65 @@ function dispatchLocalPointerEvent(
   pointerState: XRPanelPointerState,
   type: 'pointermove' | 'pointerdown' | 'pointerup' | 'click',
   point: { x: number; y: number },
+  onEditRequest: (control: XREditableControl) => void,
+  onVisualChange: () => void,
 ) {
   const target = findLocalElementAt(panelElement, point.x, point.y) ?? panelElement;
   const targetElement = target instanceof HTMLInputElement && target.type === 'range'
     ? target
-    : target.closest('button, input, select, textarea, [role="button"]') as HTMLElement | null ?? target;
+    : target.closest('button, input, select, textarea, a[href], [role="button"], [tabindex]') ?? target;
+
+  if (type === 'pointermove' && pointerState.lastTarget !== targetElement) {
+    if (pointerState.lastTarget) {
+      pointerState.lastTarget.dispatchEvent(new PointerEvent('pointerout', {
+        bubbles: true,
+        pointerId: pointerState.pointerId,
+        pointerType: 'xr',
+      }));
+      pointerState.lastTarget.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    }
+    targetElement.dispatchEvent(new PointerEvent('pointerover', {
+      bubbles: true,
+      pointerId: pointerState.pointerId,
+      pointerType: 'xr',
+    }));
+    targetElement.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    onVisualChange();
+  }
 
   if (targetElement instanceof HTMLInputElement && targetElement.type === 'range' && (type === 'pointerdown' || type === 'pointermove')) {
     updateRangeInputFromLocalPoint(panelElement, targetElement, point.x);
   }
 
-  const eventInit = {
-    bubbles: true,
-    cancelable: true,
-    clientX: point.x,
-    clientY: point.y,
-    pointerId: pointerState.pointerId,
-    pointerType: 'xr',
-    isPrimary: true,
-  };
-  targetElement.dispatchEvent(new PointerEvent(type, eventInit));
-
   if (type === 'click') {
-    targetElement.dispatchEvent(new MouseEvent('click', {
+    if (targetElement.matches(':disabled')) {
+      // Match native pointer behavior for disabled form controls.
+    } else if (isXREditableControl(targetElement)) {
+      onEditRequest(targetElement);
+    } else {
+      // A click is already a mouse-compatible event. Dispatching both a
+      // PointerEvent("click") and MouseEvent("click") invokes React twice.
+      targetElement.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+      }));
+    }
+  } else {
+    targetElement.dispatchEvent(new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: point.x,
+      clientY: point.y,
+      pointerId: pointerState.pointerId,
+      pointerType: 'xr',
+      isPrimary: true,
+    }));
+  }
+
+  if (type === 'pointermove') {
+    targetElement.dispatchEvent(new MouseEvent('mousemove', {
       bubbles: true,
       cancelable: true,
       clientX: point.x,
@@ -677,6 +951,18 @@ function dispatchLocalPointerEvent(
 
   pointerState.lastTarget = targetElement;
   pointerState.lastPoint = point;
+}
+
+function clearLocalPointerTarget(pointerState: XRPanelPointerState, onVisualChange: () => void) {
+  if (!pointerState.lastTarget) return;
+  pointerState.lastTarget.dispatchEvent(new PointerEvent('pointerout', {
+    bubbles: true,
+    pointerId: pointerState.pointerId,
+    pointerType: 'xr',
+  }));
+  pointerState.lastTarget.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+  pointerState.lastTarget = null;
+  onVisualChange();
 }
 
 interface TilingCanvasProps {
@@ -958,8 +1244,23 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
     xrDebugStrip.textContent = '[PXR] waiting for input…';
     xrPanelElement.appendChild(xrDebugStrip);
     let xrSessionStatus = '';
+    let lastXRDebugText = '';
     const setXRDebug = (text: string) => {
-      xrDebugStrip.textContent = `[PXR] ${xrSessionStatus}\n${text}`;
+      const nextText = `[PXR] ${xrSessionStatus}\n${text}`;
+      if (nextText === lastXRDebugText) return;
+      lastXRDebugText = nextText;
+      xrDebugStrip.textContent = nextText;
+      markPanelDirty();
+    };
+    let activeEditor: HTMLElement | null = null;
+    const closeXRControlEditor = () => {
+      activeEditor?.remove();
+      activeEditor = null;
+      markPanelDirty();
+    };
+    const openXRControlEditor = (control: XREditableControl) => {
+      closeXRControlEditor();
+      activeEditor = createXRControlEditor(xrPanelElement, control, closeXRControlEditor);
       markPanelDirty();
     };
 
@@ -1007,6 +1308,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       markPanelDirty();
     };
     const releaseSidebarFromXR = () => {
+      closeXRControlEditor();
       if (!sidebarHome) return;
       const sidebar = document.getElementById('app-sidebar');
       const home = sidebarHome;
@@ -1124,6 +1426,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       const handleDisconnected = () => {
         console.info(`[PXR-INPUT] controller ${index} disconnected`);
         delete controller.userData.inputSource;
+        controller.userData.selectPressed = false;
         ray.visible = false;
         aimFallback.visible = false;
       };
@@ -1164,6 +1467,17 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       { pressed: false, pointerId: 101, lastTarget: null, lastPoint: null },
       { pressed: false, pointerId: 102, lastTarget: null, lastPoint: null },
     ];
+    const resetXRInputState = () => {
+      for (let index = 0; index < 2; index++) {
+        renderer.xr.getController(index).userData.selectPressed = false;
+      }
+      controllerPointerStates.forEach((pointerState) => {
+        clearLocalPointerTarget(pointerState, markPanelDirty);
+        pointerState.pressed = false;
+        pointerState.lastPoint = null;
+      });
+    };
+    renderer.xr.addEventListener('sessionend', resetXRInputState);
 
     // Debug hook: lets the desktop-Chrome session be inspected live (controller
     // world poses, ray visibility, panel transform) without a headset console.
@@ -1360,19 +1674,42 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
                 x: hit.uv.x * XR_PANEL_WIDTH_PX,
                 y: (1 - hit.uv.y) * XR_PANEL_HEIGHT_PX,
               };
-              // Synthetic pointer events change hover/active styling without
-              // DOM mutations, so repaint whenever a ray touches the panel.
-              markPanelDirty();
-              dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointermove', point);
+              dispatchLocalPointerEvent(
+                xrPanelElement,
+                pointerState,
+                'pointermove',
+                point,
+                openXRControlEditor,
+                markPanelDirty,
+              );
 
               if (pressed && !pointerState.pressed) {
                 xrDownCount++;
-                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerdown', point);
-              } else if (pressed && pointerState.pressed) {
-                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointermove', point);
+                dispatchLocalPointerEvent(
+                  xrPanelElement,
+                  pointerState,
+                  'pointerdown',
+                  point,
+                  openXRControlEditor,
+                  markPanelDirty,
+                );
               } else if (!pressed && pointerState.pressed) {
-                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', point);
-                dispatchLocalPointerEvent(xrPanelElement, pointerState, 'click', point);
+                dispatchLocalPointerEvent(
+                  xrPanelElement,
+                  pointerState,
+                  'pointerup',
+                  point,
+                  openXRControlEditor,
+                  markPanelDirty,
+                );
+                dispatchLocalPointerEvent(
+                  xrPanelElement,
+                  pointerState,
+                  'click',
+                  point,
+                  openXRControlEditor,
+                  markPanelDirty,
+                );
                 xrClickCount++;
               }
               pointerState.pressed = pressed;
@@ -1383,12 +1720,20 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
               setXRDebug(
                 `c${index} pressed=${pressed} sel=${controller.userData.selectPressed === true} gp=${Boolean(source?.gamepad)} btns=${btnCount} b0=${b0} down=${xrDownCount} click=${xrClickCount} → ${pointerState.lastTarget?.tagName ?? '?'}`,
               );
-            } else if (!pressed && pointerState.pressed && pointerState.lastPoint) {
-              dispatchLocalPointerEvent(xrPanelElement, pointerState, 'pointerup', pointerState.lastPoint);
-              pointerState.pressed = false;
-              pointerState.lastTarget = null;
-              pointerState.lastPoint = null;
             } else {
+              clearLocalPointerTarget(pointerState, markPanelDirty);
+              if (!pressed && pointerState.pressed && pointerState.lastPoint) {
+                dispatchLocalPointerEvent(
+                  xrPanelElement,
+                  pointerState,
+                  'pointerup',
+                  pointerState.lastPoint,
+                  openXRControlEditor,
+                  markPanelDirty,
+                );
+                pointerState.lastTarget = null;
+                pointerState.lastPoint = null;
+              }
               pointerState.pressed = pressed;
             }
           }
@@ -1471,6 +1816,7 @@ export const TilingCanvas = forwardRef<TilingCanvasHandle, TilingCanvasProps>(({
       renderer.xr.removeEventListener('sessionstart', adoptSidebarForXR);
       renderer.xr.removeEventListener('sessionstart', logSessionInputSources);
       renderer.xr.removeEventListener('sessionend', releaseSidebarFromXR);
+      renderer.xr.removeEventListener('sessionend', resetXRInputState);
       releaseSidebarFromXR();
       panelMutationObserver.disconnect();
       xrPanelMesh.geometry.dispose();

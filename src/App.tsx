@@ -1822,6 +1822,18 @@ export default function App() {
     });
   };
 
+  const moveStackItem = (id: string, direction: -1 | 1) => {
+    setOperators((current) => {
+      const currentIndex = current.findIndex((item) => item.id === id);
+      const targetIndex = currentIndex + direction;
+      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(currentIndex, 1);
+      next.splice(targetIndex, 0, item);
+      return next;
+    });
+  };
+
   const selectedStackItem = operators.find((op) => op.id === selectedOperatorId) ?? null;
   const selectedOperator = selectedStackItem && isOperatorStackItem(selectedStackItem) ? selectedStackItem : null;
   const selectedOperatorNotation = selectedOperator ? resolveOperatorNotation(selectedOperator.notation) : '';
@@ -2995,6 +3007,34 @@ export default function App() {
                                 </div>
                               </div>
                               <div className="flex shrink-0 items-center gap-1">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveStackItem(op.id, -1);
+                                  }}
+                                  className={`${OPERATOR_ACTION_BUTTON_CLASS} hidden xr-only-control disabled:opacity-30`}
+                                  title="Move earlier in stack"
+                                  aria-label="Move earlier in stack"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === operators.length - 1}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveStackItem(op.id, 1);
+                                  }}
+                                  className={`${OPERATOR_ACTION_BUTTON_CLASS} hidden xr-only-control disabled:opacity-30`}
+                                  title="Move later in stack"
+                                  aria-label="Move later in stack"
+                                >
+                                  ↓
+                                </button>
                                 {isOperatorStackItem(op) && (
                                   <>
                                   <button
